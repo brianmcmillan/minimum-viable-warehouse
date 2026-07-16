@@ -4,9 +4,8 @@ Data-modeling debates never end because nobody runs the experiment. So I
 ran it. This repo holds six complete, working warehouses — an Inmon-style
 3NF EDW, a Kimball star, Data Vault 2.0, Focal Point, an Anchor Modeling
 constellation, and One Big Table (no model at all) — fed the same six
-deliveries, enforcing the same load semantics, and returning the same
-answers. Every difference you can observe between them is the model.
-Never the data.
+load files, enforcing the same load semantics, and returning the same
+answers. The only difference between them is the model.
 
 Together they span the whole argument: no model → normalize → dimensional
 → vault → attribute-grain, generic vs typed.
@@ -31,43 +30,6 @@ cd v3_one-big-table         && make demo && make test   # One Big Table (null hy
 | [`v3_focal-point/`](v3_focal-point/README.md) | [Focal Point](v3_focal-point/FOCALPOINT.md) (metadata-driven, narrow/EAV) | `build/focal.db` | `archive/focal_archive.db` |
 | [`v3_anchor/`](v3_anchor/README.md) | [Anchor Modeling](v3_anchor/ANCHOR.md) (6NF, table-per-attribute) | `build/anchor.db` | `archive/anchor_archive.db` |
 | [`v3_one-big-table/`](v3_one-big-table/README.md) | [One Big Table](v3_one-big-table/OBT.md) (full-refresh over the log) | `build/obt.db` | `archive/obt_archive.db` — **is** the warehouse |
-
-*Each **directory** links to that model's standalone README; each **model name** links to its design-notes companion — the in-depth cross-model comparison.*
-
-<!--
-  COMPANION-ESSAYS SECTION — commented out on 2026-07-14 because the five
-  linked files are missing from the repo root (OPERATING-MODELS.md,
-  STUPIDITY-PARADOX.md, MARKET-EXHAUSTION.md, WHAT-WANTS-TO-EMERGE.md,
-  THE-AGENTIC-TURN.md). Hidden here to avoid broken links; restore the
-  files and uncomment this block to bring it back verbatim.
-
-If they all return the same answers, how do you choose? Five companion
-essays work that question. Four keep every claim pointed at something you
-can run in this repo. One is allowed to leave the evidence behind.
-
-- [OPERATING-MODELS.md](OPERATING-MODELS.md) — Ross, Weill, and
-  Robertson's operating-model 2×2. Your quadrant tells you which of the
-  two machines (identity vs schema evolution) you will actually stress.
-- [STUPIDITY-PARADOX.md](STUPIDITY-PARADOX.md) — Alvesson and Spicer's
-  functional stupidity. Each model is a decision-timing device: which
-  class of organizational not-thinking it monetizes, and which one
-  corrupts it.
-- [MARKET-EXHAUSTION.md](MARKET-EXHAUSTION.md) — the market's data
-  fatigue, taken seriously. Six architectures answer *what is true*
-  identically, so the choice among them prices truth maintenance. It
-  never priced decision quality.
-- [WHAT-WANTS-TO-EMERGE.md](WHAT-WANTS-TO-EMERGE.md) — the speculative
-  one: seven guides from outside the data realm (SPC, cybernetics, Boyd,
-  HRO, optionality, improvisation, predictive processing) for the
-  operating model that doesn't have a clean name yet. Each comes with a
-  probe you can build.
-- [THE-AGENTIC-TURN.md](THE-AGENTIC-TURN.md) — how LLMs and autonomous
-  agents reprice all four analyses. Authoring cost collapses,
-  verification inverts, constraints become the agent's ground truth. An
-  agent wrote it, inside the harness it describes. It says so.
--->
-_Five companion essays that argued how to choose between the six models
-once lived here; they're temporarily out while their files are missing._
 
 ## The shared scenario
 
