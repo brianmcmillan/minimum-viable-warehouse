@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd /Users/brianmcmillan/Documents/GitHub/minimum-viable-warehouse && ls -la)",
+      "Bash(make demo *)",
+      "Bash(make test *)",
+      "Bash(make psa-status *)",
+      "Bash(echo \"=== search whole tree for the essay files ===\" && find . -iname \"MARKET-EXHAUSTION.md\" -o -iname \"OPERATING-MODELS.md\" -o -iname \"STUPIDITY-PARADOX.md\" -o -iname \"THE-AGENTIC-TURN.md\" -o -iname \"WHAT-WANTS-TO-EMERGE.md\" 2>/dev/null; echo \"\\(end of find\\)\"; echo; echo \"=== check macOS Trash ===\"; ls -1 ~/.Trash 2>/dev/null | grep -iE \"MARKET-EXHAUSTION|OPERATING-MODELS|STUPIDITY|AGENTIC|WHAT-WANTS\" || echo \"\\(none in Trash\\)\")"
+    ]
+  }
+}

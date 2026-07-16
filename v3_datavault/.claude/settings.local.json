@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(make demo *)",
+      "Bash(make test *)",
+      "Bash(./scripts/query.sh)",
+      "Bash(sqlite3 --version)",
+      "Bash(bash --version)",
+      "Bash(make --version)"
+    ]
+  }
+}

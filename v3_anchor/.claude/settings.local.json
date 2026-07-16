@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(make demo *)",
+      "Bash(make test *)",
+      "Bash(sqlite3 --version)",
+      "Bash(bash --version)",
+      "Bash(make --version)",
+      "Bash(cd /Users/brianmcmillan/Documents/GitHub/minimum-viable-warehouse && ls -la && echo \"---v3_anchor---\" && ls -la v3_anchor 2>/dev/null | head -40)",
+      "Bash(make psa-status *)"
+    ]
+  }
+}
