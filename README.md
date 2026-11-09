@@ -1,14 +1,14 @@
-# One dataset, six warehouses
+# One dataset, seven warehouses
 
 Data-modeling debates never end because nobody runs the experiment. So I
-ran it. This repo holds six complete, working warehouses — an Inmon-style
+ran it. This repo holds seven complete, working warehouses — an Inmon-style
 3NF EDW, a Kimball star, Data Vault 2.0, Focal Point, an Anchor Modeling
-constellation, and One Big Table (no model at all) — fed the same six
+constellation, HOOK, and One Big Table (no model at all) — fed the same six
 load files, enforcing the same load semantics, and returning the same
 answers. The only difference between them is the model.
 
 Together they span the whole argument: no model → normalize → dimensional
-→ vault → attribute-grain, generic vs typed.
+→ vault → hooks-only → attribute-grain, generic vs typed.
 
 Each one is native SQLite, bash, and Make. No Python, no packages, no
 server. The sqlite3 that ships with macOS is enough.
@@ -19,6 +19,7 @@ cd v3_data-marts            && make demo && make test   # Kimball star
 cd v3_datavault             && make demo && make test   # Data Vault 2.0
 cd v3_focal-point && make demo && make test   # Focal Point
 cd v3_anchor                && make demo && make test   # Anchor Modeling
+cd v3_hook                  && make demo && make test   # HOOK
 cd v3_one-big-table         && make demo && make test   # One Big Table (null hypothesis)
 ```
 
@@ -29,6 +30,7 @@ cd v3_one-big-table         && make demo && make test   # One Big Table (null hy
 | [`v3_datavault/`](v3_datavault/README.md) | [Data Vault 2.0](v3_datavault/DATAVAULT.md) (natural keys) | `build/datavault.db` | the insert-only raw vault itself |
 | [`v3_focal-point/`](v3_focal-point/README.md) | [Focal Point](v3_focal-point/FOCALPOINT.md) (metadata-driven, narrow/EAV) | `build/focal.db` | `archive/focal_archive.db` |
 | [`v3_anchor/`](v3_anchor/README.md) | [Anchor Modeling](v3_anchor/ANCHOR.md) (6NF, table-per-attribute) | `build/anchor.db` | `archive/anchor_archive.db` |
+| [`v3_hook/`](v3_hook/README.md) | [HOOK](v3_hook/HOOK.md) (frames + key-set-qualified hooks, no hubs or links) | `build/hook.db` | `archive/hook_archive.db` |
 | [`v3_one-big-table/`](v3_one-big-table/README.md) | [One Big Table](v3_one-big-table/OBT.md) (full-refresh over the log) | `build/obt.db` | `archive/obt_archive.db` — **is** the warehouse |
 
 ## The shared scenario
@@ -47,14 +49,14 @@ re-sent files, and periodic full snapshots.
 | — | D1 re-sent under the same delivery id | — | load control skips it |
 | D5 | CRM yearly reconciliation: only C001 remains | FULL | the safety net that catches unannounced deletes |
 
-All six enforce one rule, and it is the rule that separates working
+All seven enforce one rule, and it is the rule that separates working
 incremental pipelines from quiet data loss:
 
 > **Absence means DELETE only for a FULL delivery.** An INCREMENTAL
 > delivery never infers a delete from absence. Deletes arrive as explicit
 > tombstones, or a later FULL reconciliation finds them.
 
-And all six converge on the same end state:
+And all seven converge on the same end state:
 
 ```
 inmon   : C001(alice@newmail.com)
@@ -62,6 +64,7 @@ kimball : C001(alice@newmail.com)
 vault   : C001(alice@newmail.com)
 focal   : C001(alice@newmail.com) C002(null) C003(null)   <- ghost rows: see below
 anchor  : C001(alice@newmail.com)
+hook    : C001(alice@newmail.com)
 obt     : C001(alice@newmail.com)
 ```
 
@@ -118,6 +121,16 @@ pipelines), so the shared discipline fills that gap. Knots are closed
 domains: an unknown status code fails the load rather than inventing a
 member.
 
+**HOOK: Data Vault without the hub.** Keep each source table as a frame,
+add `hk_<concept>` columns holding key-set-qualified business keys
+(`CRM.CUST|C001`), and stop there. A relationship is a second hook on the
+row that asserts it, so the re-pointed order is just a new order row. The
+hub is a `GROUP BY` view, built only when someone asks. Because frames are
+source-aligned, one registry-driven loader handles every frame, which is
+the automation Focal gets from going narrow, here with wide, typed tables.
+The bill: integration is exact matching on key sets, so mapping work is
+deferred, not removed, and all semantics run on read.
+
 ## The bookends
 
 **Inmon 3NF: the control group.** The design every other leg reacts to. A
@@ -139,7 +152,7 @@ a tombstone or a later FULL snapshot omitted it) — and rebuild is trivial
 because nothing is incremental. The bill is asserted, not hinted: no
 NOCHANGE suppression, so unchanged snapshots get stored again forever;
 history only by rewriting the `LAG`-over-the-log query; semantics living
-in views or nowhere. Keeping it runnable next to the other five is the
+in views or nowhere. Keeping it runnable next to the other six is the
 cleanest answer to "what does modeling actually buy?"
 
 ## Shared engineering, deliberately
@@ -158,8 +171,8 @@ model doesn't force a difference.
   place as forensics. Success leaves the stage blank.
 - **`make clean` never touches the durable layer.** Destroying raw
   history takes the explicit `clean-archive` or `clean-psa` target.
-- **Mutation-tested suites** (Focal 83+33, DV 77, Kimball 72, Anchor 72,
-  Inmon 64, OBT 55 assertions). I broke the FULL-absence guard, the
+- **Mutation-tested suites** (Focal 83+33, HOOK 99, DV 77, Kimball 72,
+  Anchor 72, Inmon 64, OBT 55 assertions). I broke the FULL-absence guard, the
   replay ordering, the dedup tiebreaks, the restatement and idempotence
   guards, the tie guards, and the OBT refresh on purpose, to prove the
   tests fail when they should. A green suite you haven't broken is a
@@ -168,9 +181,9 @@ model doesn't force a difference.
   driving-key re-point gap runs as amber expected-failure assertions
   that print the suggested fix — and flip the suite red the moment the
   fix lands. See [`v3_focal-point/FOCALPOINT.md`](v3_focal-point/FOCALPOINT.md), "Known gap".
-- **Byte-identical delivery files, pairwise.** DV, Kimball, Inmon, and
-  OBT share the wide restatement; Focal and Anchor share the narrow
-  key-value originals. One logical corpus, two physical shapes, six
+- **Byte-identical delivery files, pairwise.** DV, Kimball, Inmon, HOOK,
+  and OBT share the wide restatement; Focal and Anchor share the narrow
+  key-value originals. One logical corpus, two physical shapes, seven
   consumers.
 
 ## Requirements
