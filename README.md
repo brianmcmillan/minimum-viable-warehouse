@@ -1,14 +1,15 @@
-# One dataset, seven warehouses
+# One dataset, eight warehouses
 
 Data-modeling debates never end because nobody runs the experiment. So I
-ran it. This repo holds seven complete, working warehouses — an Inmon-style
+ran it. This repo holds eight complete, working warehouses — an Inmon-style
 3NF EDW, a Kimball star, Data Vault 2.0, Focal Point, an Anchor Modeling
-constellation, HOOK, and One Big Table (no model at all) — fed the same six
-load files, enforcing the same load semantics, and returning the same
-answers. The only difference between them is the model.
+constellation, HOOK, a Unified Star Schema, and One Big Table (no model
+at all) — fed the same six load files, enforcing the same load semantics,
+and returning the same answers. The only difference between them is the model.
 
 Together they span the whole argument: no model → normalize → dimensional
-→ vault → hooks-only → attribute-grain, generic vs typed.
+→ vault → hooks-only → attribute-grain, generic vs typed — plus a
+presentation layer that makes any join safe.
 
 Each one is native SQLite, bash, and Make. No Python, no packages, no
 server. The sqlite3 that ships with macOS is enough.
@@ -20,6 +21,7 @@ cd v3_datavault             && make demo && make test   # Data Vault 2.0
 cd v3_focal-point && make demo && make test   # Focal Point
 cd v3_anchor                && make demo && make test   # Anchor Modeling
 cd v3_hook                  && make demo && make test   # HOOK
+cd v3_unified-star-schema   && make demo && make test   # Unified Star Schema
 cd v3_one-big-table         && make demo && make test   # One Big Table (null hypothesis)
 ```
 
@@ -31,6 +33,7 @@ cd v3_one-big-table         && make demo && make test   # One Big Table (null hy
 | [`v3_focal-point/`](v3_focal-point/README.md) | [Focal Point](v3_focal-point/FOCALPOINT.md) (metadata-driven, narrow/EAV) | `build/focal.db` | `archive/focal_archive.db` |
 | [`v3_anchor/`](v3_anchor/README.md) | [Anchor Modeling](v3_anchor/ANCHOR.md) (6NF, table-per-attribute) | `build/anchor.db` | `archive/anchor_archive.db` |
 | [`v3_hook/`](v3_hook/README.md) | [HOOK](v3_hook/HOOK.md) (frames + key-set-qualified hooks, no hubs or links) | `build/hook.db` | `archive/hook_archive.db` |
+| [`v3_unified-star-schema/`](v3_unified-star-schema/README.md) | [Unified Star Schema](v3_unified-star-schema/USS.md) (Puppini bridge over an insert-only core) | `build/uss.db` | `archive/uss_archive.db` |
 | [`v3_one-big-table/`](v3_one-big-table/README.md) | [One Big Table](v3_one-big-table/OBT.md) (full-refresh over the log) | `build/obt.db` | `archive/obt_archive.db` — **is** the warehouse |
 
 ## The shared scenario
@@ -49,14 +52,14 @@ re-sent files, and periodic full snapshots.
 | — | D1 re-sent under the same delivery id | — | load control skips it |
 | D5 | CRM yearly reconciliation: only C001 remains | FULL | the safety net that catches unannounced deletes |
 
-All seven enforce one rule, and it is the rule that separates working
+All eight enforce one rule, and it is the rule that separates working
 incremental pipelines from quiet data loss:
 
 > **Absence means DELETE only for a FULL delivery.** An INCREMENTAL
 > delivery never infers a delete from absence. Deletes arrive as explicit
 > tombstones, or a later FULL reconciliation finds them.
 
-And all seven converge on the same end state:
+And all eight converge on the same end state:
 
 ```
 inmon   : C001(alice@newmail.com)
@@ -65,6 +68,7 @@ vault   : C001(alice@newmail.com)
 focal   : C001(alice@newmail.com) C002(null) C003(null)   <- ghost rows: see below
 anchor  : C001(alice@newmail.com)
 hook    : C001(alice@newmail.com)
+uss     : C001(alice@newmail.com)
 obt     : C001(alice@newmail.com)
 ```
 
@@ -131,6 +135,16 @@ the automation Focal gets from going narrow, here with wide, typed tables.
 The bill: integration is exact matching on key sets, so mapping work is
 deferred, not removed, and all semantics run on read.
 
+**Unified Star Schema: no wrong totals.** Puppini's bridge is a
+presentation layer, so here it sits on an insert-only core. Every table
+loses its foreign keys and gets a stage on `_bridge` carrying its own key
+and every key it reaches many-to-one, so an order line knows its
+customer. Measures sit only on their own stage: the naive orders-to-lines
+join sums to 78.48, the bridge to the true 48.99. Order-less customers
+keep their row, so nothing drops out. The bill: no history of its own, a
+bridge that grows with every table, and a materialised layer that needs a
+refresh when a rule changes.
+
 ## The bookends
 
 **Inmon 3NF: the control group.** The design every other leg reacts to. A
@@ -152,7 +166,7 @@ a tombstone or a later FULL snapshot omitted it) — and rebuild is trivial
 because nothing is incremental. The bill is asserted, not hinted: no
 NOCHANGE suppression, so unchanged snapshots get stored again forever;
 history only by rewriting the `LAG`-over-the-log query; semantics living
-in views or nowhere. Keeping it runnable next to the other six is the
+in views or nowhere. Keeping it runnable next to the other seven is the
 cleanest answer to "what does modeling actually buy?"
 
 ## Shared engineering, deliberately
@@ -171,8 +185,8 @@ model doesn't force a difference.
   place as forensics. Success leaves the stage blank.
 - **`make clean` never touches the durable layer.** Destroying raw
   history takes the explicit `clean-archive` or `clean-psa` target.
-- **Mutation-tested suites** (Focal 83+33, HOOK 99, DV 77, Kimball 72,
-  Anchor 72, Inmon 64, OBT 55 assertions). I broke the FULL-absence guard, the
+- **Mutation-tested suites** (Focal 83+33, USS 113, HOOK 99, DV 77,
+  Kimball 72, Anchor 72, Inmon 64, OBT 55 assertions). I broke the FULL-absence guard, the
   replay ordering, the dedup tiebreaks, the restatement and idempotence
   guards, the tie guards, and the OBT refresh on purpose, to prove the
   tests fail when they should. A green suite you haven't broken is a
@@ -182,8 +196,8 @@ model doesn't force a difference.
   that print the suggested fix — and flip the suite red the moment the
   fix lands. See [`v3_focal-point/FOCALPOINT.md`](v3_focal-point/FOCALPOINT.md), "Known gap".
 - **Byte-identical delivery files, pairwise.** DV, Kimball, Inmon, HOOK,
-  and OBT share the wide restatement; Focal and Anchor share the narrow
-  key-value originals. One logical corpus, two physical shapes, seven
+  USS, and OBT share the wide restatement; Focal and Anchor share the narrow
+  key-value originals. One logical corpus, two physical shapes, eight
   consumers.
 
 ## Requirements
