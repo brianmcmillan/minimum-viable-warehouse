@@ -26,14 +26,22 @@ reputation, and unsparing about the two costs its successors exist to fix.
   table; the raw code survives only in the archive — which is what makes the
   conformance rule retroactively fixable by `make rebuild`.
 
-> **Part of a six-model comparison set.** This is the control group of a
-> study that runs the *same six deliveries* — byte-identical files — through
-> six warehouses (this Inmon 3NF EDW, a Kimball star, Data Vault 2.0, Focal
-> Point, Anchor, and One Big Table), so every difference between them is the
-> *model*, never the input. In the classic CIF picture, the
-> [Kimball star](../v3_data-marts) downstream is exactly the kind of
-> departmental mart this EDW would feed. **This README stands on its own;**
-> [INMON.md](INMON.md) draws the cross-model comparison in full.
+> **Part of a nine-model comparison set.** This is the control group. The
+> same six logical deliveries run through nine warehouses (this Inmon 3NF
+> EDW, [Kimball star](../v3_data-marts), [Data Vault 2.0](../v3_datavault),
+> [Focal Point](../v3_focal-point), [Anchor](../v3_anchor),
+> [HOOK](../v3_hook), [Unified Star Schema](../v3_unified-star-schema),
+> [Activity Schema](../v3_activity-schema), and
+> [One Big Table](../v3_one-big-table)), so every difference between them is
+> the *model*, never the input. This model takes the wide,
+> one-row-per-record restatement shared byte-for-byte by Inmon, Kimball,
+> Data Vault, HOOK, USS, Activity Schema and OBT. Its archive uses the same
+> layout (`loaded_files` + per-feed `hist_*` tables, append-only triggers)
+> as the Kimball, HOOK, USS, Activity Schema and OBT archives. In the
+> classic CIF picture, the [Kimball star](../v3_data-marts) downstream is
+> exactly the kind of departmental mart this EDW would feed. **This README
+> stands on its own;** [INMON.md](INMON.md) draws the cross-model
+> comparison.
 
 ---
 
@@ -424,5 +432,5 @@ rather than hiding them:
   [`../v3_datavault`](../v3_datavault) (Data Vault 2.0) and
   [`../v3_one-big-table`](../v3_one-big-table) (the null hypothesis) ingest
   the *same deliveries* and reach the *same end state*. The
-  [top-level README](../README.md) sets out all six warehouses and the essays
+  [top-level README](../README.md) sets out all nine warehouses and the essays
   that argue over how to choose between them.

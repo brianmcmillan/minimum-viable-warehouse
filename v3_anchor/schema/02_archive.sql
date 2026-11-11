@@ -36,7 +36,6 @@ CREATE TABLE IF NOT EXISTS source_landing_history (
     archived_at    TEXT    NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (file_id, seq_nbr)
 );
-CREATE INDEX IF NOT EXISTS ix_slh_replay ON source_landing_history(load_seq);
 
 CREATE TRIGGER IF NOT EXISTS trg_slh_no_update
 BEFORE UPDATE ON source_landing_history

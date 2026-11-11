@@ -8,7 +8,8 @@ it, run `make demo`, and you have a dimensional warehouse that ingests
 multi-source feeds, versions dimensions safely under realistic feed
 cadences, answers point-in-time questions from a *plain equi-join* — and
 can delete its entire star and rebuild it, surrogate keys and all, from a
-durable **Persistent Staging Area**.
+durable **archive** (the raw layer Kimball practice calls a persistent
+staging area).
 
 It exists to make a handful of normally-abstract dimensional ideas
 **executable and testable** in under a thousand lines of shell and SQL:
@@ -26,13 +27,21 @@ It exists to make a handful of normally-abstract dimensional ideas
   never be lost is the raw delivery, captured verbatim before anything
   touches it.
 
-> **Part of a six-model comparison set.** This is the dimensional leg of a
-> study that runs the *same six deliveries* — byte-identical files — through
-> six warehouses (Inmon 3NF, this Kimball star, Data Vault 2.0, Focal Point,
-> Anchor, and One Big Table), so every difference between them is the
-> *model*, never the input. The delivery files here are byte-identical with
-> [`../v3_datavault`](../v3_datavault). **This README stands on its own;**
-> [DATAMART.md](DATAMART.md) draws the cross-model comparison in full.
+> **Part of a nine-model comparison set.** This is the dimensional leg. The
+> same six logical deliveries run through nine warehouses
+> ([Inmon 3NF EDW](../v3_inmon-3nf), this Kimball star,
+> [Data Vault 2.0](../v3_datavault), [Focal Point](../v3_focal-point),
+> [Anchor](../v3_anchor), [HOOK](../v3_hook),
+> [Unified Star Schema](../v3_unified-star-schema),
+> [Activity Schema](../v3_activity-schema), and
+> [One Big Table](../v3_one-big-table)), so every difference between them is
+> the *model*, never the input. This model takes the wide,
+> one-row-per-record restatement shared byte-for-byte by Inmon, Kimball,
+> Data Vault, HOOK, USS, Activity Schema and OBT. Its archive uses the same
+> layout (`loaded_files` + per-feed `hist_*` tables, append-only triggers)
+> as the Inmon, HOOK, USS, Activity Schema and OBT archives. **This README
+> stands on its own;** [DATAMART.md](DATAMART.md) draws the cross-model
+> comparison.
 
 ---
 
@@ -52,10 +61,10 @@ directory; nothing reaches the network.
 ## Quick start
 
 ```bash
-make demo        # fresh PSA + schema + the full 6-delivery sequence, then print the star
-make rebuild     # delete the star; replay the PSA to rebuild it — surrogate keys included
-make psa-status  # what the durable staging area holds, and where it is growing
-make test        # 72 assertions: delete semantics, SCD2, frozen keys, exact rebuild
+make demo           # fresh archive + schema + the full 6-delivery sequence, then print the star
+make rebuild        # delete the star; replay the archive to rebuild it — surrogate keys included
+make archive-status # what the durable archive holds, and where it is growing
+make test           # 72 assertions: delete semantics, SCD2, frozen keys, exact rebuild
 ```
 
 `make demo` loads six deliveries standing in for a few weeks of real feeds,
@@ -111,8 +120,9 @@ INSERT INTO stg_customer_l1(customer_id, full_name, email_addr, signup_date, ext
 ```
 
 Same engine, opposite outcomes, driven only by the declared mode. The rule
-is shared across every model in the set; only the *mechanism* differs, and
-Kimball's is the only one that mutates a row:
+is shared across every model in the set; only the *mechanism* differs. Kimball
+is one of only two models that UPDATE rows (Inmon's close-and-insert is the
+other), and the only one that restates facts in place:
 
 | event | Focal | Data Vault | **Kimball (this demo)** |
 |---|---|---|---|
@@ -159,7 +169,7 @@ transaction identity travels on the fact, with no dimension table of its own.
 Surrogate keys are `INTEGER PRIMARY KEY` (SQLite rowids). Every loader
 inserts `ORDER BY <business key>`, so SQLite assigns rowids in a
 deterministic order — which is exactly what lets an ordered replay of the
-PSA reproduce every key identically (see
+archive reproduce every key identically (see
 [Rebuild reproduces keys](#rebuild-reproduces-surrogate-keys-exactly--and-that-is-load-bearing)).
 
 `diff_str` is the SCD2 change-detection column: the concatenated, trimmed
@@ -195,7 +205,8 @@ important design decision in the project.
 
 - **`build/datamart.db`** — the star schema. Everything you query.
   **Throwaway.**
-- **`psa/psa_datamart.db`** — the **Persistent Staging Area**. Every delivery
+- **`archive/datamart_archive.db`** — the **archive** (raw layer), Kimball's
+  persistent staging area. Every delivery
   ever accepted, captured *verbatim and before it is applied*, append-only,
   plus a `loaded_files` manifest of what arrived and in what order.
   **Durable.** It lives outside `build/` precisely so that `make clean` and
@@ -204,7 +215,7 @@ important design decision in the project.
 Because the raw input is never destroyed, the star is disposable:
 
 ```bash
-make rebuild   # drop build/datamart.db and replay the PSA through the SAME loaders
+make rebuild   # drop build/datamart.db and replay the archive through the SAME loaders
 ```
 
 `rebuild` replays every archived delivery, in original ingest order, through
@@ -216,15 +227,15 @@ prove nothing about ingest.) That buys two things a backup never could:
   "restore from backup," because the raw input was never overwritten.
 - **Restructure the model retroactively.** Order status is decoded
   `'P' → 'PENDING'` by a *seeded dimension*, but the raw `'P'` survives in the
-  PSA. Restructure the decode and run `make rebuild`, and the whole history
-  re-derives cleanly. Without the PSA, an in-place-mutating star like this
+  archive. Restructure the decode and run `make rebuild`, and the whole history
+  re-derives cleanly. Without the archive, an in-place-mutating star like this
   one is simply unrecoverable — which is exactly why Kimball practice grew a
   persistent staging area.
 
 ### Rebuild reproduces surrogate keys exactly — and that is load-bearing
 
 Surrogate keys are rowids assigned under `ORDER BY <business key>` inserts,
-so they depend on the order business keys are first seen. Replaying the PSA
+so they depend on the order business keys are first seen. Replaying the archive
 reproduces every key — and every SCD2 validity window — *identically*, but
 only because three orderings are guaranteed, and each has a regression test:
 
@@ -234,11 +245,11 @@ only because three orderings are guaranteed, and each has a regression test:
 3. the dimension loader inserts new versions in a fixed `ORDER BY` per feed.
 
 This is why there is **no retention policy**: replaying a *subset* of
-deliveries would reassign every key and move version chains. The PSA is a
+deliveries would reassign every key and move version chains. The archive is a
 backup only while it is complete, so nothing in the project can delete an
-archived row — the append-only triggers in `schema/02_psa.sql` have no unlock
+archived row — the append-only triggers in `schema/02_archive.sql` have no unlock
 path. The cost is unbounded growth (a FULL feed re-archives its whole
-snapshot every run); `make psa-status` makes that growth visible per feed.
+snapshot every run); `make archive-status` makes that growth visible per feed.
 
 ---
 
@@ -254,8 +265,8 @@ one delivery safely, capturing the raw input *before* applying it:
    delivery's *content* (a batch/version id, not a filename — extractors
    reuse filenames). If it is already `COMPLETE`, skip it. If the same
    `file_id` reappears with a *different* row count, reject it loudly rather
-   than let the PSA stop describing what was actually applied.
-3. **Archive** the staged rows verbatim into the append-only PSA tables —
+   than let the archive stop describing what was actually applied.
+3. **Archive** the staged rows verbatim into the append-only archive tables —
    idempotent (`INSERT OR IGNORE`, which does not fire the append-only
    triggers, so retries are safe), assigning `load_seq` on first sight.
 4. **Apply** via `apply_delivery.sh` → `load_dims.sh` (SCD2: expire → new
@@ -292,15 +303,15 @@ siblings charge a history query for.
   reads the new label instantly, no reload. `dim_customer` and `dim_product`
   are Type 2: a change versions the row. The test suite also shows the sharp
   edge — **`make rebuild` resets Type 1 overlays** to the schema seed, because
-  in a PSA-rebuilt world an ad-hoc Type 1 `UPDATE` that isn't in the seed is
+  in an archive-rebuilt world an ad-hoc Type 1 `UPDATE` that isn't in the seed is
   lost. That is a real operational lesson, not a demo artifact.
 
 - **Facts are UPDATED in place.** When the source restates an order — a
   changed amount, status, or a re-pointed customer — `fact_orders` is
   `UPDATE`d, not versioned. This is the deliberate contrast with the
   insert-only siblings: the star trades in-database history of facts for query
-  speed, and the PSA is what keeps that honest — every prior state still lives
-  in `psa_order`, and `make rebuild` reapplies the whole history.
+  speed, and the archive is what keeps that honest — every prior state still lives
+  in `hist_order`, and `make rebuild` reapplies the whole history.
 
 ---
 
@@ -325,19 +336,19 @@ across models.
 
 ## Make targets
 
-| Target            | Effect                                                                                     |
-|-------------------|--------------------------------------------------------------------------------------------|
-| `make demo`       | fresh PSA + schema + the full delivery sequence + printed star                             |
-| `make rebuild`    | regenerate the star by replaying the PSA                                                    |
-| `make psa-status` | report the persistent staging area (read-only): deliveries, rows per feed, growth          |
-| `make test`       | run the Kimball test suite (72 assertions)                                                  |
-| `make init`       | recreate the star from schema (the PSA survives)                                            |
-| `make clean`      | delete `build/` only — **the PSA survives**; `make rebuild` restores the star              |
-| `make clean-psa`  | delete `psa/` — destroys the raw history and the ability to rebuild (deliberately separate from `clean`) |
+| Target                | Effect                                                                                     |
+|-----------------------|--------------------------------------------------------------------------------------------|
+| `make demo`           | fresh archive + schema + the full delivery sequence + printed star                         |
+| `make rebuild`        | regenerate the star by replaying the archive                                               |
+| `make archive-status` | report on the archive (read-only): deliveries, rows per feed, growth                       |
+| `make test`           | run the Kimball test suite (72 assertions)                                                 |
+| `make init`           | recreate the star from schema (the archive survives)                                       |
+| `make clean`          | delete `build/` only — **the archive survives**; `make rebuild` restores the star          |
+| `make clean-archive`  | delete `archive/` — destroys the raw history and the ability to rebuild (deliberately separate from `clean`) |
 
-`make demo` rebuilds a fresh PSA first, because deliveries are skipped once
-`COMPLETE`; it is the only target that discards the PSA implicitly.
-`make psa-status` output looks like:
+`make demo` rebuilds a fresh archive first, because deliveries are skipped once
+`COMPLETE`; it is the only target that discards the archive implicitly.
+`make archive-status` output looks like:
 
 ```
 ### Deliveries
@@ -366,18 +377,18 @@ OMS.ORDER       1           2         2
 ├── DATAMART.md             # design notes: the star vs the sibling models, in depth
 ├── schema/
 │   ├── 01_stage.sql        # stage L1 tables (shared shape) + L2 dedup / diff_str views
-│   ├── 02_psa.sql          # persistent staging: per-feed history + manifest + append-only triggers
+│   ├── 02_archive.sql      # raw layer: per-feed history + manifest + append-only triggers
 │   ├── 03_dimensions.sql   # SCD2 dims, generated dim_date, seeded decode dim, current views
 │   └── 04_facts.sql        # fact_orders, fact_order_lines, comparison + star views
 ├── scripts/
 │   ├── lib.sh              # shared helpers; the single DB choke point + SQL-injection guards
-│   ├── init_db.sh          # (re)create the star; preserve the PSA
-│   ├── load_feed.sh        # ingest ONE delivery safely (stage → PSA → apply → complete)
+│   ├── init_db.sh          # (re)create the star; preserve the archive
+│   ├── load_feed.sh        # ingest ONE delivery safely (stage → archive → apply → complete)
 │   ├── apply_delivery.sh   # the one path from staged rows to the star (ingest AND replay)
 │   ├── load_dims.sh        # SCD2: expire → new versions → deleted markers
 │   ├── load_facts.sh       # facts: insert new, UPDATE restated, unknown members (-1)
-│   ├── rebuild.sh          # replay the PSA to regenerate the star
-│   ├── psa_status.sh       # report the persistent staging area
+│   ├── rebuild.sh          # replay the archive to regenerate the star
+│   ├── archive_status.sh   # report on the archive
 │   └── query.sh            # print the star + its signature queries
 ├── source/                 # the demo delivery files (D0–D5), byte-identical with ../v3_datavault
 ├── tests/
@@ -385,7 +396,7 @@ OMS.ORDER       1           2         2
 │   └── fixtures/
 │       └── d6_repoint.sql  # restatement fixture: the re-point that becomes a fact UPDATE
 ├── build/                  # generated: the star (safe to delete)
-└── psa/                    # generated: the durable staging area (do NOT delete lightly)
+└── archive/                # the durable raw layer (do NOT delete lightly)
 ```
 
 ---
@@ -413,8 +424,8 @@ exercises the Kimball-specific behaviours:
 - **Type 1 vs Type 2** — a decode `UPDATE` is read instantly by every fact,
   and a rebuild resets it to the seed.
 - **In-place fact restatement** — the D6 re-point becomes an
-  `UPDATE fact_orders`; the prior pairing survives *only* in the PSA.
-- **The PSA guarantees** — append-only is absolute, and `make clean` +
+  `UPDATE fact_orders`; the prior pairing survives *only* in the archive.
+- **The archive guarantees** — append-only is absolute, and `make clean` +
   `make rebuild` reproduces the star *exactly*, surrogate keys and SCD2
   windows included.
 
@@ -428,18 +439,18 @@ The dimensional model is a set of deliberate trade-offs, and the demo keeps
 them honest rather than hiding them:
 
 - **History of facts lives in dimensions, not facts.** A restated amount
-  overwrites the fact row; only the PSA retains the prior state. The
+  overwrites the fact row; only the archive retains the prior state. The
   insert-only siblings keep every fact state queryable *in the warehouse
   itself*.
 - **Type 1 overlays are not durable across a rebuild.** An ad-hoc decode
   `UPDATE` that doesn't live in the schema seed is lost when `make rebuild`
-  re-derives from the PSA.
+  re-derives from the archive.
 - **Schema evolution is DDL + ETL edits.** A new attribute means
   `ALTER TABLE dim_*`, a stage-view change, and a loader change — where a
   metadata-driven model would add a row.
 - **In-place mutation forfeits trivial auditability.** `is_current` updates
-  and fact restatements cannot be replayed *from the mart* — only the PSA
-  makes `make rebuild` possible. Without a PSA this design is unrecoverable;
+  and fact restatements cannot be replayed *from the mart* — only the archive
+  makes `make rebuild` possible. Without an archive this design is unrecoverable;
   that is precisely why it has one.
 
 ---
@@ -448,11 +459,12 @@ them honest rather than hiding them:
 
 - **[DATAMART.md](DATAMART.md)** — the design notes: what the star
   demonstrates that the other models don't (point-in-time from frozen keys,
-  Type 1 vs Type 2), what it gives up, and how the PSA is the Focal archive
-  pattern renamed. Draws the full comparison across the model set.
+  Type 1 vs Type 2), what it gives up, and how the archive is the Focal archive
+  pattern applied to Kimball's persistent staging area. Draws the full
+  comparison across the model set.
 - **Sibling demos** — [`../v3_datavault`](../v3_datavault) (Data Vault 2.0)
   and [`../v3_focal-point`](../v3_focal-point) (metadata-driven Focal) ingest
   the *same deliveries* and reach the *same end state*, so their READMEs read
   as one study of how each model handles identical input. The
-  [top-level README](../README.md) sets out all six warehouses and the essays
+  [top-level README](../README.md) sets out all nine warehouses and the essays
   that argue over how to choose between them.

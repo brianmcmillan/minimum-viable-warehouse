@@ -18,7 +18,7 @@
 #
 # DETERMINISM: surrogate keys are rowids, and every INSERT..SELECT here
 # carries ORDER BY <business key> -- SQLite assigns rowids in that
-# order, so ordered PSA replay reproduces every surrogate key. The
+# order, so ordered archive replay reproduces every surrogate key. The
 # statement ORDER (2 before 3) is part of that contract; do not swap.
 # ---------------------------------------------------------------------
 source "$(dirname "$0")/lib.sh"

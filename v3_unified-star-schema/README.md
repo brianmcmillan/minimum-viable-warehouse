@@ -27,12 +27,20 @@ grains and sums?*
   `Customer` row on the bridge, so it still shows up. That's the
   **chasm trap**, gone by construction.
 
-> **Part of a model-comparison set.** The same six deliveries,
-> byte-identical files, run through an Inmon 3NF EDW, a Kimball star, Data
-> Vault 2.0, Focal Point, Anchor, HOOK, One Big Table, and this USS, so
-> every difference between them is the *model*, never the input.
-> **This README stands on its own;** [USS.md](USS.md) draws the
-> cross-model comparison.
+> **Part of a nine-model comparison set.** This is the presentation-layer
+> leg. The same six logical deliveries run through nine warehouses
+> ([Inmon 3NF EDW](../v3_inmon-3nf), [Kimball star](../v3_data-marts),
+> [Data Vault 2.0](../v3_datavault), [Focal Point](../v3_focal-point),
+> [Anchor](../v3_anchor), [HOOK](../v3_hook), this Unified Star Schema,
+> [Activity Schema](../v3_activity-schema), and
+> [One Big Table](../v3_one-big-table)), so every difference between them is
+> the *model*, never the input. This model takes the wide,
+> one-row-per-record restatement shared byte-for-byte by Inmon, Kimball,
+> Data Vault, HOOK, USS, Activity Schema and OBT. Its archive uses the same
+> layout (`loaded_files` + per-feed `hist_*` tables, append-only triggers)
+> as the Inmon, Kimball, HOOK, Activity Schema and OBT archives. **This
+> README stands on its own;** [USS.md](USS.md) draws the cross-model
+> comparison.
 
 ---
 

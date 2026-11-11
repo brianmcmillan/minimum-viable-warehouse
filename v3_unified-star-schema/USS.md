@@ -6,8 +6,8 @@ above them. It doesn't ask how to store history. It asks how to lay data
 out so a self-service user can't get a wrong total. Its answer is one
 bridge table in the middle of a star whose points are *all* the tables.
 
-Same wide deliveries as the DV, Kimball, Inmon, HOOK and OBT demos,
-byte-identical.
+Same wide deliveries as the DV, Kimball, Inmon, HOOK, Activity Schema and
+OBT demos, byte-identical.
 
 ```bash
 make demo     # fresh archive + the full delivery sequence + views
