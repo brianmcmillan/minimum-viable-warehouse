@@ -24,6 +24,21 @@ generates DDL and insert triggers, not pipeline discipline. This project brings 
 tombstones, load control, capture-raw-then-apply, and ordered replay, each landing on a natively Anchor
 construct. The design notes in **[ANCHOR.md](ANCHOR.md)** walk through every one of those decisions.
 
+> **Part of a nine-model comparison set.** This is the 6NF,
+> table-per-attribute leg. The same six logical deliveries run through nine
+> warehouses ([Inmon 3NF EDW](../v3_inmon-3nf),
+> [Kimball star](../v3_data-marts), [Data Vault 2.0](../v3_datavault),
+> [Focal Point](../v3_focal-point), this Anchor, [HOOK](../v3_hook),
+> [Unified Star Schema](../v3_unified-star-schema),
+> [Activity Schema](../v3_activity-schema), and
+> [One Big Table](../v3_one-big-table)), so every difference between them is
+> the *model*, never the input. This model takes the narrow,
+> one-row-per-attribute originals shared byte-for-byte by Focal Point and
+> Anchor. Its archive uses the same narrow layout (`loaded_files` +
+> `source_landing_history`, append-only triggers) as the
+> [Focal Point](../v3_focal-point) archive. **This README stands on its
+> own;** [ANCHOR.md](ANCHOR.md) draws the cross-model comparison.
+
 ---
 
 ## Requirements

@@ -5,8 +5,8 @@ repo: *how much of that structure did you actually need at load time?* Its
 answer is: almost none. Keep the source tables. Qualify the business keys.
 Build everything else as views.
 
-Same wide deliveries as the DV, Kimball, Inmon and OBT demos,
-byte-identical.
+Same wide deliveries as the DV, Kimball, Inmon, USS, Activity Schema and
+OBT demos, byte-identical.
 
 ```bash
 make demo     # fresh archive + the full delivery sequence + views

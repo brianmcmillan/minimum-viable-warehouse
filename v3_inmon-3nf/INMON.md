@@ -2,8 +2,8 @@
 
 The design every other leg of this repo reacts to: a subject-oriented,
 integrated, time-variant, non-volatile normalized core — Inmon's four
-adjectives, rendered the classic way. Same wide deliveries as the DV and
-Kimball demos, byte-identical.
+adjectives, rendered the classic way. Same wide deliveries as the DV,
+Kimball, HOOK, USS, Activity Schema and OBT demos, byte-identical.
 
 ```bash
 make demo     # fresh archive + the full delivery sequence + views

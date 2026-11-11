@@ -8,7 +8,7 @@ incremental state anywhere. Built from nothing but **`sqlite3`, `bash`, and
 `make`**. No Python, no dbt, no server, no packages to install. The
 `sqlite3` that ships with macOS is enough.
 
-It exists to answer the question the other five warehouses in the set raise:
+It exists to answer the question the other eight warehouses in the set raise:
 **what does modeling actually buy?** Feed it the same deliveries, get the
 same answers — then read the bill.
 
@@ -21,17 +21,24 @@ same answers — then read the bill.
   of its feed simply omitted it. One query works that out; no load-time state
   machine does.
 - **Rebuild is trivial** — `init` plus one refresh — precisely because
-  nothing was ever derived incrementally. The other five demos work hard for
+  nothing was ever derived incrementally. The modeled demos work hard for
   replay determinism; here it is free.
 
-> **Part of a six-model comparison set.** This is the null hypothesis of a
-> study that runs the *same six deliveries* — byte-identical files — through
-> six warehouses (an Inmon 3NF EDW, a Kimball star, Data Vault 2.0, Focal
-> Point, Anchor, and this One Big Table), so every difference between them is
-> the *model*, never the input. Keeping the no-model position runnable next
-> to the other five is the cleanest way to price what they add. **This README
-> stands on its own;** [OBT.md](OBT.md) draws the cross-model comparison in
-> full.
+> **Part of a nine-model comparison set.** This is the null hypothesis. The
+> same six logical deliveries run through nine warehouses
+> ([Inmon 3NF EDW](../v3_inmon-3nf), [Kimball star](../v3_data-marts),
+> [Data Vault 2.0](../v3_datavault), [Focal Point](../v3_focal-point),
+> [Anchor](../v3_anchor), [HOOK](../v3_hook),
+> [Unified Star Schema](../v3_unified-star-schema),
+> [Activity Schema](../v3_activity-schema), and this One Big Table), so
+> every difference between them is the *model*, never the input. This model
+> takes the wide, one-row-per-record restatement shared byte-for-byte by
+> Inmon, Kimball, Data Vault, HOOK, USS, Activity Schema and OBT. Its
+> archive uses the same layout (`loaded_files` + per-feed `hist_*` tables,
+> append-only triggers) as the Inmon, Kimball, HOOK, USS and Activity Schema
+> archives. Keeping the no-model position runnable next to the other eight
+> is the cleanest way to price what they add. **This README stands on its
+> own;** [OBT.md](OBT.md) draws the cross-model comparison.
 
 ---
 
@@ -98,7 +105,7 @@ Every warehouse in the set enforces one rule:
 > Deletes arrive as an explicit **tombstone** (`op='DELETE'`) or are found
 > later by a **FULL reconciliation**.
 
-What makes OBT different is *where* the rule lives. The other five enforce it
+What makes OBT different is *where* the rule lives. The other eight enforce it
 as they load. OBT **derives it from the log** at refresh time, in one query
 per feed:
 
@@ -201,8 +208,8 @@ Which is why rebuild needs no replay loop:
 make rebuild   # init + ONE full refresh; there is no incremental state to reconstruct
 ```
 
-The other five demos replay every delivery in order through their real
-loaders to prove fidelity. OBT can't get replay wrong, because it never
+The other archive-backed demos replay every delivery in order through their
+real loaders to prove fidelity. OBT can't get replay wrong, because it never
 derived anything incrementally in the first place — `rebuild` is `init`
 followed by a single `refresh_latest.sh`. That triviality is the pattern's
 rhetorical payoff; the cost simply lives elsewhere (see below). Nothing can
@@ -357,7 +364,7 @@ The suite passes with no external setup.
 
 ---
 
-## Honest scorecard vs the other five
+## Honest scorecard vs the other eight
 
 Same input, same answers, so the trade is stark. OBT **wins** on loader
 simplicity, rebuild triviality, and time-to-first-query. It **loses** on
@@ -381,10 +388,10 @@ That is the whole reason to keep the null hypothesis runnable next to them.
 
 - **[OBT.md](OBT.md)** — the design notes: what the no-model position gets
   right embarrassingly cheaply, where the bill arrives, and the honest
-  scorecard against the other five. Draws the full comparison across the
+  scorecard against the other eight. Draws the full comparison across the
   model set.
 - **Sibling demos** — [`../v3_data-marts`](../v3_data-marts) (Kimball star)
   and [`../v3_inmon-3nf`](../v3_inmon-3nf) (the 3NF control group) ingest the
   *same deliveries* and reach the *same end state* — the sharpest way to see
-  what a model buys. The [top-level README](../README.md) sets out all six
+  what a model buys. The [top-level README](../README.md) sets out all nine
   warehouses and the essays that argue over how to choose between them.

@@ -1,4 +1,4 @@
-# Anchor Modeling (6NF) on SQLite. Fourth leg of the model-comparison set:
+# Anchor Modeling (6NF) on SQLite. 6NF leg of the model-comparison set:
 # same narrow deliveries as ../v3_focal-point (Focal Point).
 SQLITE     ?= sqlite3
 DB         ?= build/anchor.db

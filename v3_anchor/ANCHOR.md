@@ -79,7 +79,7 @@ legibility; `OST` is a "described" knot carrying code + label so the shared
 rule-change test works; mnemonic `OD` rather than `OR` (bare `OR` is a SQL
 keyword); `Metadata_LDTS` stands in for Anchor's metadata construct; no
 positor/reliability machinery (concurrent-reliance modeling is out of scope
-for all four demos).
+for every demo in the set).
 
 ## Layout
 

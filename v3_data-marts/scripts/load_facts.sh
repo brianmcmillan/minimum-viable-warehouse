@@ -9,8 +9,8 @@
 # A RESTATED order -- same order_ref, different content, including a
 # re-pointed customer -- is an UPDATE in place. This is the deliberate
 # Kimball contrast with both sibling demos: Focal and DV never mutate;
-# the star does, and the PSA is what keeps that honest (every prior
-# state is still in psa_order, and rebuild reapplies the history).
+# the star does, and the archive is what keeps that honest (every prior
+# state is still in hist_order, and rebuild reapplies the history).
 #
 # Unknown-member seeds (-1) absorb codes and dates the dimensions have
 # never heard of instead of dropping or crashing the load.

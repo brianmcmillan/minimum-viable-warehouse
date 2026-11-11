@@ -16,6 +16,22 @@ under 1,000 lines of shell and SQL:
 - A **disposable warehouse over a durable raw layer.** Everything queryable is derived and can be
   regenerated on demand; the only thing that must never be lost is the raw input, captured verbatim.
 
+> **Part of a nine-model comparison set.** This is the metadata-driven,
+> narrow (EAV) leg, and the origin of the archive discipline the others
+> share. The same six logical deliveries run through nine warehouses
+> ([Inmon 3NF EDW](../v3_inmon-3nf), [Kimball star](../v3_data-marts),
+> [Data Vault 2.0](../v3_datavault), this Focal Point,
+> [Anchor](../v3_anchor), [HOOK](../v3_hook),
+> [Unified Star Schema](../v3_unified-star-schema),
+> [Activity Schema](../v3_activity-schema), and
+> [One Big Table](../v3_one-big-table)), so every difference between them is
+> the *model*, never the input. This model takes the narrow,
+> one-row-per-attribute originals shared byte-for-byte by Focal Point and
+> Anchor. Its archive uses the same narrow layout (`loaded_files` +
+> `source_landing_history`, append-only triggers) as the
+> [Anchor](../v3_anchor) archive. **This README stands on its own;**
+> [FOCALPOINT.md](FOCALPOINT.md) draws the cross-model comparison.
+
 ---
 
 ## Requirements

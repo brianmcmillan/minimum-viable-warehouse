@@ -1,15 +1,15 @@
-# One dataset, eight warehouses
+# One dataset, nine warehouses
 
 Data-modeling debates never end because nobody runs the experiment. So I
-ran it. This repo holds eight complete, working warehouses — an Inmon-style
+ran it. This repo holds nine complete, working warehouses — an Inmon-style
 3NF EDW, a Kimball star, Data Vault 2.0, Focal Point, an Anchor Modeling
-constellation, HOOK, a Unified Star Schema, and One Big Table (no model
-at all) — fed the same six load files, enforcing the same load semantics,
+constellation, HOOK, a Unified Star Schema, an Activity Schema, and One Big
+Table (no model at all) — fed the same six load files, enforcing the same load semantics,
 and returning the same answers. The only difference between them is the model.
 
 Together they span the whole argument: no model → normalize → dimensional
-→ vault → hooks-only → attribute-grain, generic vs typed — plus a
-presentation layer that makes any join safe.
+→ vault → hooks-only → attribute-grain, generic vs typed → activities
+instead of entities — plus a presentation layer that makes any join safe.
 
 Each one is native SQLite, bash, and Make. No Python, no packages, no
 server. The sqlite3 that ships with macOS is enough.
@@ -18,22 +18,24 @@ server. The sqlite3 that ships with macOS is enough.
 cd v3_inmon-3nf             && make demo && make test   # Inmon 3NF (control group)
 cd v3_data-marts            && make demo && make test   # Kimball star
 cd v3_datavault             && make demo && make test   # Data Vault 2.0
-cd v3_focal-point && make demo && make test   # Focal Point
+cd v3_focal-point           && make demo && make test   # Focal Point
 cd v3_anchor                && make demo && make test   # Anchor Modeling
 cd v3_hook                  && make demo && make test   # HOOK
 cd v3_unified-star-schema   && make demo && make test   # Unified Star Schema
+cd v3_activity-schema       && make demo && make test   # Activity Schema
 cd v3_one-big-table         && make demo && make test   # One Big Table (null hypothesis)
 ```
 
 | directory | model | derived layer | durable raw layer |
 |---|---|---|---|
 | [`v3_inmon-3nf/`](v3_inmon-3nf/README.md) | [Inmon time-variant 3NF EDW](v3_inmon-3nf/INMON.md) (natural keys) | `build/edw.db` | `archive/edw_archive.db` |
-| [`v3_data-marts/`](v3_data-marts/README.md) | [Kimball star](v3_data-marts/DATAMART.md) (SCD2 + facts) | `build/datamart.db` | `psa/psa_datamart.db` (persistent staging) |
+| [`v3_data-marts/`](v3_data-marts/README.md) | [Kimball star](v3_data-marts/DATAMART.md) (SCD2 + facts) | `build/datamart.db` | `archive/datamart_archive.db` |
 | [`v3_datavault/`](v3_datavault/README.md) | [Data Vault 2.0](v3_datavault/DATAVAULT.md) (natural keys) | `build/datavault.db` | the insert-only raw vault itself |
 | [`v3_focal-point/`](v3_focal-point/README.md) | [Focal Point](v3_focal-point/FOCALPOINT.md) (metadata-driven, narrow/EAV) | `build/focal.db` | `archive/focal_archive.db` |
 | [`v3_anchor/`](v3_anchor/README.md) | [Anchor Modeling](v3_anchor/ANCHOR.md) (6NF, table-per-attribute) | `build/anchor.db` | `archive/anchor_archive.db` |
 | [`v3_hook/`](v3_hook/README.md) | [HOOK](v3_hook/HOOK.md) (frames + key-set-qualified hooks, no hubs or links) | `build/hook.db` | `archive/hook_archive.db` |
 | [`v3_unified-star-schema/`](v3_unified-star-schema/README.md) | [Unified Star Schema](v3_unified-star-schema/USS.md) (Puppini bridge over an insert-only core) | `build/uss.db` | `archive/uss_archive.db` |
+| [`v3_activity-schema/`](v3_activity-schema/README.md) | [Activity Schema](v3_activity-schema/ACTIVITY.md) (2.0: activity streams + temporal joins) | `build/activity.db` | `archive/activity_archive.db` |
 | [`v3_one-big-table/`](v3_one-big-table/README.md) | [One Big Table](v3_one-big-table/OBT.md) (full-refresh over the log) | `build/obt.db` | `archive/obt_archive.db` — **is** the warehouse |
 
 ## The shared scenario
@@ -52,14 +54,14 @@ re-sent files, and periodic full snapshots.
 | — | D1 re-sent under the same delivery id | — | load control skips it |
 | D5 | CRM yearly reconciliation: only C001 remains | FULL | the safety net that catches unannounced deletes |
 
-All eight enforce one rule, and it is the rule that separates working
+All nine enforce one rule, and it is the rule that separates working
 incremental pipelines from quiet data loss:
 
 > **Absence means DELETE only for a FULL delivery.** An INCREMENTAL
 > delivery never infers a delete from absence. Deletes arrive as explicit
 > tombstones, or a later FULL reconciliation finds them.
 
-And all eight converge on the same end state:
+And all nine converge on the same end state:
 
 ```
 inmon   : C001(alice@newmail.com)
@@ -69,6 +71,7 @@ focal   : C001(alice@newmail.com) C002(null) C003(null)   <- ghost rows: see bel
 anchor  : C001(alice@newmail.com)
 hook    : C001(alice@newmail.com)
 uss     : C001(alice@newmail.com)
+activity: C001(alice@newmail.com)
 obt     : C001(alice@newmail.com)
 ```
 
@@ -83,8 +86,8 @@ derive-everything-from-the-log — get their own section below.
 | delete detected | closing row, `row_st='N'` | `'D'` row in a status-tracking satellite | deleted-marker version, `is_deleted=1`, last-known attrs carried | `DELETED` assertion in the **existence knot** — presence is data |
 | unchanged re-delivery | `NOCHANGE` — writes nothing | diff-string match — writes nothing | diff-string match — writes nothing | **restatement control** — writes nothing |
 | keys | sequence surrogates, reproduced by ordered replay | natural business keys | rowid surrogates, reproduced by ordered replay | per-anchor sequences, reproduced by ordered replay |
-| business rule (P→PENDING) | applied **at ingest** (`meta_value_map`); archive + rebuild makes it retroactive | raw `'P'` stored; translated **on read** in the mart views | raw `'P'` in the PSA; decode **dimension** (Type 1) | raw code resolved to a **knot**; label read at query |
-| row mutation | never | never | dims expire, facts restate — the PSA keeps it honest | never |
+| business rule (P→PENDING) | applied **at ingest** (`meta_value_map`); archive + rebuild makes it retroactive | raw `'P'` stored; translated **on read** in the mart views | raw `'P'` in the archive; decode **dimension** (Type 1) | raw code resolved to a **knot**; label read at query |
+| row mutation | never | never | dims expire, facts restate — the archive keeps it honest | never |
 
 ## What each demo is best at showing
 
@@ -108,9 +111,9 @@ decode and history follows with no reload.
 dimension version current at load. After C002 is deleted, the star
 answers both `placed_by_at_purchase = 'Bob Jones'` and
 `placed_by_current = NULL` with equi-joins — no history query, no PIT
-construct. Its Persistent Staging Area is the Focal archive pattern,
-reused as-is. The suite also shows the sharp edge: ad-hoc Type 1 updates
-get reset by a PSA rebuild unless they live in the schema seed.
+construct. Its archive (Kimball's persistent staging area) is the Focal archive
+pattern, reused as-is. The suite also shows the sharp edge: ad-hoc Type 1 updates
+get reset by an archive rebuild unless they live in the schema seed.
 
 **Anchor: everything is data, everything is typed.** 24 tables for what
 Focal holds in 4. Every attribute gets its own table with a real column
@@ -145,6 +148,18 @@ keep their row, so nothing drops out. The bill: no history of its own, a
 bridge that grows with every table, and a materialised layer that needs a
 refresh when a rule changes.
 
+**Activity Schema: model the verbs.** No entities, no facts, no
+dimensions: two streams of immutable activities (`signed_up`,
+`updated_email`, `placed_order`, `was_ordered`) with a fixed set of
+columns, related by who, what and when instead of foreign keys. "Who placed
+this order, as they were then?" is a LAST BEFORE join on the order's own
+timestamp, and it survives a later email change, a delete and a re-point.
+Behavioural questions (days from signup to first order, what changed after
+it) are one stream query. The bill: these deliveries are state snapshots,
+so the loader diffs each one against current state to manufacture events,
+most changes can only be stamped when they were *observed*, and the spec is
+silent on deletes, so the shared rule supplies them.
+
 ## The bookends
 
 **Inmon 3NF: the control group.** The design every other leg reacts to. A
@@ -166,7 +181,7 @@ a tombstone or a later FULL snapshot omitted it) — and rebuild is trivial
 because nothing is incremental. The bill is asserted, not hinted: no
 NOCHANGE suppression, so unchanged snapshots get stored again forever;
 history only by rewriting the `LAG`-over-the-log query; semantics living
-in views or nowhere. Keeping it runnable next to the other seven is the
+in views or nowhere. Keeping it runnable next to the other eight is the
 cleanest answer to "what does modeling actually buy?"
 
 ## Shared engineering, deliberately
@@ -174,21 +189,28 @@ cleanest answer to "what does modeling actually buy?"
 The demos are comparable because the plumbing is identical wherever the
 model doesn't force a difference.
 
-- **Capture raw, then apply.** Every delivery is archived verbatim,
-  pre-dedup, to a durable append-only layer *before* any loader runs.
+- **Capture raw, then apply.** Every model except Data Vault archives each
+  delivery verbatim, pre-dedup, to a durable append-only layer *before* any
+  loader runs. (Data Vault's insert-only raw vault is its history; its
+  delivery files are the only replayable input.)
   The triggers have no unlock path. Re-archiving is `INSERT OR IGNORE`,
   and a reused delivery id with different content gets rejected.
-- **Ingest and replay share one code path** (`apply_delivery.sh`). A
-  green rebuild test proves the real loaders, not a parallel replay path.
+- **Ingest and replay share one code path** (`apply_delivery.sh`) in every
+  model that replays. A green rebuild test proves the real loaders, not a
+  parallel replay path. OBT has nothing to replay (rebuild is one full
+  refresh over the log).
 - **Load control.** A delivery is marked `COMPLETE` only after every
   loader succeeds. A crash leaves it retryable, with the staged rows in
   place as forensics. Success leaves the stage blank.
 - **`make clean` never touches the durable layer.** Destroying raw
-  history takes the explicit `clean-archive` or `clean-psa` target.
-- **Mutation-tested suites** (Focal 83+33, USS 113, HOOK 99, DV 77,
-  Kimball 72, Anchor 72, Inmon 64, OBT 55 assertions). I broke the FULL-absence guard, the
+  history takes the explicit `clean-archive` target. (Data Vault has no
+  separate durable layer: `make clean` deletes the vault, and `make demo`
+  rebuilds it from the delivery files.)
+- **Mutation-tested suites** (Focal 83+33, Activity 123, USS 113, HOOK 99,
+  DV 77, Kimball 72, Anchor 72, Inmon 64, OBT 55 assertions). I broke the FULL-absence guard, the
   replay ordering, the dedup tiebreaks, the restatement and idempotence
-  guards, the tie guards, and the OBT refresh on purpose, to prove the
+  guards, the tie guards, the OBT refresh, and the activity loader's
+  event-time and immutability guarantees on purpose, to prove the
   tests fail when they should. A green suite you haven't broken is a
   hypothesis.
 - **Known gaps are executable, not just documented.** Focal's
@@ -196,9 +218,16 @@ model doesn't force a difference.
   that print the suggested fix — and flip the suite red the moment the
   fix lands. See [`v3_focal-point/FOCALPOINT.md`](v3_focal-point/FOCALPOINT.md), "Known gap".
 - **Byte-identical delivery files, pairwise.** DV, Kimball, Inmon, HOOK,
-  USS, and OBT share the wide restatement; Focal and Anchor share the narrow
-  key-value originals. One logical corpus, two physical shapes, eight
-  consumers.
+  USS, Activity Schema and OBT share the wide restatement; Focal and Anchor
+  share the narrow key-value originals. One logical corpus, two physical
+  shapes, nine consumers.
+- **Archives aligned by shape.** The six wide-shape archives (Inmon,
+  Kimball, HOOK, USS, Activity Schema, OBT) share one layout (`loaded_files` + `hist_*`)
+  and the archive files in the repo are byte-identical. Focal and Anchor
+  share the narrow `source_landing_history` layout. No archive carries
+  secondary indexes; at this data volume they add nothing. Re-running
+  `make demo` re-stamps the `loaded_at`/`archived_at` columns, so a fresh
+  archive matches its siblings in everything except those timestamps.
 
 ## Requirements
 

@@ -65,9 +65,6 @@ CREATE TABLE IF NOT EXISTS source_landing_history (
     PRIMARY KEY (file_id, seq_nbr)
 );
 
-CREATE INDEX IF NOT EXISTS ix_slh_replay ON source_landing_history(load_seq);
-CREATE INDEX IF NOT EXISTS ix_slh_feed   ON source_landing_history(source_system, source_entity);
-
 -- Append-only, enforced. Not a comment: a trigger, with no way around it.
 -- Note INSERT OR IGNORE does NOT fire this (unlike INSERT OR REPLACE),
 -- which is what makes re-archiving a retried delivery a safe no-op.

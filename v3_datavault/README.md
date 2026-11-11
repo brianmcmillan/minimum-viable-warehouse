@@ -22,10 +22,19 @@ of shell and SQL, following the DV101 Baseline conventions (source → stage L1 
   status-tracking satellite, not inferred. "Which customer does this order belong to now?" is answered
   by an effectivity satellite over an insert-only link that keeps every pairing it ever saw.
 
-> This is one of a pair of parallel demos. A sibling project models the **same six deliveries** as a
-> metadata-driven [Focal Point](../v3_focal-point) warehouse, and both test suites assert the same
-> outcomes — so every structural difference is the model, not the data. That comparison lives in
-> [DATAVAULT.md](DATAVAULT.md); this README stands on its own.
+> **Part of a nine-model comparison set.** This is the vault leg. The same
+> six logical deliveries run through nine warehouses
+> ([Inmon 3NF EDW](../v3_inmon-3nf), [Kimball star](../v3_data-marts), this
+> Data Vault 2.0, [Focal Point](../v3_focal-point), [Anchor](../v3_anchor),
+> [HOOK](../v3_hook), [Unified Star Schema](../v3_unified-star-schema),
+> [Activity Schema](../v3_activity-schema), and
+> [One Big Table](../v3_one-big-table)), so every difference between them is
+> the *model*, never the input. This model takes the wide,
+> one-row-per-record restatement shared byte-for-byte by Inmon, Kimball,
+> Data Vault, HOOK, USS, Activity Schema and OBT. It is the one model with
+> no separate archive: the insert-only raw vault is its history, and the
+> delivery files are its only replayable input. **This README stands on its
+> own;** [DATAVAULT.md](DATAVAULT.md) draws the cross-model comparison.
 
 ---
 

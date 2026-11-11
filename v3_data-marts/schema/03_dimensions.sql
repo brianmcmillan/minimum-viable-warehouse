@@ -14,7 +14,7 @@
 --
 -- Surrogate keys are INTEGER PRIMARY KEY (rowid). Loader inserts carry
 -- ORDER BY <business key>, and SQLite assigns rowids in that order, so
--- ordered PSA replay reproduces every surrogate key -- the same
+-- ordered archive replay reproduces every surrogate key -- the same
 -- determinism argument, and the same proof obligation, as the Focal
 -- archive.
 --
@@ -86,7 +86,7 @@ FROM d;
 -- The P->PENDING translation as a SEEDED DIMENSION rather than ingest
 -- logic: the fact stores the raw source code's key; the label lives
 -- here. Change a label and every fact -- past and future -- reads the
--- new one; and because the PSA retains the raw codes, `make rebuild`
+-- new one; and because the archive retains the raw codes, `make rebuild`
 -- re-derives cleanly if the mapping itself is restructured.
 CREATE TABLE dim_order_status (
     status_key  INTEGER PRIMARY KEY,

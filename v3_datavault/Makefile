@@ -1,6 +1,7 @@
 # Data Vault 2.0 on SQLite (natural-key variant). Requires bash, make, sqlite3.
-# Parallel demo to ../v3_focal-point: same deliveries, same tests,
-# different warehouse model.
+# Vault leg of the model-comparison set: same wide deliveries as
+# ../v3_data-marts, ../v3_inmon-3nf, ../v3_hook, ../v3_unified-star-schema
+# and ../v3_one-big-table; same logical scenario and tests as ../v3_focal-point.
 SQLITE ?= sqlite3
 DB     ?= build/datavault.db
 export SQLITE
