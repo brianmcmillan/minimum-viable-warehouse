@@ -2,51 +2,60 @@
 
 Nov 9, 2026 · @Brian
 
-## Eight warehouses, one answer
+## I ran the experiment
 
-I built eight data warehouses on the same six load files: Inmon 3NF, a Kimball star, Data Vault 2.0, Focal Point, Anchor, HOOK, a Unified Star Schema and One Big Table. They all land in the same place. C001 is alive with alice@newmail.com, C002 and C003 are deleted, and SKU-3 is discontinued. (Focal still lists the deleted customers as ghost rows, and I kept that gap in its test suite on purpose.)
+Data-modeling debates never end because nobody runs the experiment. So I ran it. [minimum-viable-warehouse](https://github.com/brianmcmillan/minimum-viable-warehouse) holds ten complete, working warehouses: an Inmon-style 3NF EDW, a Kimball star, Data Vault 2.0, Focal Point, an Anchor Modeling constellation, HOOK, a Unified Star Schema, an Activity Schema, a metrics mart and One Big Table (no model at all). All ten take the same six load files, enforce the same load semantics and return the same answers. Each one is SQLite, bash and Make, and the sqlite3 that ships with macOS is enough.
 
-So the modeling argument was never about getting the right answer. Any of these can get there with SQLite, bash and a Makefile.
+Any of these models gets the right answer, so correctness can't be what the debate is about. I wrote six pieces to work out what it is about. This post is the map.
 
-What the models really disagree about is people. Each one decides when your organization has to agree on what the data means, and which team does the work of agreeing. That's an org chart decision wearing a schema.
+## The models differ in who has to agree, and when
 
-## Agreement happens before the load, at the edge, or on read
+[One dataset, ten warehouses](../README.md) is the experiment itself: the shared scenario, the one delete rule all ten enforce, and what each model is best at showing.
 
-Every model puts the hard conversation (what is a customer, what does `'P'` mean) somewhere in the pipeline. I count three places.
+One of the ten is personal. The metrics mart is the one model whose development and deployment I was part of. It ran as an Enterprise Data Warehouse, collecting server performance, automated call distribution and support ticketing data for service level management reporting. It keeps every number as a dated sample and overwrites everything else.
 
-The first is before the load. Inmon conforms at ingest, so the EDW stores `PENDING` and the raw `'P'` survives only in the archive. Focal translates on the way in through `meta_value_map`. Anchor's knots are closed domains, which means an order status nobody has defined fails the load outright. This works when someone has the authority to make a definition stick. It hurts when they change their mind: in my Inmon build a live rule change can't touch rows already stored, and the only way back is a full rebuild from the archive.
+Every model puts the hard conversation (what is a customer, what does `'P'` mean) somewhere in the pipeline. Inmon, Focal, Anchor and the metrics mart settle it before the load. Kimball and the Unified Star Schema settle it at the edge, where data meets its consumers. Data Vault, HOOK, the Activity Schema and One Big Table leave it until read time.
 
-The second is at the edge, where data meets its consumers. Kimball negotiates conformed dimensions per business process, a much smaller agreement than an enterprise model. The Unified Star Schema spends its design effort on the bridge so self-service users can't double-count. In my demo the naive orders-to-lines join sums to 78.48 when the real total is 48.99.
+Every model also picks a bottleneck. Inmon puts it on the central modeling team, Kimball on whoever governs the conformed dimensions, Data Vault and Anchor on the automation team, Focal on the metadata stewards. In One Big Table every consumer is supposed to rewrite the same history query correctly, every time. *(They won't.)*
 
-The third is on read. Data Vault stores the raw `'P'` and decodes it in the mart views. HOOK asks for a glossary of business concepts and the key sets that say which system issued each key, and nothing more. One Big Table asks for nothing at all. These suit organizations where agreement isn't going to happen. But they don't remove the semantic work. They hand it to whoever builds downstream.
+So the useful question isn't which model is best. It's which team in your organization has the authority and the skills to carry the bottleneck.
 
-## What each model makes you agree on, and who pays
+## Your operating model should pick the warehouse
 
-| Model | Built for this problem | Agreed before loading | Who carries the cost |
-| --- | --- | --- | --- |
-| Inmon 3NF | Every department has its own version of the business | The whole entity model and its cleansing rules | The central EDW team, through change control and `ALTER TABLE` on populated history |
-| Kimball | Users can't get answers and warehouse projects never finish | Conformed dimensions across business processes | Dimension governance. Audit moves to the PSA, because facts update in place |
-| Data Vault 2.0 | Many sources, contested definitions, auditors | Business keys only | The business vault and mart builders, plus whoever writes the code generator |
-| Focal Point | Every new attribute waits on a DDL and ETL release | The concept model and value mappings | Metadata stewards. Every read pivots, and a rule change needs a rebuild |
-| Anchor | The model keeps changing and history can't break | Every attribute, with closed domains for codes | The generator team: 24 tables for what Focal holds in 4 |
-| HOOK | Upfront modeling is too slow | A concept glossary and key sets | View authors. Key mapping is deferred, and frames follow source shapes |
-| Unified Star Schema | Self-service users get wrong totals | The bridge: stages, directions, loops | The bridge designers. History belongs to some other layer |
-| One Big Table | Modeling costs more than it returns | Nothing | Every consumer, who rewrites the history query each time |
+Most teams choose a model by taste. *Choose your warehouse model by your operating model* uses the 2×2 from Ross, Weill and Robertson's *Enterprise Architecture as Strategy* instead. Its two axes line up with the two capabilities these models differ on. Integration is identity: can the warehouse produce one customer across systems? Standardization, inverted, is schema evolution: what does a new attribute cost?
 
-Each row comes from that model's design notes in [minimum-viable-warehouse](https://github.com/brianmcmillan/minimum-viable-warehouse). Run `make test` in any directory to check my claims.
+The quadrant errors are expensive and they don't show up at build time. Data Vault in a holding company is integration machinery with nothing to integrate. One Big Table in a firm whose units share customers under-builds the one thing that matters. My own move from Data Vault to Focal Point turns out to have been a quadrant correction.
 
-## Every model picks a bottleneck
+## Every model is a way to postpone thinking
 
-Read the last column again. None of the eight gets rid of the bottleneck; each one moves it somewhere.
+*Warehouse models are stupidity buffers* reads the ten through Alvesson and Spicer's *The Stupidity Paradox*. Their point is that not-thinking is useful. It buys coordination and speed, and the cost lands later on people who weren't in the room.
 
-Inmon puts it on the central modeling team. Kimball puts it on whoever governs the conformed dimensions. Data Vault and Anchor put it on the automation team, because nobody hand-writes loaders for thirty entities. I know that one personally: the per-entity repetition in my Data Vault loaders is what pushed me to Focal Point in the first place. Focal moves it to whoever stewards the metadata. HOOK and One Big Table move it to the people writing views, and in OBT every consumer is supposed to rewrite the same history query correctly, every time. *(They won't.)*
+Each model cashes in on one kind of not-thinking and is spoiled by one kind. Data Vault lets you load without agreeing on meaning, and it decays when pattern compliance replaces the semantic work the deferral was supposed to buy time for. Kimball lives and dies by imitation. The Activity Schema gives you a stream of what customers did, which on snapshot feeds is a stream of what the extract noticed. The metrics mart remembers every number and forgets every description.
 
-So the useful question isn't which model is best. It's which team in your organization has the authority and the skills to carry the bottleneck. If the honest answer is nobody, pick a model that defers the decision, and say out loud that you're deferring it.
+The raw layer is what makes any of this survivable. Deferral without an archive is debt. Deferral with one is an option.
 
-## The experiment I haven't run yet
+## The market is tired for a good reason
 
-My repo has a weakness, and it's the one that matters most for this argument. Every entity has exactly one source. OMS already uses CRM's customer numbers, so HOOK's key-set mapping never fires, and I left out Data Vault's same-as links because nothing needed them. The eight warehouses agree on load mechanics. None of them has been asked to settle a disagreement.
+Ten very different architectures return identical answers. So the choice among them was never what stood between an organization and better decisions. *The exhausted market and the ten warehouses* argues that the market spent two decades buying positions on a menu that prices the cost of maintaining truth, while expecting decision improvements the menu doesn't sell.
 
-The next delivery should be a second CRM from an acquisition, with its own customer IDs and its own idea of what "active" means. Then count the files each model makes you touch, and note where in the pipeline it forces the decision.
+Count the directories in the repo. There are ten warehouses and no decision layer.
+
+## Agents make writing free and checking scarce
+
+An agent built these warehouses, their suites and these documents, and I directed and verified the work. *The agentic turn* covers what that changes. The labor argument against Data Vault and Anchor mostly dies. Agreement and accountability don't get any cheaper. And verification becomes the scarce activity: twice, mutation checks caught the agent's own tests passing for the wrong reason.
+
+The models also differ in how well they keep an agent from making things up. Ask what `status='P'` means over One Big Table and a fluent consumer invents an answer. Over Anchor, the knot answers.
+
+## The missing layer has older names
+
+*What wants to emerge* goes looking outside the data world for the decision layer none of the ten directories contains. It climbs from statistical process control through cybernetics, Boyd's OODA loop and high-reliability organizations to stranger places. The traditions agree on loops, on sorting signal from noise, and on keeping the cost of having been wrong low. In this repo that cost has a stopwatch on it. It's `make rebuild`.
+
+One input to that layer does exist. The metrics mart has a calendar of planned events, and it can show that a price fell during a promotion. A chart needs to know that before it calls the change a signal.
+
+## What I haven't run yet
+
+Every entity in the repo has exactly one source, so the identity machinery that separates these models never fires. The next delivery should be a second CRM from an acquisition, with its own customer IDs and its own idea of what "active" means. *What to build next* ranks that and seventeen other additions by how well they would tell the models apart.
+
+Until then, run it yourself. You need bash, make and sqlite3. Start with the model you already believe in, run its suite, then run its rival's.
 
 If you've lived through that merger in production, tell me which model survived it and which team ended up holding the bag.

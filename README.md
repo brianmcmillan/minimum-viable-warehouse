@@ -1,15 +1,16 @@
-# One dataset, nine warehouses
+# One dataset, ten warehouses
 
 Data-modeling debates never end because nobody runs the experiment. So I
-ran it. This repo holds nine complete, working warehouses — an Inmon-style
+ran it. This repo holds ten complete, working warehouses — an Inmon-style
 3NF EDW, a Kimball star, Data Vault 2.0, Focal Point, an Anchor Modeling
-constellation, HOOK, a Unified Star Schema, an Activity Schema, and One Big
-Table (no model at all) — fed the same six load files, enforcing the same load semantics,
-and returning the same answers. The only difference between them is the model.
+constellation, HOOK, a Unified Star Schema, an Activity Schema, a metrics
+mart, and One Big Table (no model at all) — fed the same six load files,
+enforcing the same load semantics, and returning the same answers. The only difference between them is the model.
 
 Together they span the whole argument: no model → normalize → dimensional
 → vault → hooks-only → attribute-grain, generic vs typed → activities
-instead of entities — plus a presentation layer that makes any join safe.
+instead of entities → measurements as rows — plus a presentation layer
+that makes any join safe.
 
 Each one is native SQLite, bash, and Make. No Python, no packages, no
 server. The sqlite3 that ships with macOS is enough.
@@ -23,6 +24,7 @@ cd v3_anchor                && make demo && make test   # Anchor Modeling
 cd v3_hook                  && make demo && make test   # HOOK
 cd v3_unified-star-schema   && make demo && make test   # Unified Star Schema
 cd v3_activity-schema       && make demo && make test   # Activity Schema
+cd v3_metrics-mart          && make demo && make test   # Metrics mart (3NF snowflake)
 cd v3_one-big-table         && make demo && make test   # One Big Table (null hypothesis)
 ```
 
@@ -36,6 +38,7 @@ cd v3_one-big-table         && make demo && make test   # One Big Table (null hy
 | [`v3_hook/`](v3_hook/README.md) | [HOOK](v3_hook/HOOK.md) (frames + key-set-qualified hooks, no hubs or links) | `build/hook.db` | `archive/hook_archive.db` |
 | [`v3_unified-star-schema/`](v3_unified-star-schema/README.md) | [Unified Star Schema](v3_unified-star-schema/USS.md) (Puppini bridge over an insert-only core) | `build/uss.db` | `archive/uss_archive.db` |
 | [`v3_activity-schema/`](v3_activity-schema/README.md) | [Activity Schema](v3_activity-schema/ACTIVITY.md) (2.0: activity streams + temporal joins) | `build/activity.db` | `archive/activity_archive.db` |
+| [`v3_metrics-mart/`](v3_metrics-mart/README.md) | [Metrics mart](v3_metrics-mart/METRICSMART.md) (3NF snowflake: resources, metric samples, calendar) | `build/metrics.db` | `archive/metrics_archive.db` |
 | [`v3_one-big-table/`](v3_one-big-table/README.md) | [One Big Table](v3_one-big-table/OBT.md) (full-refresh over the log) | `build/obt.db` | `archive/obt_archive.db` — **is** the warehouse |
 
 ## The shared scenario
@@ -54,14 +57,14 @@ re-sent files, and periodic full snapshots.
 | — | D1 re-sent under the same delivery id | — | load control skips it |
 | D5 | CRM yearly reconciliation: only C001 remains | FULL | the safety net that catches unannounced deletes |
 
-All nine enforce one rule, and it is the rule that separates working
+All ten enforce one rule, and it is the rule that separates working
 incremental pipelines from quiet data loss:
 
 > **Absence means DELETE only for a FULL delivery.** An INCREMENTAL
 > delivery never infers a delete from absence. Deletes arrive as explicit
 > tombstones, or a later FULL reconciliation finds them.
 
-And all nine converge on the same end state:
+And all ten converge on the same end state:
 
 ```
 inmon   : C001(alice@newmail.com)
@@ -72,6 +75,7 @@ anchor  : C001(alice@newmail.com)
 hook    : C001(alice@newmail.com)
 uss     : C001(alice@newmail.com)
 activity: C001(alice@newmail.com)
+metrics : C001(alice@newmail.com)
 obt     : C001(alice@newmail.com)
 ```
 
@@ -160,6 +164,23 @@ so the loader diffs each one against current state to manufacture events,
 most changes can only be stamped when they were *observed*, and the spec is
 silent on deletes, so the shared rule supplies them.
 
+**Metrics mart: numbers get history, descriptions don't.** The one model
+here whose development and deployment I was part of. It ran as an
+Enterprise Data Warehouse, collecting server performance, automated call
+distribution and support ticketing data for service level management
+reporting. It is 3NF with its codes snowflaked out, and it has two kinds
+of table: `RES` holds every resource of every type, and `METRIC_SAMPLE`
+holds one observation per resource, metric, provider and moment. Price and
+amount are not columns anywhere. SKU-1's price history is two samples, and
+a new metric is a row with no DDL. `RES_ALIAS` resolves whatever a provider
+calls a resource to one `res_id`. It is also the only demo with a calendar:
+planned events attach to groups of resources, so a sample can be read next
+to what was planned that day. It loads the narrow files Focal and Anchor
+share, then a calendar delivery of its own. The bill: `RES` is current
+state, so a changed email or a re-pointed order overwrites the old value
+and only the archive remembers it, and anything that isn't a number needs
+a column first.
+
 ## The bookends
 
 **Inmon 3NF: the control group.** The design every other leg reacts to. A
@@ -181,7 +202,7 @@ a tombstone or a later FULL snapshot omitted it) — and rebuild is trivial
 because nothing is incremental. The bill is asserted, not hinted: no
 NOCHANGE suppression, so unchanged snapshots get stored again forever;
 history only by rewriting the `LAG`-over-the-log query; semantics living
-in views or nowhere. Keeping it runnable next to the other eight is the
+in views or nowhere. Keeping it runnable next to the other nine is the
 cleanest answer to "what does modeling actually buy?"
 
 ## Shared engineering, deliberately
@@ -206,11 +227,13 @@ model doesn't force a difference.
   history takes the explicit `clean-archive` target. (Data Vault has no
   separate durable layer: `make clean` deletes the vault, and `make demo`
   rebuilds it from the delivery files.)
-- **Mutation-tested suites** (Focal 83+33, Activity 123, USS 113, HOOK 99,
-  DV 77, Kimball 72, Anchor 72, Inmon 64, OBT 55 assertions). I broke the FULL-absence guard, the
-  replay ordering, the dedup tiebreaks, the restatement and idempotence
-  guards, the tie guards, the OBT refresh, and the activity loader's
-  event-time and immutability guarantees on purpose, to prove the
+- **Mutation-tested suites** (Metrics mart 220, Activity 123, Focal 83+33,
+  USS 113, HOOK 99, DV 77, Kimball 72, Anchor 72, Inmon 64, OBT 55
+  assertions). I broke the FULL-absence guard, the replay ordering, the
+  dedup tiebreaks, the restatement and idempotence guards, the tie guards,
+  the OBT refresh, the activity loader's event-time and immutability
+  guarantees, and the metrics mart's calendar inheritance on purpose, to
+  prove the
   tests fail when they should. A green suite you haven't broken is a
   hypothesis.
 - **Known gaps are executable, not just documented.** Focal's
@@ -218,13 +241,13 @@ model doesn't force a difference.
   that print the suggested fix — and flip the suite red the moment the
   fix lands. See [`v3_focal-point/FOCALPOINT.md`](v3_focal-point/FOCALPOINT.md), "Known gap".
 - **Byte-identical delivery files, pairwise.** DV, Kimball, Inmon, HOOK,
-  USS, Activity Schema and OBT share the wide restatement; Focal and Anchor
-  share the narrow key-value originals. One logical corpus, two physical
-  shapes, nine consumers.
+  USS, Activity Schema and OBT share the wide restatement; Focal, Anchor
+  and the metrics mart share the narrow key-value originals. One logical
+  corpus, two physical shapes, ten consumers.
 - **Archives aligned by shape.** The six wide-shape archives (Inmon,
   Kimball, HOOK, USS, Activity Schema, OBT) share one layout (`loaded_files` + `hist_*`)
-  and the archive files in the repo are byte-identical. Focal and Anchor
-  share the narrow `source_landing_history` layout. No archive carries
+  and the archive files in the repo are byte-identical. Focal, Anchor and
+  the metrics mart share the narrow `source_landing_history` layout. No archive carries
   secondary indexes; at this data volume they add nothing. Re-running
   `make demo` re-stamps the `loaded_at`/`archived_at` columns, so a fresh
   archive matches its siblings in everything except those timestamps.
