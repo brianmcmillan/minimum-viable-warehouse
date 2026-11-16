@@ -4,7 +4,8 @@
 #
 #   METRIC_SAMPLE  -> METRIC_SUMMARY ('D': one UTC day per resource,
 #                                     metric and provider)
-#   METRIC_SUMMARY -> METRIC_WEEKLY  (weeks start on Monday)
+#   METRIC_SUMMARY -> METRIC_WEEKLY  (weeks start on the Monday CALNDR
+#                                     gives for each day)
 #   METRIC_WEEKLY x RES_RESGRP -> GRP_METRIC_WEEKLY
 #
 # Each table is recomputed in full and then reconciled: a row that no
@@ -51,16 +52,22 @@ WHERE metric_summary.value IS NOT excluded.value
    OR metric_summary.value_min IS NOT excluded.value_min
    OR metric_summary.value_cnt IS NOT excluded.value_cnt;
 
--- date(d,'weekday 0','-6 days') is the Monday on or before d.
+-- The week of a day starts on the Monday CALNDR gives for it:
+-- day_of_week runs 1 (Monday) to 7, so step back day_of_week - 1 days.
+-- load_metrics.sh guarantees every sample day is in CALNDR.
 CREATE TEMP TABLE t_wk AS
-SELECT res_id, metric_id,
-       date(start_utc_ts, 'weekday 0', '-6 days') AS start_lcl_dt, provider_id,
-       MAX(res_tz_code) AS lcl_tz_code,
-       SUM(value * value_cnt) / SUM(value_cnt) AS value,
-       MAX(value_max) AS value_max, MIN(value_min) AS value_min,
-       SUM(value_cnt) AS value_cnt
-FROM metric_summary WHERE summary_level='D'
-GROUP BY res_id, metric_id, date(start_utc_ts, 'weekday 0', '-6 days'), provider_id;
+SELECT d.res_id, d.metric_id,
+       date(c.calndr_date, '-' || (c.day_of_week - 1) || ' days') AS start_lcl_dt,
+       d.provider_id,
+       MAX(d.res_tz_code) AS lcl_tz_code,
+       SUM(d.value * d.value_cnt) / SUM(d.value_cnt) AS value,
+       MAX(d.value_max) AS value_max, MIN(d.value_min) AS value_min,
+       SUM(d.value_cnt) AS value_cnt
+FROM metric_summary d
+JOIN calndr c ON c.calndr_date = date(d.start_utc_ts)
+WHERE d.summary_level='D'
+GROUP BY d.res_id, d.metric_id, date(c.calndr_date, '-' || (c.day_of_week - 1) || ' days'),
+         d.provider_id;
 
 DELETE FROM metric_weekly
 WHERE NOT EXISTS (SELECT 1 FROM t_wk t

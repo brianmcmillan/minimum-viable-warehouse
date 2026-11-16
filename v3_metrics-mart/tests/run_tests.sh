@@ -427,6 +427,26 @@ ck "  ...and rebuild resets both: the schema seed is the source of truth" \
    "$(q "SELECT (SELECT DISTINCT status FROM v_order WHERE order_ref='O-100')||'/'||(SELECT COUNT(*) FROM metric)")" "PENDING/2"
 
 
+echo; echo "== Weeks come from CALNDR =="
+ck "weeks: every week start is a Monday in CALNDR" \
+   "$(q "SELECT COUNT(*) FROM metric_weekly w LEFT JOIN calndr c ON c.calndr_date = w.start_lcl_dt
+         WHERE c.day_of_week IS NOT 1")" "0"
+cat > "$LOGDIR/outside.sql" <<'SQL'
+INSERT INTO source_landing_stage(source_system,source_entity,business_key,attribute_name,value_str,value_num,value_ts,extract_ts,op,load_mode) VALUES
+('PIM','PRODUCT','SKU-1','price',NULL,7.99,NULL,'2028-01-10','UPSERT','INCREMENTAL');
+SQL
+samples_before="$(q "SELECT COUNT(*) FROM metric_sample")"
+out="$(BATCH_TS='2028-01-10 08:00:00' "$PROJ/scripts/load_feed.sh" "$LOGDIR/outside.sql" DC 2>&1)"; rc=$?
+q "DELETE FROM source_landing_stage;" >/dev/null
+ck "weeks: a sample dated outside CALNDR fails the load" \
+   "$([ "$rc" -ne 0 ] && echo rejected || echo accepted)" "rejected"
+ck "  ...and no sample was written" "$(q "SELECT COUNT(*) FROM metric_sample")" "$samples_before"
+q "UPDATE calndr SET day_of_week = 1 WHERE calndr_date = '2026-02-05';" >/dev/null
+BATCH_TS='2028-02-01 08:00:00' "$PROJ/scripts/refresh_aggregates.sh" >/dev/null 2>&1
+ck "weeks: the week start comes from CALNDR, not from a date function" \
+   "$(q "SELECT n_wk || '/' || (n_wk = n_day AND n_day > 0) FROM
+         (SELECT (SELECT COUNT(*) FROM metric_weekly WHERE start_lcl_dt = '2026-02-05') AS n_wk,
+                 (SELECT COUNT(*) FROM metric_summary WHERE date(start_utc_ts) = '2026-02-05') AS n_day)" | cut -d/ -f2)" "1"
 echo; echo "====================================================================="
 printf "  RESULT: %d passed, %d failed\n" "$PASS" "$FAIL"
 echo "====================================================================="

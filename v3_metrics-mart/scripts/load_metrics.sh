@@ -6,7 +6,8 @@
 # METRIC_STG carries names (res_type + res_alias, metric_code,
 # provider_name). METRIC_STG2 is the same rows with every name resolved
 # to its surrogate: res_id through RES_ALIAS, metric_id, provider_id.
-# A row that does not resolve fails the load.
+# A row that does not resolve fails the load, and so does a sample
+# dated outside CALNDR.
 #
 # A sample is an OBSERVATION. The same value seen again at a later time
 # is a new sample, and that is not a restatement to suppress: it is what
@@ -36,6 +37,14 @@ LEFT JOIN provider p  ON p.provider_name=s.provider_name;
 INSERT INTO load_guard(rule, violations)
 SELECT 'METRIC_STG row with an unresolved resource, metric or provider', COUNT(*)
 FROM metric_stg2 WHERE res_id IS NULL OR metric_id IS NULL OR provider_id IS NULL;
+
+-- Weeks come from CALNDR, so a sample dated outside it would drop out of
+-- every weekly rollup. Fail the load instead.
+INSERT INTO load_guard(rule, violations)
+SELECT 'metric sample dated outside CALNDR', COUNT(*)
+FROM metric_stg2 s
+WHERE s.summary_level IS NULL AND s.value IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM calndr c WHERE c.calndr_date = date(s.start_utc_ts));
 
 INSERT INTO metric_sample(res_id, metric_id, sample_utc_ts, provider_id, value,
                           res_tz_code, sample_lcl_ts, srcd_d2k)

@@ -64,7 +64,7 @@ network.
 ```bash
 make demo          # fresh archive + schema + the full 6-delivery sequence, then print the mart
 make rebuild       # delete the mart; replay the raw layer to rebuild it
-make test          # 172 assertions: delete semantics, samples, aggregates, exact rebuild
+make test          # 176 assertions: delete semantics, samples, aggregates, exact rebuild
 make clean         # delete build/ only — the archive SURVIVES
 make clean-archive # delete archive/ — destroys the raw layer, and the ability to rebuild
 ```
@@ -226,7 +226,8 @@ were built and then removed to keep the ten demos like for like: no sibling
 model stores planned events. The tag `metrics-mart-with-calendar` has them,
 with the `CAL_EVT_GRP` table added for them, their loader, views and tests.
 `CALNDR`, one row per day for 2026 and 2027, stays as a standard day table,
-like `dim_date` in the Kimball demo.
+like `dim_date` in the Kimball demo, and the weekly rollups take their
+Monday from it.
 
 ### Added
 
@@ -278,7 +279,8 @@ used by both ingest and replay.
 4. **Groups** (`load_groups.sh`). Create groups from their paths, keep the
    type groups current and reconcile memberships.
 5. **Metrics** (`load_metrics.sh`). Resolve `METRIC_STG` into `METRIC_STG2`
-   and upsert `METRIC_SAMPLE`.
+   and upsert `METRIC_SAMPLE`. A sample dated outside `CALNDR` fails the
+   load.
 6. **Aggregates** (`refresh_aggregates.sh`). Recompute daily summaries,
    weeks and group weeks; touch only the rows whose numbers changed.
 
@@ -359,7 +361,7 @@ asserts the rebuilt mart is identical, down to each `res_id`, `provider_id`,
 |----------------------|-----------------------------------------------------------------------|
 | `make demo`          | fresh archive + schema + the full delivery sequence + printed mart    |
 | `make rebuild`       | regenerate the mart by replaying the raw layer                        |
-| `make test`          | run the test suite (172 assertions)                                   |
+| `make test`          | run the test suite (176 assertions)                                   |
 | `make init`          | recreate the mart database from schema (the archive survives)         |
 | `make clean`         | delete `build/` only — **the archive survives**                       |
 | `make clean-archive` | delete `archive/` — destroys the raw layer and the ability to rebuild |
@@ -394,7 +396,7 @@ asserts the rebuilt mart is identical, down to each `res_id`, `provider_id`,
 │   └── query.sh              # print the mart
 ├── source/                   # D0–D5, byte-identical with the Focal and Anchor demos
 ├── tests/
-│   ├── run_tests.sh          # 172 assertions
+│   ├── run_tests.sh          # 176 assertions
 │   └── fixtures/
 │       ├── d6_tiebreak.sql           # same-extract tiebreak (identical to Anchor's)
 │       ├── d7_repoint.sql            # O-101 re-pointed to C001 (identical to Anchor's)
@@ -413,7 +415,7 @@ asserts the rebuilt mart is identical, down to each `res_id`, `provider_id`,
 make test
 ```
 
-**172 assertions**, pure shell + `sqlite3`, covering:
+**176 assertions**, pure shell + `sqlite3`, covering:
 
 - **Delete semantics** — the stale-window trap, FULL-absence deletes,
   tombstones, recency dedup, load control, a rejected re-use of a
@@ -426,7 +428,8 @@ make test
   overwriting its sample, and a one-attribute delivery leaving every other
   attribute alone.
 - **Groups and aggregates** — groups built from paths, membership deletes by
-  tombstone and by FULL absence, Monday weeks, a week averaging two samples,
+  tombstone and by FULL absence, Monday weeks taken from `CALNDR`, a sample dated outside it rejected,
+  a week averaging two samples,
   and aggregate rows restamped only when their numbers change.
 - **Constraints** — an unknown order status rejected by its foreign key with
   the whole step rolled back, a parent pairing missing from `RES_TYPE_REL`
@@ -464,6 +467,8 @@ See [METRICSMART.md](METRICSMART.md) for the mutation checks.
 - **Type groups cost rows.** Every resource is a member of its
   `/TYPE/<res_type>` group, and `GRP_METRIC_WEEKLY` carries a row per
   resource per type group per week. That is also a rollup by type for free.
+- **The calendar ends.** `CALNDR` covers 2026 and 2027. A sample dated
+  outside it fails the load until the table is extended.
 - **Stubs can be wrong.** Auto-creating a parent keeps the load moving and
   puts a resource in the mart that no owning feed has confirmed. A FULL
   reconciliation from that feed will delete it.

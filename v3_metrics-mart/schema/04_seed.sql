@@ -56,7 +56,8 @@ INSERT INTO meta_attribute_map(source_system, source_entity, source_attribute, t
 
 -- ------------------------------ CALENDAR ------------------------------
 
--- CALNDR covers 2026 and 2027.
+-- CALNDR covers 2026 and 2027. The weekly rollups take their Monday from
+-- it, and a sample dated outside it fails the load.
 INSERT INTO calndr(calndr_date, day_of_week, occur_of_month, last_occur_flag,
                    day_of_month, month_end_flag, week_of_year, month, year, srcd_ts)
 WITH RECURSIVE d(dt) AS (

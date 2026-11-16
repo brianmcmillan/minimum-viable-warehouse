@@ -15,7 +15,7 @@ Same narrow deliveries as the Focal Point and Anchor demos, byte-identical.
 ```bash
 make demo     # fresh archive + the full delivery sequence + views
 make rebuild  # regenerate the mart by replaying the raw layer
-make test     # 172 assertions, mutation-checked
+make test     # 176 assertions, mutation-checked
 ```
 
 ## Review of the diagrams
@@ -97,7 +97,7 @@ dedup key.
 | aggregates | `METRIC_SUMMARY`, `METRIC_WEEKLY`, `GRP_METRIC_WEEKLY` | derived after every delivery; only rows whose numbers changed are touched |
 | raw retention | not covered | a separate verbatim archive, the only history of descriptors |
 | business rules | code tables | `ORDER_STATUS` closed (unknown code fails the load), `CURRENCY` open (the load adds codes), both decoded on read |
-| calendar | `CALNDR`, `CAL_EVT_TYPE`, `CALNDR_EVENT` | `CALNDR` only, seeded for 2026-2027; the event tables are not built (tag `metrics-mart-with-calendar`) |
+| calendar | `CALNDR`, `CAL_EVT_TYPE`, `CALNDR_EVENT` | `CALNDR` only, seeded for 2026-2027 and used for week boundaries; the event tables are not built (tag `metrics-mart-with-calendar`) |
 | time zones | `TIME_ZONE`, `TZ_CODE` | not built; everything is UTC |
 
 ## The same events, compared
@@ -151,7 +151,7 @@ resources and joined to the samples taken while they were in effect. No
 sibling model stores planned events, so the feature made this mart harder to
 compare with the other nine, and it was removed. The tag
 `metrics-mart-with-calendar` keeps it, with its tests. `CALNDR`, the day
-table, stays.
+table, stays and sets the week boundaries for the weekly rollups.
 
 ## What it costs
 
@@ -211,5 +211,5 @@ scripts/load_res.sh            resources, aliases, parents, subtype columns
 scripts/load_groups.sh         groups, type groups and memberships
 scripts/load_metrics.sh        METRIC_STG -> METRIC_STG2 -> METRIC_SAMPLE
 scripts/refresh_aggregates.sh  summaries, weeks, group weeks
-tests/run_tests.sh             172 assertions
+tests/run_tests.sh             176 assertions
 ```
