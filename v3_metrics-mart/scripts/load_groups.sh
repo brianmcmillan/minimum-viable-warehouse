@@ -10,8 +10,8 @@
 #   * feed groups, from RES_RESGRP_STG (an order's products are the
 #     members of /ORDER/<order_ref>);
 #   * type groups, /TYPE/<res_type>, one per resource type, holding
-#     every resource of that type. They exist so a calendar event can
-#     target a whole type through RES_GRP like any other group.
+#     every resource of that type. They give every metric a rollup by
+#     type in GRP_METRIC_WEEKLY.
 #
 # RES_RESGRP has no status column, so a feed membership that ends is a
 # physical DELETE, under the same rule as everything else: a tombstone

@@ -35,8 +35,7 @@ INSERT INTO meta_feed_map(source_system, source_entity, role, res_type,
  ('PIM','PRODUCT',   'RES',   'PRODUCT', NULL,NULL,NULL,NULL),
  ('OMS','ORDER',     'RES',   'ORDER',   NULL,NULL,NULL,NULL),
  -- An order line puts a product in the order's group: /ORDER/<order_ref>.
- ('OMS','ORDER_LINE','MEMBER',NULL,'/ORDER','order_ref','sku','PRODUCT'),
- ('OPS','CALNDR_EVENT','EVENT', NULL,NULL,NULL,NULL,NULL);
+ ('OMS','ORDER_LINE','MEMBER',NULL,'/ORDER','order_ref','sku','PRODUCT');
 
 INSERT INTO meta_attribute_map(source_system, source_entity, source_attribute, target_kind,
         target_table, target_col, slot, ref_table, ref_col, ref_open, parent_res_type, metric_code) VALUES
@@ -57,14 +56,7 @@ INSERT INTO meta_attribute_map(source_system, source_entity, source_attribute, t
 
 -- ------------------------------ CALENDAR ------------------------------
 
-INSERT INTO cal_evt_type(cal_evt_type, cal_evt_type_desc, srcd_ts) VALUES
- ('HOLIDAY',    'Public holiday',                    '2026-01-01 00:00:00'),
- ('MAINTENANCE','Planned maintenance window',        '2026-01-01 00:00:00'),
- ('BLACKOUT',   'Change freeze',                     '2026-01-01 00:00:00'),
- ('REVIEW',     'Scheduled review',                  '2026-01-01 00:00:00'),
- ('PROMOTION',  'Sales promotion',                   '2026-01-01 00:00:00');
-
--- CALNDR covers 2026 and 2027. Recurring events expand only inside it.
+-- CALNDR covers 2026 and 2027.
 INSERT INTO calndr(calndr_date, day_of_week, occur_of_month, last_occur_flag,
                    day_of_month, month_end_flag, week_of_year, month, year, srcd_ts)
 WITH RECURSIVE d(dt) AS (
@@ -80,24 +72,3 @@ SELECT dt,
        CAST(strftime('%Y',dt) AS INTEGER),
        '2026-01-01 00:00:00'
 FROM d;
-
-INSERT INTO meta_attribute_map(source_system, source_entity, source_attribute, target_kind,
-        target_table, target_col, slot) VALUES
- ('OPS','CALNDR_EVENT','event_code',      'KEY',      NULL,NULL,NULL),
- ('OPS','CALNDR_EVENT','group_path',      'EVENT_COL','calndr_event_stg','group_path',      'value_str'),
- ('OPS','CALNDR_EVENT','event_grp',       'EVENT_COL','calndr_event_stg','event_grp_code',  'value_str'),
- ('OPS','CALNDR_EVENT','cal_evt_type',    'EVENT_COL','calndr_event_stg','cal_evt_type',    'value_str'),
- ('OPS','CALNDR_EVENT','inheritance_flag','EVENT_COL','calndr_event_stg','inheritance_flag','value_num'),
- ('OPS','CALNDR_EVENT','event_start_dt',  'EVENT_COL','calndr_event_stg','event_start_dt',  'value_ts'),
- ('OPS','CALNDR_EVENT','event_start_tm',  'EVENT_COL','calndr_event_stg','event_start_tm',  'value_str'),
- ('OPS','CALNDR_EVENT','duration',        'EVENT_COL','calndr_event_stg','duration',        'value_num'),
- ('OPS','CALNDR_EVENT','active_start_dt', 'EVENT_COL','calndr_event_stg','active_start_dt', 'value_ts'),
- ('OPS','CALNDR_EVENT','active_end_dt',   'EVENT_COL','calndr_event_stg','active_end_dt',   'value_ts'),
- ('OPS','CALNDR_EVENT','days_of_week',    'EVENT_COL','calndr_event_stg','days_of_week',    'value_str'),
- ('OPS','CALNDR_EVENT','occurs_of_month', 'EVENT_COL','calndr_event_stg','occurs_of_month', 'value_str'),
- ('OPS','CALNDR_EVENT','days_of_month',   'EVENT_COL','calndr_event_stg','days_of_month',   'value_str'),
- ('OPS','CALNDR_EVENT','month_end_flag',  'EVENT_COL','calndr_event_stg','month_end_flag',  'value_num'),
- ('OPS','CALNDR_EVENT','months',          'EVENT_COL','calndr_event_stg','months',          'value_str'),
- ('OPS','CALNDR_EVENT','year',            'EVENT_COL','calndr_event_stg','year',            'value_num'),
- ('OPS','CALNDR_EVENT','entered_by',      'EVENT_COL','calndr_event_stg','entered_by',      'value_str'),
- ('OPS','CALNDR_EVENT','event_desc',      'EVENT_COL','calndr_event_stg','event_desc',      'value_str');

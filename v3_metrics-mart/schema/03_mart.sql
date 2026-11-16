@@ -6,13 +6,12 @@
 -- SQLite maps them to its own affinities.
 --
 -- Built:      staging, resource, metric, provider, group, aggregation
---             and calendar tables.
+--             tables, and the CALNDR day table.
 -- Not built:  TIME_ZONE, TZ_CODE, COUNTRY and RAW_RES_TYPE. They are
 --             extensions to the model. Every *_tz_code is 'UTC'.
--- Changed:    CALNDR_EVENT and its staging table target a RES_GRP
---             (res_grp_id / group_path) instead of res_type + res_code,
---             and carry an event_code business key. See the calendar
---             section at the end of this file.
+--             Calendar events (CALNDR_EVENT, CAL_EVT_TYPE, CAL_EVT_GRP)
+--             were removed to keep the ten demos like for like; the tag
+--             metrics-mart-with-calendar still has them.
 -- Added:      a UNIQUE key on (res_type, res_code), metric_code,
 --             provider_name and group_path; and three subtype tables
 --             plus two code tables at the end of this file, because the
@@ -295,38 +294,7 @@ CREATE TABLE res_order (
 );
 
 -- ------------------------------ CALENDAR ------------------------------
--- An event can apply to one resource, a group, a sub-group or a whole
--- resource type. The diagram keys an event on res_type + res_code,
--- which reaches only two of those levels and loses the event when a
--- resource is recoded. Here every event targets a RES_GRP by surrogate:
---
---   /TYPE/<res_type>        every resource of a type (always maintained)
---   /RES/<res_type>/<code>  one resource (created the first time an
---                           event targets it)
---   any other group         its members, e.g. /ORDER/O-100
---
--- inheritance_flag = 1 extends an event from its group to every group
--- below it in the hierarchy; 0 keeps it to the group's own members.
-
--- A named set of related events: a regional holiday calendar, an
--- operations calendar, a promotions calendar. The diagram has
--- CALNDR_EVENT.event_grp_id with no table behind it; this is that table.
--- Groups are an open domain: a delivery that names a new event_grp
--- creates it, with its code as its name.
-CREATE TABLE cal_evt_grp (
-    event_grp_id   INTEGER     NOT NULL PRIMARY KEY,
-    event_grp_code VARCHAR(40) NOT NULL UNIQUE,
-    event_grp_name VARCHAR(80),
-    srcd_ts        TIMESTAMP   NOT NULL
-);
-
-CREATE TABLE cal_evt_type (
-    cal_evt_type      CHAR(20)     NOT NULL PRIMARY KEY,
-    cal_evt_type_desc VARCHAR(100),
-    srcd_ts           TIMESTAMP    NOT NULL
-);
-
--- One row per day. Recurring events expand by matching these columns.
+-- One row per day, like dim_date in the Kimball demo.
 --   day_of_week     1 = Monday .. 7 = Sunday
 --   occur_of_month  1 for days 1-7, 2 for days 8-14, ... (the nth such weekday)
 --   last_occur_flag 1 when it is the last such weekday of the month
@@ -341,61 +309,4 @@ CREATE TABLE calndr (
     month           SMALLINT  NOT NULL,
     year            SMALLINT  NOT NULL,
     srcd_ts         TIMESTAMP NOT NULL
-);
-
-CREATE TABLE calndr_event_stg (
-    batch_no         INTEGER      NOT NULL,
-    load_oper        CHAR(1)      NOT NULL CHECK (load_oper IN ('U','D')),
-    event_code       VARCHAR(40)  NOT NULL,      -- added: the event's business key
-    group_path       VARCHAR(250) NOT NULL,      -- replaces res_type + res_code
-    event_grp_code   VARCHAR(40),                -- added: the feed names the group
-    event_grp_id     INTEGER,                    -- resolved from event_grp_code by the loader
-    cal_evt_type     CHAR(20)     NOT NULL,
-    inheritance_flag SMALLINT     NOT NULL,
-    event_start_dt   DATE,
-    event_start_tm   TIME         NOT NULL,
-    duration         INTEGER,
-    active_start_dt  DATE,
-    active_end_dt    DATE,
-    days_of_week     CHAR(7),
-    occurs_of_month  CHAR(5),
-    days_of_month    CHAR(31),
-    month_end_flag   SMALLINT,
-    months           CHAR(12),
-    year             SMALLINT,
-    entered_by       VARCHAR(40),
-    sequence_no      INTEGER      NOT NULL,
-    srcd_ts          TIMESTAMP    NOT NULL,
-    event_desc       VARCHAR(80)
-);
-
--- Recurrence masks are 'Y'/'N' strings, one character per position:
---   days_of_week    7 chars, Monday first        'NNNNNNY' = Sundays
---   occurs_of_month 5 chars, nth weekday         'YNNNN'   = the first
---   days_of_month   31 chars, day 1 first
---   months          12 chars, January first      'NNNNNNNNNNNY' = December
--- An event with no mask, no month_end_flag and no months is a one-off on
--- event_start_dt. Otherwise it recurs between active_start_dt and
--- active_end_dt on every date that matches all of the masks it sets.
-CREATE TABLE calndr_event (
-    event_id         INTEGER      NOT NULL PRIMARY KEY,
-    event_code       VARCHAR(40)  NOT NULL UNIQUE,
-    res_grp_id       INTEGER      NOT NULL REFERENCES res_grp(res_grp_id),
-    event_grp_id     INTEGER REFERENCES cal_evt_grp(event_grp_id),
-    cal_evt_type     CHAR(20)     NOT NULL REFERENCES cal_evt_type(cal_evt_type),
-    inheritance_flag SMALLINT     NOT NULL CHECK (inheritance_flag IN (0,1)),
-    event_start_dt   DATE,
-    event_start_tm   TIME         NOT NULL,
-    duration         INTEGER,                    -- minutes
-    active_start_dt  DATE,
-    active_end_dt    DATE,
-    days_of_week     CHAR(7),
-    occurs_of_month  CHAR(5),
-    days_of_month    CHAR(31),
-    month_end_flag   SMALLINT,
-    months           CHAR(12),
-    year             SMALLINT,
-    entered_by       VARCHAR(40),
-    srcd_ts          TIMESTAMP    NOT NULL,
-    event_desc       VARCHAR(80)
 );

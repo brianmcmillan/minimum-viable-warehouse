@@ -5,7 +5,7 @@ generated from the live schema. Every column, type, primary key and
 foreign key below comes from SQLite's own catalogue, so the diagrams match
 what `make demo` builds.
 
-The mart has 22 tables plus six staging tables, not counting the landing
+The mart has 19 tables plus five staging tables, not counting the landing
 and routing metadata. One graph of all of them is too wide to read, so there is a keys-only overview and
 then one full-column diagram per layer.
 
@@ -85,18 +85,6 @@ erDiagram
         DATE start_lcl_dt PK
         INTEGER provider_id PK, FK
     }
-    CAL_EVT_TYPE {
-        CHAR(20) cal_evt_type PK
-    }
-    CAL_EVT_GRP {
-        INTEGER event_grp_id PK
-    }
-    CALNDR_EVENT {
-        INTEGER event_id PK
-        INTEGER res_grp_id FK
-        INTEGER event_grp_id FK
-        CHAR(20) cal_evt_type FK
-    }
     RES_TYPE ||--o{ RES_TYPE_REL : "may be child"
     RES_TYPE ||--o{ RES_TYPE_REL : "may parent"
     RES |o--o{ RES : "parent of"
@@ -120,9 +108,6 @@ erDiagram
     METRIC ||--o{ GRP_METRIC_WEEKLY : "rolls up as"
     RES_GRP ||--o{ GRP_METRIC_WEEKLY : "rolls up"
     RES ||--o{ GRP_METRIC_WEEKLY : "rolls up in"
-    CAL_EVT_TYPE ||--o{ CALNDR_EVENT : "types"
-    CAL_EVT_GRP |o--o{ CALNDR_EVENT : "collects"
-    RES_GRP ||--o{ CALNDR_EVENT : "is the target of"
 ```
 
 ---
@@ -311,49 +296,12 @@ erDiagram
 
 ## 3 · Calendar
 
-What was planned. Every event targets a `RES_GRP`, belongs to at most one
-event group, and has a type. `CALNDR` has no foreign keys: recurring
-events expand by matching its day columns against the event's masks.
+One row per day for 2026 and 2027, with no foreign keys. The calendar-event
+tables in the source diagrams are not built; the tag
+`metrics-mart-with-calendar` has them.
 
 ```mermaid
 erDiagram
-    RES_GRP {
-        INTEGER res_grp_id PK
-        INTEGER parent_res_grp FK
-    }
-    CAL_EVT_TYPE {
-        CHAR(20) cal_evt_type PK
-        VARCHAR(100) cal_evt_type_desc
-        TIMESTAMP srcd_ts
-    }
-    CAL_EVT_GRP {
-        INTEGER event_grp_id PK
-        VARCHAR(40) event_grp_code
-        VARCHAR(80) event_grp_name
-        TIMESTAMP srcd_ts
-    }
-    CALNDR_EVENT {
-        INTEGER event_id PK
-        VARCHAR(40) event_code
-        INTEGER res_grp_id FK
-        INTEGER event_grp_id FK
-        CHAR(20) cal_evt_type FK
-        SMALLINT inheritance_flag
-        DATE event_start_dt
-        TIME event_start_tm
-        INTEGER duration
-        DATE active_start_dt
-        DATE active_end_dt
-        CHAR(7) days_of_week
-        CHAR(5) occurs_of_month
-        CHAR(31) days_of_month
-        SMALLINT month_end_flag
-        CHAR(12) months
-        SMALLINT year
-        VARCHAR(40) entered_by
-        TIMESTAMP srcd_ts
-        VARCHAR(80) event_desc
-    }
     CALNDR {
         DATE calndr_date PK
         SMALLINT day_of_week
@@ -366,9 +314,6 @@ erDiagram
         SMALLINT year
         TIMESTAMP srcd_ts
     }
-    CAL_EVT_TYPE ||--o{ CALNDR_EVENT : "types"
-    CAL_EVT_GRP |o--o{ CALNDR_EVENT : "collects"
-    RES_GRP ||--o{ CALNDR_EVENT : "is the target of"
 ```
 
 ---
@@ -498,31 +443,6 @@ erDiagram
         CHAR(6) sample_tz_code
         TIMESTAMP start_ts
         TIMESTAMP srcd_ts
-    }
-    CALNDR_EVENT_STG {
-        INTEGER batch_no
-        CHAR(1) load_oper
-        VARCHAR(40) event_code
-        VARCHAR(250) group_path
-        VARCHAR(40) event_grp_code
-        INTEGER event_grp_id
-        CHAR(20) cal_evt_type
-        SMALLINT inheritance_flag
-        DATE event_start_dt
-        TIME event_start_tm
-        INTEGER duration
-        DATE active_start_dt
-        DATE active_end_dt
-        CHAR(7) days_of_week
-        CHAR(5) occurs_of_month
-        CHAR(31) days_of_month
-        SMALLINT month_end_flag
-        CHAR(12) months
-        SMALLINT year
-        VARCHAR(40) entered_by
-        INTEGER sequence_no
-        TIMESTAMP srcd_ts
-        VARCHAR(80) event_desc
     }
 ```
 

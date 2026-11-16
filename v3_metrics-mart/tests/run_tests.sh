@@ -46,7 +46,6 @@ census(){ q "SELECT group_concat(t||'='||n,' ') FROM (
     UNION ALL SELECT 8,'summary', COUNT(*) FROM metric_summary
     UNION ALL SELECT 9,'weekly',  COUNT(*) FROM metric_weekly
     UNION ALL SELECT 10,'grpwk',  COUNT(*) FROM grp_metric_weekly
-    UNION ALL SELECT 11,'event',  COUNT(*) FROM calndr_event
     ORDER BY o);"; }
 
 # Full logical snapshot: every surrogate, value and srcd_ts in the mart.
@@ -64,11 +63,6 @@ snap(){ q "
   UNION ALL SELECT 'sum', res_id, metric_id||'|'||start_utc_ts||'|'||value||'|'||value_cnt, srcd_ts FROM metric_summary
   UNION ALL SELECT 'wk',  res_id, metric_id||'|'||start_lcl_dt||'|'||value||'|'||value_cnt, srcd_ts FROM metric_weekly
   UNION ALL SELECT 'gwk', res_id, res_grp_id||'|'||metric_id||'|'||start_lcl_dt||'|'||value, srcd_ts FROM grp_metric_weekly
-  UNION ALL SELECT 'egrp', event_grp_id, event_grp_code||'|'||COALESCE(event_grp_name,''), srcd_ts FROM cal_evt_grp
-  UNION ALL SELECT 'evt', event_id, event_code||'|'||res_grp_id||'|'||COALESCE(event_grp_id,'')||'|'||cal_evt_type||'|'||inheritance_flag||'|'||
-                   COALESCE(event_start_dt,'')||'|'||event_start_tm||'|'||COALESCE(duration,'')||'|'||
-                   COALESCE(active_start_dt,'')||'|'||COALESCE(active_end_dt,'')||'|'||COALESCE(days_of_week,'')||'|'||
-                   COALESCE(month_end_flag,'')||'|'||COALESCE(months,'')||'|'||COALESCE(year,''), srcd_ts FROM calndr_event
   ORDER BY 1,2,3,4;"; }
 
 feed(){ local src="$1" file_id="$2" ts="$3" rc=0 log dir="${4:-$PROJ/source}"
@@ -233,7 +227,7 @@ ck "END STATE: products" \
    "$(q "SELECT group_concat(sku||'='||printf('%.2f',price),' ') FROM (SELECT * FROM v_product ORDER BY 1)")" \
    "SKU-1=8.99 SKU-2=19.50"
 ck "END STATE: census" "$(census)" \
-   "res=8 live=5 alias=8 grp=7 member=11 provider=3 sample=7 summary=7 weekly=7 grpwk=13 event=0"
+   "res=8 live=5 alias=8 grp=7 member=11 provider=3 sample=7 summary=7 weekly=7 grpwk=13"
 
 echo; echo "== Raw layer: append-only, no unlock path =="
 ck_abort "archive rejects UPDATE" \
@@ -388,107 +382,12 @@ ck "pairing not listed in RES_TYPE_REL is REJECTED by the load guard" \
 q "INSERT INTO res_type_rel VALUES('CUSTOMER','ORDER','P','2026-01-01 00:00:00'); DELETE FROM source_landing_stage;" >/dev/null
 ck "  ...and nothing was written" "$(snap)" "$before"
 
-echo; echo "== Calendar C1: one event at each level, all tied to RES_GRP =="
-feed c1_calendar.sql C1 '2027-01-04 08:00:00' "$PROJ/source_ext"
-occ(){ q "SELECT group_concat(occur_dt,',') FROM (SELECT occur_dt FROM v_calndr_occurrence WHERE event_code='$1' ORDER BY 1)"; }
-reach(){ q "SELECT group_concat(res_code,',') FROM (SELECT DISTINCT res_code FROM v_res_calendar WHERE event_code='$1' ORDER BY 1)"; }
-ck "five events, event_id in event_code order" \
-   "$(q "SELECT group_concat(event_code||'='||event_id,',') FROM (SELECT * FROM calndr_event ORDER BY event_id)")" \
-   "C001-REVIEW=1,NEWYEAR=2,ORDER-FREEZE=3,PIM-MAINT=4,SPRING-SALE=5"
-ck "EVENT GROUPS: three created from the feed, ids in code order, name = code" \
-   "$(q "SELECT group_concat(event_grp_code||'='||event_grp_id||'/'||event_grp_name,',') FROM (SELECT * FROM cal_evt_grp ORDER BY event_grp_id)")" \
-   "HOLIDAYS-2027=1/HOLIDAYS-2027,OPS-2027=2/OPS-2027,PROMOS-2026=3/PROMOS-2026"
-ck "EVENT GROUPS: each event is in its group; C001-REVIEW is in none" \
-   "$(q "SELECT group_concat(event_code||'='||COALESCE(event_grp_code,'-'),',') FROM (SELECT * FROM v_calndr_event ORDER BY event_code)")" \
-   "C001-REVIEW=-,NEWYEAR=HOLIDAYS-2027,ORDER-FREEZE=OPS-2027,PIM-MAINT=OPS-2027,SPRING-SALE=PROMOS-2026"
-ck "EVENT GROUPS: every OPS-2027 date that reaches SKU-2 (5 Sundays + the freeze)" \
-   "$(q "SELECT COUNT(DISTINCT occur_dt) FROM v_res_calendar WHERE event_grp_code='OPS-2027' AND res_code='SKU-2'")" "6"
-ck "events are keyed on res_grp_id: no res_type or res_code column" \
-   "$(q "SELECT group_concat(name,',') FROM (SELECT name FROM pragma_table_info('calndr_event')
-         WHERE name IN ('res_type','res_code','res_grp_id') ORDER BY 1)")" "res_grp_id"
-ck "single resource: /RES/CUSTOMER/C001 created at level 3 under /RES/CUSTOMER and /RES" \
-   "$(q "SELECT g.group_level||'|'||p.group_path||'|'||pp.group_path FROM res_grp g
-         JOIN res_grp p ON p.res_grp_id=g.parent_res_grp JOIN res_grp pp ON pp.res_grp_id=p.parent_res_grp
-         WHERE g.group_path='/RES/CUSTOMER/C001'")" "3|/RES/CUSTOMER|/RES"
-ck "single resource: its one member is C001's res_id" \
-   "$(q "SELECT group_concat(x.res_id) FROM res_resgrp x JOIN res_grp g USING(res_grp_id) WHERE g.group_path='/RES/CUSTOMER/C001'")" "1"
-ck "C001-REVIEW: month ends, January to June 2027" "$(occ C001-REVIEW)" \
-   "2027-01-31,2027-02-28,2027-03-31,2027-04-30,2027-05-31,2027-06-30"
-ck "C001-REVIEW: reaches C001 and nothing else" "$(reach C001-REVIEW)" "C001"
-ck "PIM-MAINT: every Sunday in January 2027" "$(occ PIM-MAINT)" \
-   "2027-01-03,2027-01-10,2027-01-17,2027-01-24,2027-01-31"
-ck "PIM-MAINT (/TYPE/PRODUCT): reaches every product and only products" \
-   "$(q "SELECT group_concat(DISTINCT res_type)||'/'||COUNT(DISTINCT res_id) FROM v_res_calendar WHERE event_code='PIM-MAINT'")" \
-   "PRODUCT/$(q "SELECT COUNT(*) FROM res WHERE res_type='PRODUCT'")"
-ck "NEWYEAR (/TYPE, inherited): one date, every resource of every type" \
-   "$(occ NEWYEAR)/$(q "SELECT COUNT(DISTINCT res_id) FROM v_res_calendar WHERE event_code='NEWYEAR'")" \
-   "2027-01-01/$(q "SELECT COUNT(*) FROM res")"
-ck "ORDER-FREEZE: the last day of December 2027" "$(occ ORDER-FREEZE)" "2027-12-31"
-ck "SPRING-SALE: every day from 1 to 7 March 2026" "$(occ SPRING-SALE)" \
-   "2026-03-01,2026-03-02,2026-03-03,2026-03-04,2026-03-05,2026-03-06,2026-03-07"
-ck "CONTEXT: the two 2026-03-02 price samples carry SPRING-SALE" \
-   "$(q "SELECT group_concat(res_code||'@'||printf('%.2f',value)||'='||event_code,',') FROM
-         (SELECT * FROM v_metric_sample_event WHERE event_grp_code='PROMOS-2026' ORDER BY res_code)")" \
-   "SKU-1@8.99=SPRING-SALE,SKU-2@19.50=SPRING-SALE"
-ck "CONTEXT: a sample outside every event carries none (SKU-1 on 2026-02-05)" \
-   "$(q "SELECT COUNT(*) FROM v_metric_sample_event WHERE res_code='SKU-1' AND date(sample_utc_ts)='2026-02-05'")" "0"
-ck "ORDER-FREEZE (/ORDER, inherited): reaches the products on remaining order lines" \
-   "$(reach ORDER-FREEZE)" "SKU-2"
-q "INSERT INTO res_grp(res_grp_id,res_grp_name,group_level,group_path,srcd_ts)
-   VALUES(999,'ORDERS',1,'/ORDERS','2027-01-04 08:00:00');
-   INSERT INTO res_resgrp VALUES(999,5,'2027-01-04 08:00:00');" >/dev/null
-ck "inheritance stops at the path separator: /ORDER does not reach a group named /ORDERS" \
-   "$(reach ORDER-FREEZE)" "SKU-2"
-q "DELETE FROM res_resgrp WHERE res_grp_id=999; DELETE FROM res_grp WHERE res_grp_id=999;" >/dev/null
-
-before="$(snap)"
-feed c1_calendar.sql C1R '2027-01-05 08:00:00' "$PROJ/source_ext"
-ck "unchanged calendar re-delivered under a new id writes nothing" "$(snap)" "$before"
-
-echo; echo "== Calendar C2: a one-attribute change and a tombstone =="
-feed c2_calendar_changes.sql C2 '2027-01-11 08:00:00' "$HERE/fixtures"
-ck "inheritance off: ORDER-FREEZE reaches nothing (/ORDER has no direct members)" \
-   "$(q "SELECT COUNT(*) FROM v_res_calendar WHERE event_code='ORDER-FREEZE'")" "0"
-ck "partial delivery: ORDER-FREEZE keeps its target, group, months and year" \
-   "$(q "SELECT target||'|'||event_grp_code||'|'||months||'|'||year FROM v_calndr_event WHERE event_code='ORDER-FREEZE'")" \
-   "/ORDER|OPS-2027|NNNNNNNNNNNY|2027"
-ck "EVENT GROUPS: PIM-MAINT moved to MAINT-2027, created by this delivery as id 4" \
-   "$(q "SELECT e.event_grp_code||'='||x.event_grp_id FROM v_calndr_event e JOIN cal_evt_grp x USING(event_grp_code)
-         WHERE e.event_code='PIM-MAINT'")" "MAINT-2027=4"
-ck "changed rows only: ORDER-FREEZE restamped, C001-REVIEW untouched" \
-   "$(q "SELECT group_concat(event_code||'='||srcd_ts,',') FROM (SELECT * FROM calndr_event WHERE event_code IN ('ORDER-FREEZE','C001-REVIEW') ORDER BY 1)")" \
-   "C001-REVIEW=2027-01-04 08:00:00,ORDER-FREEZE=2027-01-11 08:00:00"
-ck "tombstone: NEWYEAR deleted" "$(q "SELECT COUNT(*) FROM calndr_event WHERE event_code='NEWYEAR'")" "0"
-ck "INCREMENTAL absence: PIM-MAINT kept" "$(q "SELECT COUNT(*) FROM calndr_event WHERE event_code='PIM-MAINT'")" "1"
-
-echo; echo "== Calendar C3: FULL delivery lists only C001-REVIEW =="
-feed c3_calendar_full.sql C3 '2027-01-18 08:00:00' "$HERE/fixtures"
-ck "FULL absence: ORDER-FREEZE, PIM-MAINT and SPRING-SALE deleted, C001-REVIEW kept" \
-   "$(q "SELECT group_concat(event_code,',') FROM calndr_event")" "C001-REVIEW"
-ck "NOCHANGE: the restated C001-REVIEW kept its srcd_ts" \
-   "$(q "SELECT srcd_ts FROM calndr_event WHERE event_code='C001-REVIEW'")" "2027-01-04 08:00:00"
-ck "deleting events leaves their event groups in place" \
-   "$(q "SELECT COUNT(*) FROM cal_evt_grp")" "4"
-ck "deleting events leaves their resource groups in place" \
-   "$(q "SELECT COUNT(*) FROM res_grp WHERE group_path IN ('/RES/CUSTOMER/C001','/ORDER','/TYPE/PRODUCT')")" "3"
-
-echo; echo "== Calendar: bad targets and types fail the load =="
-bad_event(){ local id="$1" path="$2" type="$3"
-  cat > "$LOGDIR/$id.sql" <<SQL
-INSERT INTO source_landing_stage(source_system,source_entity,business_key,attribute_name,value_str,value_num,value_ts,extract_ts,op,load_mode) VALUES
-('OPS','CALNDR_EVENT','BAD','event_code','BAD',NULL,NULL,'2027-01-20','UPSERT','INCREMENTAL'),
-('OPS','CALNDR_EVENT','BAD','group_path','$path',NULL,NULL,'2027-01-20','UPSERT','INCREMENTAL'),
-('OPS','CALNDR_EVENT','BAD','cal_evt_type','$type',NULL,NULL,'2027-01-20','UPSERT','INCREMENTAL'),
-('OPS','CALNDR_EVENT','BAD','event_start_dt',NULL,NULL,'2027-02-01','2027-01-20','UPSERT','INCREMENTAL');
-SQL
-  BATCH_TS='2027-01-20 08:00:00' "$PROJ/scripts/load_feed.sh" "$LOGDIR/$id.sql" "$id" >/dev/null 2>&1; local rc=$?
-  q "DELETE FROM source_landing_stage;" >/dev/null
-  [ "$rc" -ne 0 ] && echo rejected || echo accepted; }
-before="$(snap)"
-ck "a target group that does not exist is rejected" "$(bad_event CB1 /NOPE HOLIDAY)" "rejected"
-ck "a /RES/ target for an unknown resource is rejected" "$(bad_event CB2 /RES/CUSTOMER/C999 HOLIDAY)" "rejected"
-ck "an unknown cal_evt_type is rejected by its foreign key" "$(bad_event CB3 /TYPE PARTY)" "rejected"
-ck "  ...and none of the three wrote anything" "$(snap)" "$before"
+echo; echo "== Day table kept; calendar events removed =="
+ck "no calendar-event table or view exists" \
+   "$(q "SELECT COUNT(*) FROM sqlite_master WHERE instr(name,'calndr_event')>0 OR instr(name,'cal_evt')>0")" "0"
+ck "CALNDR: one row per day, 2026-01-01 to 2027-12-31" \
+   "$(q "SELECT COUNT(*)||'|'||COUNT(DISTINCT calndr_date)||'|'||MIN(calndr_date)||'|'||MAX(calndr_date) FROM calndr")" \
+   "730|730|2026-01-01|2027-12-31"
 
 echo; echo "== Rebuild after every fixture =="
 before="$(snap)"; before_census="$(census)"
@@ -500,6 +399,8 @@ ck "rebuild: the two failed deliveries (DX, DR) were not replayed" \
    "$(q "SELECT COUNT(*) FROM res WHERE res_code IN ('O-999','O-103')")" "0"
 ck "rebuild: tiebreak survives replay (seq_nbr order restored)" \
    "$(q "SELECT email FROM v_customer WHERE customer_ref='C004'")" "last@x.com"
+ck "rebuild: CALNDR reseeded, one row per day" \
+   "$(q "SELECT COUNT(*) FROM calndr")" "730"
 
 echo; echo "== Code table relabel: one row, every order, no reload =="
 q "UPDATE order_status SET status_name='PLACED' WHERE status_code='P';" >/dev/null
@@ -526,13 +427,6 @@ ck "  ...and rebuild resets both: the schema seed is the source of truth" \
    "$(q "SELECT (SELECT DISTINCT status FROM v_order WHERE order_ref='O-100')||'/'||(SELECT COUNT(*) FROM metric)")" "PENDING/2"
 
 
-echo; echo "== A recoded resource keeps its calendar =="
-q "UPDATE res SET res_code='C001-NEW' WHERE res_id=1;
-   UPDATE res_alias SET res_alias='C001-NEW' WHERE res_type='CUSTOMER' AND res_alias='C001';" >/dev/null
-ck "recode: C001-REVIEW still reaches res_id 1, now under its new code" \
-   "$(q "SELECT group_concat(DISTINCT res_id||'='||res_code) FROM v_res_calendar WHERE event_code='C001-REVIEW'")" "1=C001-NEW"
-ck "recode: the diagram's res_type + res_code key would have found nothing" \
-   "$(q "SELECT COUNT(*) FROM res WHERE res_type='CUSTOMER' AND res_code='C001'")" "0"
 echo; echo "====================================================================="
 printf "  RESULT: %d passed, %d failed\n" "$PASS" "$FAIL"
 echo "====================================================================="

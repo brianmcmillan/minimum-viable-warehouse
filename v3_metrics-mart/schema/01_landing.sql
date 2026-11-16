@@ -55,11 +55,10 @@ CREATE TABLE source_landing_stage (
 --   role = MEMBER : each business key is a group membership; the group
 --                   is group_root || '/' || <group_attribute value> and
 --                   the member is the resource named by member_attribute
---   role = EVENT  : each business key is a calendar event (event_code)
 CREATE TABLE meta_feed_map (
     source_system    TEXT NOT NULL,
     source_entity    TEXT NOT NULL,
-    role             TEXT NOT NULL CHECK (role IN ('RES','MEMBER','EVENT')),
+    role             TEXT NOT NULL CHECK (role IN ('RES','MEMBER')),
     res_type         TEXT,
     group_root       TEXT,
     group_attribute  TEXT,
@@ -76,12 +75,11 @@ CREATE TABLE meta_feed_map (
 --             the load add new codes, ref_open=0 makes the domain closed
 --   PARENT  : the alias of this resource's parent, of parent_res_type
 --   METRIC  : a numeric measurement, routed to METRIC_STG as metric_code
---   EVENT_COL : a column of CALNDR_EVENT_STG (target_col), read from `slot`
 CREATE TABLE meta_attribute_map (
     source_system    TEXT NOT NULL,
     source_entity    TEXT NOT NULL,
     source_attribute TEXT NOT NULL,
-    target_kind      TEXT NOT NULL CHECK (target_kind IN ('KEY','RES_COL','SUBTYPE','PARENT','METRIC','EVENT_COL')),
+    target_kind      TEXT NOT NULL CHECK (target_kind IN ('KEY','RES_COL','SUBTYPE','PARENT','METRIC')),
     target_table     TEXT,
     target_col       TEXT,
     slot             TEXT,            -- value_str | value_num | value_ts

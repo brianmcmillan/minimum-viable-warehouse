@@ -10,7 +10,7 @@
 # the physical stage order is significant (seq_nbr in the archive).
 #
 # Then: route the narrow rows into the mart's own staging tables, and
-# load resources -> groups -> calendar -> metrics -> aggregates. Each step is one
+# load resources -> groups -> metrics -> aggregates. Each step is one
 # transaction and each is safe to run again.
 # ---------------------------------------------------------------------
 source "$(dirname "$0")/lib.sh"
@@ -40,6 +40,5 @@ done
 "$(dirname "$0")/route_stage.sh"
 "$(dirname "$0")/load_res.sh"
 "$(dirname "$0")/load_groups.sh"
-"$(dirname "$0")/load_calendar.sh"
 "$(dirname "$0")/load_metrics.sh"
 "$(dirname "$0")/refresh_aggregates.sh"

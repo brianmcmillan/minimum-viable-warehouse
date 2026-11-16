@@ -29,12 +29,6 @@ their groups). The other says **what was measured on them, and when**.
   *descriptors* is only in the archive.
 - **Aggregates are derived.** Daily summaries, weekly rollups and group
   weeks are recomputed after every delivery.
-- **Calendar events target groups.** An event applies to one resource, a
-  group, a sub-group or a whole resource type, and every one of those is a
-  `RES_GRP`. The event is stored against the group's surrogate key, so it
-  stays attached when a resource's code changes. Events belong to named
-  event groups, and every metric sample can be read next to the events in
-  effect for its resource that day.
 
 > **Runs the same deliveries as the nine-model comparison set**
 > ([Inmon 3NF EDW](../v3_inmon-3nf), [Kimball star](../v3_data-marts),
@@ -70,13 +64,13 @@ network.
 ```bash
 make demo          # fresh archive + schema + the full 6-delivery sequence, then print the mart
 make rebuild       # delete the mart; replay the raw layer to rebuild it
-make test          # 220 assertions: delete semantics, samples, aggregates, calendar, exact rebuild
+make test          # 172 assertions: delete semantics, samples, aggregates, exact rebuild
 make clean         # delete build/ only — the archive SURVIVES
 make clean-archive # delete archive/ — destroys the raw layer, and the ability to rebuild
 ```
 
 `make demo` loads the six shared deliveries standing in for a few weeks of
-real feeds, then one calendar delivery of its own, and prints the mart. One table holds every resource:
+real feeds and prints the mart. One table holds every resource:
 
 ```
 ### RES
@@ -163,10 +157,8 @@ known and hands the loaders a plain `load_oper = 'D'`.
 | D4 | `d4_cust_recency.sql`     | CRM.CUSTOMER / INCREMENTAL | adds C003; a repeated key resolves to the newest by `extract_ts`, not `MAX()` |
 | —  | re-send D1                | (same `file_id`)           | load control skips a duplicate delivery (exercised by `make test`)            |
 | D5 | `d5_cust_yearly_full.sql` | CRM.CUSTOMER / FULL        | a yearly full reconciliation deletes C003, gone at source                     |
-| C1 | `c1_calendar.sql`         | OPS.CALNDR_EVENT / FULL    | five calendar events in three event groups, one at each target level          |
 
-D0–D5 in `source/` are byte-identical with the Focal and Anchor demos. C1 is
-in `source_ext/` because no sibling has a calendar.
+D0–D5 in `source/` are byte-identical with the Focal and Anchor demos.
 
 ---
 
@@ -186,7 +178,6 @@ customers, products and orders. The mapping is a few rows of metadata.
 | an order line (`O-100~SKU-1`) | a `RES_RESGRP` row: product SKU-1 is a member of group `/ORDER/O-100` |
 | `email_addr`, `signup_date`, `currency`, `status`, `placed_at` | subtype tables `RES_CUSTOMER`, `RES_PRODUCT`, `RES_ORDER` (not in the diagrams) |
 | `op='DELETE'`, or absence under FULL | `RES_STG.load_oper = 'D'`, then `RES.res_status = 0` |
-| a calendar event (`OPS.CALNDR_EVENT`, key `NEWYEAR`) | a `CALNDR_EVENT` row on a `RES_GRP`, found by its `group_path` |
 
 An order is a resource, because it has a parent and an amount. Its basket is
 a group, because it has members. That is what gives the group aggregate
@@ -218,7 +209,7 @@ O-100's amount is 29.49 and stays 29.49. Its basket at list price drops to
 | resource | `RES`, `RES_TYPE`, `RES_TYPE_REL`, `RES_ALIAS`, `RES_GRP`, `RES_RESGRP` |
 | metrics | `METRIC`, `VALUE_TYPE`, `PROVIDER`, `METRIC_SAMPLE`, `METRIC_SUMMARY` |
 | aggregations | `METRIC_WEEKLY`, `GRP_METRIC_WEEKLY` |
-| calendar | `CALNDR`, `CAL_EVT_TYPE`, `CALNDR_EVENT`, `CALNDR_EVENT_STG` (and `CAL_EVT_GRP`, added below) |
+| calendar | `CALNDR`, the day table (the event tables are not built; see below) |
 
 Column names and declared types are the diagrams'. Foreign keys are real and
 switched on for every connection.
@@ -230,6 +221,13 @@ model and are left out. Every `*_tz_code` column is `'UTC'`, and local timestamp
 ones. `site_id`, `support_ctr_id` and `client_id` point at tables the
 diagrams don't show; they are plain nullable columns here.
 
+The calendar-event tables (`CALNDR_EVENT`, `CALNDR_EVENT_STG`, `CAL_EVT_TYPE`)
+were built and then removed to keep the ten demos like for like: no sibling
+model stores planned events. The tag `metrics-mart-with-calendar` has them,
+with the `CAL_EVT_GRP` table added for them, their loader, views and tests.
+`CALNDR`, one row per day for 2026 and 2027, stays as a standard day table,
+like `dim_date` in the Kimball demo.
+
 ### Added
 
 - **Unique keys** on `RES (res_type, res_code)`, `METRIC.metric_code`,
@@ -240,15 +238,6 @@ diagrams don't show; they are plain nullable columns here.
   name and a description. The corpus also carries an email, a signup date, a
   currency, a status and a placed-at time, and in a 3NF model those belong in
   subtype tables keyed on `res_id`.
-- **A different target for calendar events.** The diagram keys
-  `CALNDR_EVENT` and its staging table on `res_type` + `res_code`. Here they
-  carry `res_grp_id` and `group_path` instead, plus an `event_code` business
-  key so a later delivery can change or delete an event. See *Calendar
-  events* below.
-- **`CAL_EVT_GRP`, the table behind `event_grp_id`.** The diagram has the
-  column and no table for it. Here it is a named set of related events (a
-  holiday calendar, an operations calendar, a promotions calendar). The feed
-  names the group by code, and a new code creates the group.
 - **Two readings of unexplained columns.** `srcd_ts` is taken as "when the
   mart last recorded a change to this row" (the batch timestamp). `srcd_d2k`
   on `METRIC_SAMPLE` is taken as that same date in whole days since
@@ -261,85 +250,14 @@ or an attribute.
 
 | table | one row per | says |
 |---|---|---|
-| `meta_feed_map` | feed | whether its keys are resources (and of which type), group memberships or calendar events |
-| `meta_attribute_map` | attribute | `KEY`, `RES_COL`, `SUBTYPE` (table and column), `PARENT` (parent type), `METRIC` (metric code) or `EVENT_COL` (staging column) |
+| `meta_feed_map` | feed | whether its keys are resources (and of which type) or group memberships |
+| `meta_attribute_map` | attribute | `KEY`, `RES_COL`, `SUBTYPE` (table and column), `PARENT` (parent type) or `METRIC` (metric code) |
 
 This is the Focal and Anchor idea pointed at a 3NF target, and it works to a
 point. A new **metric** is two rows (one in `METRIC`, one in the map) with no
 DDL and no loader change; the suite proves it. A new **descriptive
 attribute** still needs a column first, because this is 3NF. Only its
 routing is metadata.
-
----
-
-## Calendar events
-
-An event can apply at very different levels: a holiday for everything, a
-maintenance window for every product, a freeze for the products on any
-order, a review for one customer. Every level is a group, and each event
-points at one.
-
-| target | path | members |
-|---|---|---|
-| a resource type | `/TYPE/<res_type>` | every resource of the type; created for every type and kept current on every delivery |
-| a single resource | `/RES/<res_type>/<res_code>` | that one resource; created the first time an event targets it |
-| any other group | e.g. `/ORDER/O-100` | its members, as loaded from the feeds |
-
-`inheritance_flag = 1` carries an event from its group to every group below
-it. NEWYEAR on `/TYPE` reaches every resource through the type groups.
-ORDER-FREEZE on `/ORDER` reaches the products in every order group, and with
-the flag at 0 it reaches nothing, because `/ORDER` has no members of its own.
-
-Membership is by `res_id`, so a resource whose code changes keeps its
-events. The suite recodes C001 and checks that C001-REVIEW still reaches it.
-Keyed on `res_type` + `res_code`, as in the diagram, the event would have
-been orphaned.
-
-A recurring event expands against `CALNDR`, one row per day for 2026 and
-2027. The masks are `'Y'`/`'N'` strings: `days_of_week` is Monday first,
-`months` January first. An event that sets no mask is a one-off on
-`event_start_dt`.
-
-```
-### Occurrences per event and the resources each one reaches
-event_code    dates  first_dt    last_dt     live_resources
-------------  -----  ----------  ----------  ----------------------------
-C001-REVIEW   6      2027-01-31  2027-06-30  C001
-NEWYEAR       1      2027-01-01  2027-01-01  C001,O-100,O-101,SKU-1,SKU-2
-ORDER-FREEZE  1      2027-12-31  2027-12-31  SKU-1,SKU-2
-PIM-MAINT     5      2027-01-03  2027-01-31  SKU-1,SKU-2
-SPRING-SALE   7      2026-03-01  2026-03-07  SKU-1,SKU-2
-```
-
-Events belong to event groups through `event_grp_id`. The demo has three:
-HOLIDAYS-2027, OPS-2027 and PROMOS-2026. C001-REVIEW belongs to none, which
-is allowed. A group lets a question cover a whole calendar at once: "every
-operations date that touches SKU-2" is one filter on `event_grp_code`.
-
-### Samples in their calendar context
-
-`v_metric_sample_event` joins every metric sample to the events in effect
-for its resource on the sample's day:
-
-```
-### Metric samples with the calendar events active that day
-res_code  metric_code  sample_dt   value  event_code   event_grp    cal_evt_type
---------  -----------  ----------  -----  -----------  -----------  ------------
-SKU-1     price        2026-03-02  8.99   SPRING-SALE  PROMOS-2026  PROMOTION
-SKU-2     price        2026-03-02  19.5   SPRING-SALE  PROMOS-2026  PROMOTION
-```
-
-SKU-1's price fell from 9.99 to 8.99 on 2026-03-02. Read alone, that is a
-change somebody has to investigate. Read with the calendar, it happened
-during a planned promotion. A decision layer on top of this mart needs that
-join before it calls anything a signal. See *Why the calendar matters* in
-[METRICSMART.md](METRICSMART.md).
-
-Events follow the shared delete rule: a tombstone always deletes, and
-absence deletes only under a FULL calendar delivery. A delivery that names
-one attribute of an event changes that attribute and keeps the rest. A
-target group that doesn't exist, a `/RES/` path for an unknown resource and
-an unknown `cal_evt_type` each fail the load.
 
 ---
 
@@ -352,19 +270,16 @@ used by both ingest and replay.
    keeping the newest per key and attribute by `extract_ts`, ties broken by
    file order.
 2. **Route** (`route_stage.sh`). Fill `RES_STG`, `RES_ALIAS_STG`,
-   `METRIC_STG`, `RES_RESGRP_STG` and `CALNDR_EVENT_STG`. Apply the delete
-   rule.
+   `METRIC_STG` and `RES_RESGRP_STG`. Apply the delete rule.
 3. **Resources** (`load_res.sh`). Create providers and new resources,
    resolve parents through `RES_ALIAS`, update changed descriptors, restore
    or delete by `load_oper`, then set subtype columns one generated statement
    per mapped attribute.
 4. **Groups** (`load_groups.sh`). Create groups from their paths, keep the
    type groups current and reconcile memberships.
-5. **Calendar** (`load_calendar.sh`). Create single-resource groups that
-   events target, then insert, update and delete events.
-6. **Metrics** (`load_metrics.sh`). Resolve `METRIC_STG` into `METRIC_STG2`
+5. **Metrics** (`load_metrics.sh`). Resolve `METRIC_STG` into `METRIC_STG2`
    and upsert `METRIC_SAMPLE`.
-7. **Aggregates** (`refresh_aggregates.sh`). Recompute daily summaries,
+6. **Aggregates** (`refresh_aggregates.sh`). Recompute daily summaries,
    weeks and group weeks; touch only the rows whose numbers changed.
 
 Each step is one transaction and each is safe to run again. Each also runs
@@ -434,10 +349,6 @@ asserts the rebuilt mart is identical, down to each `res_id`, `provider_id`,
 | `v_metric_latest` | the newest sample per resource, metric and provider |
 | `v_metric_weekly` | `METRIC_WEEKLY` with names |
 | `v_group_weekly` | members' weekly values summed per group |
-| `v_calndr_event` | every event with its target group's path |
-| `v_calndr_occurrence` | every date each event falls on, inside the `CALNDR` range |
-| `v_res_calendar` | every resource each occurrence reaches, through membership and inheritance |
-| `v_metric_sample_event` | every metric sample with the events in effect for its resource that day |
 | `v_res_type_rel_violation` / `v_res_grp_path_violation` | integrity views; both must be empty |
 
 ---
@@ -448,7 +359,7 @@ asserts the rebuilt mart is identical, down to each `res_id`, `provider_id`,
 |----------------------|-----------------------------------------------------------------------|
 | `make demo`          | fresh archive + schema + the full delivery sequence + printed mart    |
 | `make rebuild`       | regenerate the mart by replaying the raw layer                        |
-| `make test`          | run the test suite (220 assertions)                                   |
+| `make test`          | run the test suite (172 assertions)                                   |
 | `make init`          | recreate the mart database from schema (the archive survives)         |
 | `make clean`         | delete `build/` only — **the archive survives**                       |
 | `make clean-archive` | delete `archive/` — destroys the raw layer and the ability to rebuild |
@@ -466,9 +377,9 @@ asserts the rebuilt mart is identical, down to each `res_id`, `provider_id`,
 ├── schema/
 │   ├── 01_landing.sql        # narrow landing (shared shape) + routing metadata + load guard
 │   ├── 02_archive.sql        # raw layer: append-only narrow history + manifest + triggers
-│   ├── 03_mart.sql           # staging, core and calendar tables from the diagrams, plus the added subtypes
+│   ├── 03_mart.sql           # staging and core tables from the diagrams, CALNDR, plus the added subtypes
 │   ├── 04_seed.sql           # reference rows, CALNDR days for 2026-2027, and the routing maps
-│   └── 05_views.sql          # business views, mart views, calendar views, integrity views
+│   └── 05_views.sql          # business views, mart views, integrity views
 ├── scripts/
 │   ├── lib.sh                # shared helpers; the single DB choke point (foreign keys ON); sql_tx; ensure_groups_sql
 │   ├── init_db.sh            # (re)create the mart database; preserve the archive
@@ -477,24 +388,19 @@ asserts the rebuilt mart is identical, down to each `res_id`, `provider_id`,
 │   ├── route_stage.sh        # narrow landing → RES_STG / METRIC_STG / ...; the delete rule
 │   ├── load_res.sh           # resources, aliases, parents, subtype columns
 │   ├── load_groups.sh        # groups, type groups and memberships
-│   ├── load_calendar.sh      # single-resource groups and calendar events
 │   ├── load_metrics.sh       # METRIC_STG → METRIC_STG2 → METRIC_SAMPLE
 │   ├── refresh_aggregates.sh # METRIC_SUMMARY, METRIC_WEEKLY, GRP_METRIC_WEEKLY
 │   ├── rebuild.sh            # ordered replay of the archive
 │   └── query.sh              # print the mart
 ├── source/                   # D0–D5, byte-identical with the Focal and Anchor demos
-├── source_ext/
-│   └── c1_calendar.sql       # five calendar events in three event groups; this demo only
 ├── tests/
-│   ├── run_tests.sh          # 220 assertions
+│   ├── run_tests.sh          # 172 assertions
 │   └── fixtures/
 │       ├── d6_tiebreak.sql           # same-extract tiebreak (identical to Anchor's)
 │       ├── d7_repoint.sql            # O-101 re-pointed to C001 (identical to Anchor's)
 │       ├── d8_metric_obs.sql         # a one-attribute delivery: a new price observation
 │       ├── d8c_metric_correction.sql # a corrected sample and a second sample in one week
-│       ├── d9_lifecycle.sql          # restore, auto-created parent, membership tombstone
-│       ├── c2_calendar_changes.sql   # a one-attribute change, a tombstone, an event moved to a new group
-│       └── c3_calendar_full.sql      # a FULL calendar delivery listing one event
+│       └── d9_lifecycle.sql          # restore, auto-created parent, membership tombstone
 ├── build/                    # generated: the mart (safe to delete)
 └── archive/                  # generated: the durable raw layer
 ```
@@ -507,7 +413,7 @@ asserts the rebuilt mart is identical, down to each `res_id`, `provider_id`,
 make test
 ```
 
-**220 assertions**, pure shell + `sqlite3`, covering:
+**172 assertions**, pure shell + `sqlite3`, covering:
 
 - **Delete semantics** — the stale-window trap, FULL-absence deletes,
   tombstones, recency dedup, load control, a rejected re-use of a
@@ -529,13 +435,6 @@ make test
 - **Rebuild** — `make clean` + replay reproduces the mart exactly, twice:
   after the shared scenario and again after every fixture. Failed deliveries
   are not replayed.
-- **Calendar** — an event at each level (type, all types, sub-groups, one
-  resource), recurrence by weekday, month end, month and year, inheritance
-  switched on and off, event groups created from the feed and an event moved
-  between them, a one-attribute change, tombstone and FULL-absence deletes,
-  three kinds of bad delivery rejected with nothing written, samples matched
-  to the events in effect that day, and a recoded resource keeping its
-  events.
 - **Reference data** — a status relabel takes effect with no reload, a new
   metric loads with no DDL, and a rebuild resets both to the schema seed.
 
@@ -565,12 +464,6 @@ See [METRICSMART.md](METRICSMART.md) for the mutation checks.
 - **Type groups cost rows.** Every resource is a member of its
   `/TYPE/<res_type>` group, and `GRP_METRIC_WEEKLY` carries a row per
   resource per type group per week. That is also a rollup by type for free.
-- **One calendar feed is assumed.** Absence from a FULL calendar delivery
-  deletes every event the mart holds that the delivery left out. A second
-  calendar feed would need events tagged with their source.
-- **The calendar ends.** `CALNDR` covers 2026 and 2027, and recurring events
-  expand only inside it. `occurs_of_month` matches the nth weekday;
-  `CALNDR.last_occur_flag` is loaded but no event mask uses it yet.
 - **Stubs can be wrong.** Auto-creating a parent keeps the load moving and
   puts a resource in the mart that no owning feed has confirmed. A FULL
   reconciliation from that feed will delete it.

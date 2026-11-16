@@ -6,7 +6,6 @@
 #                 -> RES_ALIAS_STG  the name the provider uses for it
 #   METRIC attrs  -> METRIC_STG     one row per measurement
 #   MEMBER feeds  -> RES_RESGRP_STG one row per group membership
-#   EVENT feeds   -> CALNDR_EVENT_STG one row per calendar event
 #
 # The shared delete rule is applied HERE, where the delivery's mode is
 # still known, and reaches the loaders as load_oper = 'D':
@@ -22,36 +21,10 @@ source "$(dirname "$0")/lib.sh"
 q_bts="$(sql_quote "$BATCH_TS")"
 bno="$(sql_int "$BATCH_NO")"
 
-# ---- calendar events: pivot the narrow rows into CALNDR_EVENT_STG
-# ---- columns. The column list comes from meta_attribute_map, so the
-# ---- router names no event column itself.
-#   value_num -> CAST AS INTEGER (every numeric event column is whole)
-#   value_ts  -> date()          (every timestamp event column is a date)
-EV_PIVOT=""; EV_COLS=""; EV_MERGE=""
-while IFS='|' read -r attr col slot; do
-  [ -n "$attr" ] || continue
-  col="$(sql_ident "$col")"; slot="$(sql_ident "$slot")"
-  case "$slot" in
-    value_num) expr="CAST(MAX(CASE WHEN c.attribute_name='$(sql_quote "$attr")' THEN c.value_num END) AS INTEGER)";;
-    value_ts)  expr="date(MAX(CASE WHEN c.attribute_name='$(sql_quote "$attr")' THEN c.value_ts END))";;
-    *)         expr="MAX(CASE WHEN c.attribute_name='$(sql_quote "$attr")' THEN c.value_str END)";;
-  esac
-  EV_PIVOT+=", $expr AS $col"
-  EV_COLS+=", $col"
-  case "$col" in
-    group_path)       EV_MERGE+=", COALESCE(k.group_path, g.group_path)";;
-    event_grp_code)   EV_MERGE+=", COALESCE(k.event_grp_code, xg.event_grp_code)";;
-    inheritance_flag) EV_MERGE+=", COALESCE(k.inheritance_flag, e.inheritance_flag, 0)";;
-    event_start_tm)   EV_MERGE+=", COALESCE(k.event_start_tm, e.event_start_tm, '00:00:00')";;
-    *)                EV_MERGE+=", COALESCE(k.$col, e.$col)";;
-  esac
-done < <(sql_run "SELECT source_attribute||'|'||target_col||'|'||slot FROM meta_attribute_map
-                  WHERE target_kind='EVENT_COL' ORDER BY target_col;")
-
 sql_tx "
 BEGIN;
 DELETE FROM res_stg; DELETE FROM res_alias_stg; DELETE FROM res_resgrp_stg;
-DELETE FROM metric_stg; DELETE FROM metric_stg2; DELETE FROM calndr_event_stg;
+DELETE FROM metric_stg; DELETE FROM metric_stg2;
 
 -- Resources named by the delivery (upserts and tombstones).
 WITH k AS (
@@ -152,55 +125,10 @@ WHERE c.op <> 'DELETE'
 GROUP BY f.source_system, f.source_entity, f.member_res_type, f.group_root, c.business_key
 HAVING MAX(CASE WHEN c.attribute_name=f.member_attribute THEN c.value_str END) IS NOT NULL
    AND MAX(CASE WHEN c.attribute_name=f.group_attribute  THEN c.value_str END) IS NOT NULL;
--- Calendar events named by the delivery. An attribute that did not
--- arrive keeps the event's current value; a tombstone for an event the
--- mart does not hold has nothing to delete and is dropped.
-INSERT INTO calndr_event_stg(batch_no, load_oper, event_code, sequence_no, srcd_ts $EV_COLS)
-WITH k AS (
-  SELECT c.business_key AS event_code,
-         CASE WHEN MAX(CASE WHEN c.op =  'DELETE' THEN c.extract_ts END) IS NOT NULL
-               AND (MAX(CASE WHEN c.op <> 'DELETE' THEN c.extract_ts END) IS NULL
-                    OR MAX(CASE WHEN c.op =  'DELETE' THEN c.extract_ts END)
-                    >= MAX(CASE WHEN c.op <> 'DELETE' THEN c.extract_ts END))
-              THEN 'D' ELSE 'U' END AS load_oper,
-         datetime(MAX(c.extract_ts)) AS ext_ts
-         $EV_PIVOT
-  FROM $CUR c
-  JOIN meta_feed_map f ON f.source_system=c.source_system AND f.source_entity=c.source_entity
-                      AND f.role='EVENT'
-  GROUP BY c.business_key)
-SELECT $bno, k.load_oper, k.event_code,
-       ROW_NUMBER() OVER (ORDER BY k.event_code), k.ext_ts
-       $EV_MERGE
-FROM k
-LEFT JOIN calndr_event e ON e.event_code = k.event_code
-LEFT JOIN res_grp g      ON g.res_grp_id = e.res_grp_id
-LEFT JOIN cal_evt_grp xg ON xg.event_grp_id = e.event_grp_id
-WHERE k.load_oper = 'U' OR e.event_id IS NOT NULL;
-
--- >> ABSENCE means DELETE only for a FULL delivery. << This assumes one
--- calendar feed: every held event belongs to it.
-INSERT INTO calndr_event_stg(batch_no, load_oper, event_code, sequence_no, srcd_ts,
-                             group_path, cal_evt_type, inheritance_flag, event_start_tm)
-SELECT $bno, 'D', e.event_code,
-       (SELECT COALESCE(MAX(sequence_no),0) FROM calndr_event_stg)
-         + ROW_NUMBER() OVER (ORDER BY e.event_code),
-       datetime(d.ext_ts), g.group_path, e.cal_evt_type, e.inheritance_flag, e.event_start_tm
-FROM calndr_event e
-JOIN res_grp g ON g.res_grp_id = e.res_grp_id
-JOIN (SELECT c.source_system, c.source_entity,
-             COALESCE(MAX(c.load_mode),'INCREMENTAL') AS mode, MAX(c.extract_ts) AS ext_ts
-      FROM $CUR c JOIN meta_feed_map f ON f.source_system=c.source_system
-                                      AND f.source_entity=c.source_entity AND f.role='EVENT'
-      GROUP BY c.source_system, c.source_entity) d ON d.mode = 'FULL'
-WHERE NOT EXISTS (SELECT 1 FROM $CUR c
-                  WHERE c.source_system=d.source_system AND c.source_entity=d.source_entity
-                    AND c.business_key=e.event_code);
 COMMIT;"
 
-printf "    routed: res_stg=%s (deletes=%s)  metric_stg=%s  res_resgrp_stg=%s  calndr_event_stg=%s\n" \
+printf "    routed: res_stg=%s (deletes=%s)  metric_stg=%s  res_resgrp_stg=%s\n" \
   "$(sql_scalar "SELECT COUNT(*) FROM res_stg;")" \
   "$(sql_scalar "SELECT COUNT(*) FROM res_stg WHERE load_oper='D';")" \
   "$(sql_scalar "SELECT COUNT(*) FROM metric_stg;")" \
-  "$(sql_scalar "SELECT COUNT(*) FROM res_resgrp_stg;")" \
-  "$(sql_scalar "SELECT COUNT(*) FROM calndr_event_stg;")"
+  "$(sql_scalar "SELECT COUNT(*) FROM res_resgrp_stg;")"

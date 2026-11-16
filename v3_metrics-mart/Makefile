@@ -29,7 +29,6 @@ demo:
 	@BATCH_TS='2026-03-16 08:00:00' ./scripts/load_feed.sh source/d3_cust_tombstone.sql   D3
 	@BATCH_TS='2026-04-02 08:00:00' ./scripts/load_feed.sh source/d4_cust_recency.sql     D4
 	@BATCH_TS='2026-12-31 08:00:00' ./scripts/load_feed.sh source/d5_cust_yearly_full.sql D5
-	@BATCH_TS='2027-01-04 08:00:00' ./scripts/load_feed.sh source_ext/c1_calendar.sql  C1
 	@./scripts/query.sh
 
 rebuild:
