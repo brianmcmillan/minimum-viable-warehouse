@@ -5,4 +5,4 @@ help:
 	@echo "make verify   clean, demo and test every v3_* warehouse; write VERIFY.md"
 
 verify:
-	@./tools/verify.sh
+	@bash tools/verify.sh
