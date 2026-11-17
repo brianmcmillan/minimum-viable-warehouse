@@ -26,21 +26,22 @@ with the system that minted it.
   which hook columns sit on which frame are *rows* in four small tables.
   One generic loader reads them and loads every frame.
 
-> **Part of a nine-model comparison set.** This is the hooks-only leg: Data
-> Vault without the hub. The same six logical deliveries run through nine
+> **Part of a ten-model comparison set.** This is the hooks-only leg: Data
+> Vault without the hub. The same six logical deliveries run through ten
 > warehouses ([Inmon 3NF EDW](../v3_inmon-3nf),
 > [Kimball star](../v3_data-marts), [Data Vault 2.0](../v3_datavault),
 > [Focal Point](../v3_focal-point), [Anchor](../v3_anchor), this HOOK,
 > [Unified Star Schema](../v3_unified-star-schema),
-> [Activity Schema](../v3_activity-schema), and
+> [Activity Schema](../v3_activity-schema), the
+> [metrics mart](../v3_metrics-mart), and
 > [One Big Table](../v3_one-big-table)), so every difference between them is
 > the *model*, never the input. This model takes the wide,
 > one-row-per-record restatement shared byte-for-byte by Inmon, Kimball,
 > Data Vault, HOOK, USS, Activity Schema and OBT. Its archive uses the same
 > layout (`loaded_files` + per-feed `hist_*` tables, append-only triggers)
-> as the Inmon, Kimball, USS, Activity Schema and OBT archives. **This
-> README stands on its own;** [HOOK.md](HOOK.md) draws the cross-model
-> comparison.
+> as the Inmon, Kimball, Data Vault, USS, Activity Schema and OBT archives.
+> **This README stands on its own;** [HOOK.md](HOOK.md) draws the
+> cross-model comparison.
 
 ---
 

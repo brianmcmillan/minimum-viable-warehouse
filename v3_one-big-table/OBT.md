@@ -13,7 +13,7 @@ make rebuild  # init + ONE refresh -- no replay loop, nothing incremental
 make test     # 71 assertions, mutation-hardened
 ```
 
-This demo exists to answer the question the other eight raise:
+This demo exists to answer the question the other nine raise:
 **what does modeling actually buy?**
 
 ## What it gets right, embarrassingly cheaply
@@ -51,7 +51,7 @@ This demo exists to answer the question the other eight raise:
    deliveries that is invisible; at thousands, the full refresh *is* the
    nightly batch window.
 
-## Honest scorecard vs the other eight
+## Honest scorecard vs the other nine
 
 Same input, same answers, so the trade is stark: OBT wins on loader
 simplicity, rebuild triviality, and time-to-first-query; it loses on

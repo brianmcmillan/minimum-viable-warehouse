@@ -30,13 +30,15 @@ their groups). The other says **what was measured on them, and when**.
 - **Aggregates are derived.** Daily summaries, weekly rollups and group
   weeks are recomputed after every delivery.
 
-> **Runs the same deliveries as the nine-model comparison set**
+> **Part of a ten-model comparison set.** This is the measurement leg. The
+> same six logical deliveries run through ten warehouses
 > ([Inmon 3NF EDW](../v3_inmon-3nf), [Kimball star](../v3_data-marts),
 > [Data Vault 2.0](../v3_datavault), [Focal Point](../v3_focal-point),
 > [Anchor](../v3_anchor), [HOOK](../v3_hook),
 > [Unified Star Schema](../v3_unified-star-schema),
-> [Activity Schema](../v3_activity-schema) and
-> [One Big Table](../v3_one-big-table)). This model takes the narrow,
+> [Activity Schema](../v3_activity-schema), this metrics mart, and
+> [One Big Table](../v3_one-big-table)), so every difference between them is
+> the *model*, never the input. This model takes the narrow,
 > one-row-per-attribute files shared byte-for-byte with Focal Point and
 > Anchor, and its archive uses their layout (`loaded_files` +
 > `source_landing_history`, append-only triggers). The target is different:

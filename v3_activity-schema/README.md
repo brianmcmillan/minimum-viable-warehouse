@@ -31,20 +31,22 @@ temporal relationships rather than foreign keys.
   the differences, so most of the work is change detection, as in every
   other model here.
 
-> **Part of a nine-model comparison set.** This is the event-centric leg:
-> one stream per entity, temporal joins instead of foreign keys. The same
-> six logical deliveries run through nine warehouses
+> **Part of a ten-model comparison set.** This is the event-centric leg: one
+> stream per entity, temporal joins instead of foreign keys. The same six
+> logical deliveries run through ten warehouses
 > ([Inmon 3NF EDW](../v3_inmon-3nf), [Kimball star](../v3_data-marts),
 > [Data Vault 2.0](../v3_datavault), [Focal Point](../v3_focal-point),
 > [Anchor](../v3_anchor), [HOOK](../v3_hook),
 > [Unified Star Schema](../v3_unified-star-schema), this Activity Schema,
-> and [One Big Table](../v3_one-big-table)), so every difference between
-> them is the *model*, never the input. This model takes the wide,
+> the [metrics mart](../v3_metrics-mart), and
+> [One Big Table](../v3_one-big-table)), so every difference between them is
+> the *model*, never the input. This model takes the wide,
 > one-row-per-record restatement shared byte-for-byte by Inmon, Kimball,
 > Data Vault, HOOK, USS, Activity Schema and OBT. Its archive uses the same
 > layout (`loaded_files` + per-feed `hist_*` tables, append-only triggers)
-> as the Inmon, Kimball, HOOK, USS and OBT archives. **This README stands on
-> its own;** [ACTIVITY.md](ACTIVITY.md) draws the cross-model comparison.
+> as the Inmon, Kimball, Data Vault, HOOK, USS and OBT archives. **This
+> README stands on its own;** [ACTIVITY.md](ACTIVITY.md) draws the
+> cross-model comparison.
 
 ---
 

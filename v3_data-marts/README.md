@@ -27,21 +27,22 @@ It exists to make a handful of normally-abstract dimensional ideas
   never be lost is the raw delivery, captured verbatim before anything
   touches it.
 
-> **Part of a nine-model comparison set.** This is the dimensional leg. The
-> same six logical deliveries run through nine warehouses
+> **Part of a ten-model comparison set.** This is the dimensional leg. The
+> same six logical deliveries run through ten warehouses
 > ([Inmon 3NF EDW](../v3_inmon-3nf), this Kimball star,
 > [Data Vault 2.0](../v3_datavault), [Focal Point](../v3_focal-point),
 > [Anchor](../v3_anchor), [HOOK](../v3_hook),
 > [Unified Star Schema](../v3_unified-star-schema),
-> [Activity Schema](../v3_activity-schema), and
+> [Activity Schema](../v3_activity-schema), the
+> [metrics mart](../v3_metrics-mart), and
 > [One Big Table](../v3_one-big-table)), so every difference between them is
 > the *model*, never the input. This model takes the wide,
 > one-row-per-record restatement shared byte-for-byte by Inmon, Kimball,
 > Data Vault, HOOK, USS, Activity Schema and OBT. Its archive uses the same
 > layout (`loaded_files` + per-feed `hist_*` tables, append-only triggers)
-> as the Inmon, HOOK, USS, Activity Schema and OBT archives. **This README
-> stands on its own;** [DATAMART.md](DATAMART.md) draws the cross-model
-> comparison.
+> as the Inmon, Data Vault, HOOK, USS, Activity Schema and OBT archives.
+> **This README stands on its own;** [DATAMART.md](DATAMART.md) draws the
+> cross-model comparison.
 
 ---
 
@@ -468,5 +469,5 @@ them honest rather than hiding them:
   and [`../v3_focal-point`](../v3_focal-point) (metadata-driven Focal) ingest
   the *same deliveries* and reach the *same end state*, so their READMEs read
   as one study of how each model handles identical input. The
-  [top-level README](../README.md) sets out all nine warehouses and the essays
+  [top-level README](../README.md) sets out all ten warehouses and the essays
   that argue over how to choose between them.
