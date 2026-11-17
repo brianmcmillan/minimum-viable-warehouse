@@ -26,10 +26,20 @@ with the system that minted it.
   which hook columns sit on which frame are *rows* in four small tables.
   One generic loader reads them and loads every frame.
 
-> **Part of a model-comparison set.** The same six deliveries —
-> byte-identical files — run through an Inmon 3NF EDW, a Kimball star, Data
-> Vault 2.0, Focal Point, Anchor, One Big Table, and this HOOK warehouse, so
-> every difference between them is the *model*, never the input.
+> **Part of a ten-model comparison set.** This is the hooks-only leg: Data
+> Vault without the hub. The same six logical deliveries run through ten
+> warehouses ([Inmon 3NF EDW](../v3_inmon-3nf),
+> [Kimball star](../v3_data-marts), [Data Vault 2.0](../v3_datavault),
+> [Focal Point](../v3_focal-point), [Anchor](../v3_anchor), this HOOK,
+> [Unified Star Schema](../v3_unified-star-schema),
+> [Activity Schema](../v3_activity-schema), the
+> [metrics mart](../v3_metrics-mart), and
+> [One Big Table](../v3_one-big-table)), so every difference between them is
+> the *model*, never the input. This model takes the wide,
+> one-row-per-record restatement shared byte-for-byte by Inmon, Kimball,
+> Data Vault, HOOK, USS, Activity Schema and OBT. Its archive uses the same
+> layout (`loaded_files` + per-feed `hist_*` tables, append-only triggers)
+> as the Inmon, Kimball, Data Vault, USS, Activity Schema and OBT archives.
 > **This README stands on its own;** [HOOK.md](HOOK.md) draws the
 > cross-model comparison.
 
@@ -53,7 +63,7 @@ network.
 ```bash
 make demo          # fresh archive + schema + the full 6-delivery sequence, then print the warehouse
 make rebuild       # delete the frames; replay the raw layer to rebuild them
-make test          # 99 assertions: delete semantics, hooks, delta frames, as-of, exact rebuild
+make test          # 115 assertions: delete semantics, hooks, delta frames, as-of, exact rebuild
 make clean         # delete build/ only — the archive SURVIVES
 make clean-archive # delete archive/ — destroys the raw layer, and the ability to rebuild
 ```
@@ -234,10 +244,13 @@ each row's `load_ts` and `record_source`.
 
 ### How a delivery flows
 
-1. **Stage** the delivery into `stg_*_l1`; record `batch_ts` and `file_id` in
-   `hook_load_params`.
-2. **Load control** — skip a `file_id` already `COMPLETE`; reject a reused
-   `file_id` with a different row count.
+1. **Stage** the delivery into `stg_*_l1`.
+2. **Load control** — compare the staged file with what the archive holds for
+   its `file_id`: the row count must match the manifest, and once rows are
+   archived every row must match exactly, order included. Any mismatch is
+   rejected loudly, whether the id is `COMPLETE` or a crashed `STARTED` one.
+   Only then is a `COMPLETE` id skipped and a `STARTED` one retried.
+   Then record `batch_ts` and `file_id` in `hook_load_params`.
 3. **Archive** the staged rows verbatim (`INSERT OR IGNORE`, safe to retry).
 4. **Apply** via `apply_delivery.sh` → `load_frames.sh`.
 5. **Mark COMPLETE**, then clear the stage. A crash leaves the delivery
@@ -271,7 +284,7 @@ never close a row.
 |----------------------|--------------------------------------------------------------------------|
 | `make demo`          | fresh archive + schema + the full delivery sequence + printed warehouse  |
 | `make rebuild`       | regenerate the frames by replaying the raw layer                         |
-| `make test`          | run the test suite (99 assertions)                                       |
+| `make test`          | run the test suite (115 assertions)                                       |
 | `make init`          | recreate the frame database from schema (the archive survives)           |
 | `make clean`         | delete `build/` only — **the archive survives**                          |
 | `make clean-archive` | delete `archive/` — destroys the raw layer and the ability to rebuild    |
@@ -299,7 +312,7 @@ never close a row.
 │   └── query.sh             # print the warehouse
 ├── source/                  # D0–D5, byte-identical with ../v3_datavault and ../v3_inmon-3nf
 ├── tests/
-│   ├── run_tests.sh         # 99 assertions
+│   ├── run_tests.sh         # 115 assertions
 │   └── fixtures/d6_repoint.sql   # O-101 re-pointed to C001 (data row identical to the siblings')
 ├── build/                   # generated: the frames (safe to delete)
 └── archive/                 # generated: the durable raw layer
@@ -313,7 +326,7 @@ never close a row.
 make test
 ```
 
-**99 assertions**, pure shell + `sqlite3`, covering:
+**115 assertions**, pure shell + `sqlite3`, covering:
 
 - **Delete semantics** — the stale-window trap, FULL-absence deletes,
   tombstones, recency dedup, load control, and zero-churn idempotence.

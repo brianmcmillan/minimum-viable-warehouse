@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
-# Recreate the vault database from schema. Unlike the Focal demo there is
-# no separate archive to protect: the INSERT-ONLY RAW VAULT is itself the
-# durable history layer (for attributes -- see DATAVAULT.md for what that
-# does and does not buy relative to Focal's delivery archive).
+# Recreate the vault database from schema; the archive is preserved (IF
+# NOT EXISTS, never rm'd). `make clean-archive` is the only destroyer of
+# raw history.
 source "$(dirname "$0")/lib.sh"
+
+echo "==> Initialising archive $ARCHIVE_DB (raw layer, preserved)"
+DB="$ARCHIVE_DB" sql_file "$ROOT_DIR/schema/02_archive.sql"
+n="$(DB="$ARCHIVE_DB" sql_scalar "SELECT COUNT(*) FROM loaded_files;")"
+echo "    $n delivery(ies) already archived."
+
 echo "==> Initialising $DB (Data Vault 2.0, natural-key variant)"
 rm -f "$DB"
 cat "$ROOT_DIR/schema/01_stage.sql" \

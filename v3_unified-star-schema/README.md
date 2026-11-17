@@ -27,12 +27,21 @@ grains and sums?*
   `Customer` row on the bridge, so it still shows up. That's the
   **chasm trap**, gone by construction.
 
-> **Part of a model-comparison set.** The same six deliveries,
-> byte-identical files, run through an Inmon 3NF EDW, a Kimball star, Data
-> Vault 2.0, Focal Point, Anchor, HOOK, One Big Table, and this USS, so
-> every difference between them is the *model*, never the input.
-> **This README stands on its own;** [USS.md](USS.md) draws the
-> cross-model comparison.
+> **Part of a ten-model comparison set.** This is the presentation-layer
+> leg. The same six logical deliveries run through ten warehouses
+> ([Inmon 3NF EDW](../v3_inmon-3nf), [Kimball star](../v3_data-marts),
+> [Data Vault 2.0](../v3_datavault), [Focal Point](../v3_focal-point),
+> [Anchor](../v3_anchor), [HOOK](../v3_hook), this Unified Star Schema,
+> [Activity Schema](../v3_activity-schema), the
+> [metrics mart](../v3_metrics-mart), and
+> [One Big Table](../v3_one-big-table)), so every difference between them is
+> the *model*, never the input. This model takes the wide,
+> one-row-per-record restatement shared byte-for-byte by Inmon, Kimball,
+> Data Vault, HOOK, USS, Activity Schema and OBT. Its archive uses the same
+> layout (`loaded_files` + per-feed `hist_*` tables, append-only triggers)
+> as the Inmon, Kimball, Data Vault, HOOK, Activity Schema and OBT archives.
+> **This README stands on its own;** [USS.md](USS.md) draws the cross-model
+> comparison.
 
 ---
 
@@ -55,7 +64,7 @@ network.
 make demo          # fresh archive + schema + the full 6-delivery sequence, then print the warehouse
 make refresh       # re-derive the USS layer from the core (no reload)
 make rebuild       # delete core + USS; replay the raw layer to rebuild both
-make test          # 113 assertions: delete semantics, bridge shape, traps, as-of, exact rebuild
+make test          # 129 assertions: delete semantics, bridge shape, traps, as-of, exact rebuild
 make clean         # delete build/ only — the archive SURVIVES
 make clean-archive # delete archive/ — destroys the raw layer, and the ability to rebuild
 ```
@@ -225,10 +234,13 @@ identical to what ingest produced.
 
 ### How a delivery flows
 
-1. **Stage** the delivery into `stg_*_l1`; record `batch_ts` and `file_id`
-   in `load_params`.
-2. **Load control** — skip a `file_id` already `COMPLETE`; reject a reused
-   `file_id` with a different row count.
+1. **Stage** the delivery into `stg_*_l1`.
+2. **Load control** — compare the staged file with what the archive holds for
+   its `file_id`: the row count must match the manifest, and once rows are
+   archived every row must match exactly, order included. Any mismatch is
+   rejected loudly, whether the id is `COMPLETE` or a crashed `STARTED` one.
+   Only then is a `COMPLETE` id skipped and a `STARTED` one retried.
+   Then record `batch_ts` and `file_id` in `load_params`.
 3. **Archive** the staged rows verbatim (`INSERT OR IGNORE`, safe to retry).
 4. **Apply** via `apply_delivery.sh` → `load_core.sh` → `refresh_uss.sh`.
 5. **Mark COMPLETE**, then clear the stage. A crash leaves the delivery
@@ -261,7 +273,7 @@ split has to be a business rule someone writes down.
 | `make demo`          | fresh archive + schema + the full delivery sequence + printed warehouse  |
 | `make refresh`       | re-derive the USS from the core (picks up reference-data changes)        |
 | `make rebuild`       | regenerate core + USS by replaying the raw layer                         |
-| `make test`          | run the test suite (113 assertions)                                      |
+| `make test`          | run the test suite (129 assertions)                                      |
 | `make init`          | recreate the database from schema (the archive survives)                 |
 | `make clean`         | delete `build/` only — **the archive survives**                          |
 | `make clean-archive` | delete `archive/` — destroys the raw layer and the ability to rebuild    |
@@ -290,7 +302,7 @@ split has to be a business rule someone writes down.
 │   └── query.sh             # print the warehouse
 ├── source/                  # D0–D5, byte-identical with ../v3_datavault, ../v3_inmon-3nf, ../v3_hook
 ├── tests/
-│   ├── run_tests.sh         # 113 assertions
+│   ├── run_tests.sh         # 129 assertions
 │   └── fixtures/d6_repoint.sql   # O-101 re-pointed to C001 (data row identical to the siblings')
 ├── build/                   # generated (safe to delete)
 └── archive/                 # generated: the durable raw layer
@@ -304,7 +316,7 @@ split has to be a business rule someone writes down.
 make test
 ```
 
-**113 assertions**, pure shell + `sqlite3`, covering:
+**129 assertions**, pure shell + `sqlite3`, covering:
 
 - **Delete semantics** — the stale-window trap, FULL-absence deletes,
   tombstones, recency dedup, load control, and zero-churn idempotence (the

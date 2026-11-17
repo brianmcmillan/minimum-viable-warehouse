@@ -4,15 +4,16 @@ The no-model position, taken seriously: the append-only delivery log **is**
 the warehouse, and everything queryable is a full-refresh recomputation
 over it (the dbt-style full refresh / functional data engineering pattern —
 idempotent by construction, no incremental state anywhere). Same wide
-deliveries as DV, Kimball and Inmon, byte-identical.
+deliveries as DV, Kimball, Inmon, HOOK, USS and Activity Schema,
+byte-identical.
 
 ```bash
 make demo     # fresh archive + the full delivery sequence + tables
 make rebuild  # init + ONE refresh -- no replay loop, nothing incremental
-make test     # 55 assertions, mutation-hardened
+make test     # 71 assertions, mutation-hardened
 ```
 
-This demo exists to answer the question the other five raise:
+This demo exists to answer the question the other nine raise:
 **what does modeling actually buy?**
 
 ## What it gets right, embarrassingly cheaply
@@ -26,7 +27,7 @@ This demo exists to answer the question the other five raise:
   of its feed came after that mention (had the key been in that snapshot,
   *that* would be the latest mention).
 - **Rebuild is trivial** — init plus one refresh — precisely because
-  nothing was ever derived incrementally. The other five demos work hard
+  nothing was ever derived incrementally. The modeled demos work hard
   for replay determinism; here it is free.
 - **`obt_order_wide`** is the pattern's namesake: order-line grain,
   everything denormalized, the table every BI tool wishes it had.
@@ -50,7 +51,7 @@ This demo exists to answer the question the other five raise:
    deliveries that is invisible; at thousands, the full refresh *is* the
    nightly batch window.
 
-## Honest scorecard vs the other five
+## Honest scorecard vs the other nine
 
 Same input, same answers, so the trade is stark: OBT wins on loader
 simplicity, rebuild triviality, and time-to-first-query; it loses on
@@ -68,7 +69,7 @@ scripts/load_feed.sh      stage -> append -> refresh; shared load control
 scripts/refresh_latest.sh the ONE transform: full recomputation over the log
 scripts/rebuild.sh        init + one refresh
 source/d0..d5*.sql        byte-identical copies of the v3_datavault deliveries
-tests/run_tests.sh        55 assertions; mode-filter, ranking-order and
+tests/run_tests.sh        71 assertions; mode-filter, ranking-order and
                           skipped-refresh mutations all verified to fail it
 tests/fixtures/d6_repoint.sql  the restatement fixture (latest wins here)
 ```

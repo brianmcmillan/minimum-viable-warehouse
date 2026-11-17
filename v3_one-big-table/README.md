@@ -8,7 +8,7 @@ incremental state anywhere. Built from nothing but **`sqlite3`, `bash`, and
 `make`**. No Python, no dbt, no server, no packages to install. The
 `sqlite3` that ships with macOS is enough.
 
-It exists to answer the question the other five warehouses in the set raise:
+It exists to answer the question the other nine warehouses in the set raise:
 **what does modeling actually buy?** Feed it the same deliveries, get the
 same answers — then read the bill.
 
@@ -21,17 +21,25 @@ same answers — then read the bill.
   of its feed simply omitted it. One query works that out; no load-time state
   machine does.
 - **Rebuild is trivial** — `init` plus one refresh — precisely because
-  nothing was ever derived incrementally. The other five demos work hard for
+  nothing was ever derived incrementally. The modeled demos work hard for
   replay determinism; here it is free.
 
-> **Part of a six-model comparison set.** This is the null hypothesis of a
-> study that runs the *same six deliveries* — byte-identical files — through
-> six warehouses (an Inmon 3NF EDW, a Kimball star, Data Vault 2.0, Focal
-> Point, Anchor, and this One Big Table), so every difference between them is
-> the *model*, never the input. Keeping the no-model position runnable next
-> to the other five is the cleanest way to price what they add. **This README
-> stands on its own;** [OBT.md](OBT.md) draws the cross-model comparison in
-> full.
+> **Part of a ten-model comparison set.** This is the null hypothesis. The
+> same six logical deliveries run through ten warehouses
+> ([Inmon 3NF EDW](../v3_inmon-3nf), [Kimball star](../v3_data-marts),
+> [Data Vault 2.0](../v3_datavault), [Focal Point](../v3_focal-point),
+> [Anchor](../v3_anchor), [HOOK](../v3_hook),
+> [Unified Star Schema](../v3_unified-star-schema),
+> [Activity Schema](../v3_activity-schema), the
+> [metrics mart](../v3_metrics-mart), and this One Big Table), so every
+> difference between them is the *model*, never the input. This model takes
+> the wide, one-row-per-record restatement shared byte-for-byte by Inmon,
+> Kimball, Data Vault, HOOK, USS, Activity Schema and OBT. Its archive uses
+> the same layout (`loaded_files` + per-feed `hist_*` tables, append-only
+> triggers) as the Inmon, Kimball, Data Vault, HOOK, USS and Activity Schema
+> archives. Keeping the no-model position runnable next to the other nine is
+> the cleanest way to price what they add. **This README stands on its
+> own;** [OBT.md](OBT.md) draws the cross-model comparison.
 
 ---
 
@@ -53,7 +61,7 @@ directory; nothing reaches the network.
 ```bash
 make demo          # fresh archive + schema + the full 6-delivery sequence, then print the tables
 make rebuild       # init + ONE full refresh — no replay loop, nothing incremental
-make test          # 55 assertions: derived deletes, the storage bill, history-as-a-query
+make test          # 71 assertions: derived deletes, the storage bill, history-as-a-query
 make clean         # delete build/ only — the archive (the real warehouse) SURVIVES
 make clean-archive # delete archive/ — destroys the log, and with it everything
 ```
@@ -98,7 +106,7 @@ Every warehouse in the set enforces one rule:
 > Deletes arrive as an explicit **tombstone** (`op='DELETE'`) or are found
 > later by a **FULL reconciliation**.
 
-What makes OBT different is *where* the rule lives. The other five enforce it
+What makes OBT different is *where* the rule lives. The other nine enforce it
 as they load. OBT **derives it from the log** at refresh time, in one query
 per feed:
 
@@ -201,8 +209,8 @@ Which is why rebuild needs no replay loop:
 make rebuild   # init + ONE full refresh; there is no incremental state to reconstruct
 ```
 
-The other five demos replay every delivery in order through their real
-loaders to prove fidelity. OBT can't get replay wrong, because it never
+The other archive-backed demos replay every delivery in order through their
+real loaders to prove fidelity. OBT can't get replay wrong, because it never
 derived anything incrementally in the first place — `rebuild` is `init`
 followed by a single `refresh_latest.sh`. That triviality is the pattern's
 rhetorical payoff; the cost simply lives elsewhere (see below). Nothing can
@@ -219,10 +227,13 @@ at its most literal — stage, append, refresh, with no merge or delta engine
 anywhere:
 
 1. **Stage** the delivery into `stg_*_l1`.
-2. **Load control** — look up the delivery's `file_id`. A `file_id` names a
-   delivery's *content* (a batch/version id, not a filename). If it is
-   already `COMPLETE`, skip it. If the same `file_id` reappears with a
-   *different* row count, reject it loudly.
+2. **Load control** — a `file_id` names a delivery's *content* (a
+   batch/version id, not a filename). compare the staged file with what the
+   archive holds for its `file_id`: the row count must match the manifest, and
+   once rows are archived every row must match exactly, order included. Any
+   mismatch is rejected loudly, whether the id is `COMPLETE` or a crashed
+   `STARTED` one. Only then is a `COMPLETE` id skipped and a `STARTED` one
+   retried.
 3. **Append** the staged rows verbatim into the append-only `hist_*` log —
    idempotent (`INSERT OR IGNORE` never fires the append-only triggers), so a
    retry is safe.
@@ -293,7 +304,7 @@ exists.
 |----------------------|--------------------------------------------------------------------------------------------|
 | `make demo`          | fresh archive + schema + the full delivery sequence + printed tables                       |
 | `make rebuild`       | `init` + ONE full refresh (no replay loop needed)                                          |
-| `make test`          | run the OBT test suite (55 assertions)                                                      |
+| `make test`          | run the OBT test suite (71 assertions)                                                      |
 | `make init`          | recreate the latest tables from schema (the archive survives)                              |
 | `make clean`         | delete `build/` only — **the archive, the real warehouse, survives**; `make rebuild` restores the tables |
 | `make clean-archive` | delete `archive/` — destroys the log and therefore everything (deliberately separate from `clean`) |
@@ -336,7 +347,7 @@ once `COMPLETE`; it is the only target that discards the log implicitly.
 make test
 ```
 
-One suite, pure shell + `sqlite3`, **55 assertions**, mutation-hardened (the
+One suite, pure shell + `sqlite3`, **71 assertions**, mutation-hardened (the
 mode-filter, ranking-order, and skipped-refresh mutations were all verified to
 fail it). It replays the shared delivery scenario against the latest tables
 and then exercises the OBT-specific behaviours:
@@ -357,7 +368,7 @@ The suite passes with no external setup.
 
 ---
 
-## Honest scorecard vs the other five
+## Honest scorecard vs the other nine
 
 Same input, same answers, so the trade is stark. OBT **wins** on loader
 simplicity, rebuild triviality, and time-to-first-query. It **loses** on
@@ -381,10 +392,10 @@ That is the whole reason to keep the null hypothesis runnable next to them.
 
 - **[OBT.md](OBT.md)** — the design notes: what the no-model position gets
   right embarrassingly cheaply, where the bill arrives, and the honest
-  scorecard against the other five. Draws the full comparison across the
+  scorecard against the other nine. Draws the full comparison across the
   model set.
 - **Sibling demos** — [`../v3_data-marts`](../v3_data-marts) (Kimball star)
   and [`../v3_inmon-3nf`](../v3_inmon-3nf) (the 3NF control group) ingest the
   *same deliveries* and reach the *same end state* — the sharpest way to see
-  what a model buys. The [top-level README](../README.md) sets out all six
+  what a model buys. The [top-level README](../README.md) sets out all ten
   warehouses and the essays that argue over how to choose between them.

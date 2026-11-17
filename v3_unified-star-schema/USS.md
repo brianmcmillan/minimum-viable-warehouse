@@ -6,14 +6,14 @@ above them. It doesn't ask how to store history. It asks how to lay data
 out so a self-service user can't get a wrong total. Its answer is one
 bridge table in the middle of a star whose points are *all* the tables.
 
-Same wide deliveries as the DV, Kimball, Inmon, HOOK and OBT demos,
-byte-identical.
+Same wide deliveries as the DV, Kimball, Inmon, HOOK, Activity Schema and
+OBT demos, byte-identical.
 
 ```bash
 make demo     # fresh archive + the full delivery sequence + views
 make refresh  # re-derive the USS from the core
 make rebuild  # regenerate core + USS by replaying the raw layer
-make test     # 113 assertions, mutation-checked
+make test     # 129 assertions, mutation-checked
 ```
 
 ## The ideas
@@ -99,5 +99,5 @@ schema/03_core.sql      core_table registry, insert-only core, latest views, ref
 schema/04_uss.sql       USS tables, _bridge, business / trap / history views
 scripts/load_core.sh    the generic, registry-driven core loader
 scripts/refresh_uss.sh  full re-derive of the USS tables and the bridge
-tests/run_tests.sh      113 assertions
+tests/run_tests.sh      129 assertions
 ```

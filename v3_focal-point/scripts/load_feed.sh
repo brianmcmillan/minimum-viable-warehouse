@@ -39,6 +39,12 @@ rc="$(sql_int "$(sql_scalar "SELECT COUNT(*) FROM source_landing_stage;")")"
 
 prev_status="$(asql_scalar "SELECT status FROM arch.loaded_files WHERE file_id='$q_file_id';")"
 if [ -n "$prev_status" ]; then
+  prev_rc="$(asql_scalar "SELECT COALESCE(row_count,-1) FROM arch.loaded_files
+                          WHERE file_id='$q_file_id';")"
+  [ "$prev_rc" = "$rc" ] || {
+    echo "FATAL: delivery '$FILE_ID' was archived with $prev_rc row(s) but this file has $rc." >&2
+    echo "       A file_id identifies a delivery's CONTENT. Issue a new file_id." >&2
+    exit 1; }
   # Exact comparison, order included: seq_nbr drives the dedup tiebreak, so
   # the same rows in a different order are a different delivery. Skipped when
   # nothing was archived yet (a crash before the archive write).
@@ -64,6 +70,7 @@ if [ -n "$prev_status" ]; then
   fi
 
   if [ "$prev_status" = "COMPLETE" ]; then
+    sql_run "DELETE FROM source_landing_stage;"
     echo "==> SKIP duplicate delivery '$FILE_ID' (already COMPLETE in loaded_files)"; exit 0
   fi
   echo "==> RETRY of delivery '$FILE_ID' (previously STARTED, never COMPLETE)"

@@ -10,8 +10,8 @@
 --
 -- Facts ARE updated in place when the source restates an order
 -- (amount, status, or a re-pointed customer): the only one of the three
--- demos that mutates a row. The PSA is what makes that defensible --
--- every prior state is still in psa_order, and `make rebuild` reapplies
+-- demos that mutates a row. The archive is what makes that defensible --
+-- every prior state is still in hist_order, and `make rebuild` reapplies
 -- the whole history.
 --
 -- fact_order_lines: factless fact at order x product grain.

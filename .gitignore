@@ -1,3 +1,8 @@
 .DS_Store
 .DS_Store?
 *.DS_Store
+# generated databases and local settings
+v3_*/build/
+v3_*/archive/
+.claude/
+verify-logs/

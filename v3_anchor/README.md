@@ -24,6 +24,23 @@ generates DDL and insert triggers, not pipeline discipline. This project brings 
 tombstones, load control, capture-raw-then-apply, and ordered replay, each landing on a natively Anchor
 construct. The design notes in **[ANCHOR.md](ANCHOR.md)** walk through every one of those decisions.
 
+> **Part of a ten-model comparison set.** This is the 6NF,
+> table-per-attribute leg. The same six logical deliveries run through ten
+> warehouses ([Inmon 3NF EDW](../v3_inmon-3nf),
+> [Kimball star](../v3_data-marts), [Data Vault 2.0](../v3_datavault),
+> [Focal Point](../v3_focal-point), this Anchor, [HOOK](../v3_hook),
+> [Unified Star Schema](../v3_unified-star-schema),
+> [Activity Schema](../v3_activity-schema), the
+> [metrics mart](../v3_metrics-mart), and
+> [One Big Table](../v3_one-big-table)), so every difference between them is
+> the *model*, never the input. This model takes the narrow,
+> one-row-per-attribute originals shared byte-for-byte by Focal Point,
+> Anchor and the metrics mart. Its archive uses the same narrow layout
+> (`loaded_files` + `source_landing_history`, append-only triggers) as the
+> [Focal Point](../v3_focal-point) and [metrics mart](../v3_metrics-mart)
+> archives. **This README stands on its own;** [ANCHOR.md](ANCHOR.md) draws
+> the cross-model comparison.
+
 ---
 
 ## Requirements
@@ -42,7 +59,7 @@ That's the whole list. Everything runs against local files in the project direct
 
 ```bash
 make demo    # fresh archive + schema + a 6-delivery feed sequence, then print the perspectives
-make test    # run the suite: 72 assertions, mutation-hardened
+make test    # run the suite: 88 assertions, mutation-hardened
 make rebuild # throw the constellation away and replay the raw layer to rebuild it
 ```
 
@@ -220,10 +237,11 @@ in [`source/`](source/)). [`scripts/load_feed.sh`](scripts/load_feed.sh) drives 
 capturing the raw input *before* applying it:
 
 1. **Stage** the delivery into `source_landing_stage`.
-2. **Load control** — look up the delivery's `file_id`. A `file_id` names a delivery's *content* (a
-   batch/version id, not a filename — extractors reuse filenames). If it is already `COMPLETE`, skip it.
-   If the same `file_id` reappears with *different* rows, reject it loudly rather than let the archive
-   stop describing what was actually applied.
+2. **Load control** — a `file_id` names a delivery's *content* (a batch/version id, not a filename —
+   extractors reuse filenames). compare the staged file with what the archive holds for its `file_id`:
+   the row count must match the manifest, and once rows are archived every row must match exactly, order
+   included. Any mismatch is rejected loudly, whether the id is `COMPLETE` or a crashed `STARTED` one.
+   Only then is a `COMPLETE` id skipped and a `STARTED` one retried.
 3. **Archive** the staged rows verbatim into the append-only `source_landing_history` (idempotent:
    `INSERT OR IGNORE`, which does not fire the delete trigger, so retries are safe).
 4. **Apply** via `apply_delivery.sh` → recency-dedup into `source_landing`, then run the three loaders
@@ -265,7 +283,7 @@ scales with the attribute count.
 |-----------------------|-------------------------------------------------------------------------------------|
 | `make demo`           | fresh archive + schema + the full delivery sequence + printed perspectives          |
 | `make rebuild`        | regenerate the constellation by replaying the raw layer                             |
-| `make test`           | run the suite (72 assertions)                                                       |
+| `make test`           | run the suite (88 assertions)                                                       |
 | `make init`           | recreate the derived warehouse from schema (the archive survives)                   |
 | `make clean`          | delete `build/` only — **the archive survives**; `make rebuild` restores it         |
 | `make clean-archive`  | delete `archive/` — destroys the raw layer and the ability to rebuild (deliberately separate from `clean`) |
@@ -309,7 +327,7 @@ scales with the attribute count.
 make test
 ```
 
-One suite, pure shell + `sqlite3`, 72 assertions, mutation-hardened (each guard is verified by feeding
+One suite, pure shell + `sqlite3`, 88 assertions, mutation-hardened (each guard is verified by feeding
 it the input it is supposed to reject). It covers:
 
 - **Delete semantics under a realistic cadence** — an incremental window does *not* delete an

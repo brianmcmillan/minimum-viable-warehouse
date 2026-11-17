@@ -4,7 +4,7 @@
 #   usage: BATCH_TS=<ts> apply_delivery.sh
 #
 # The ONE path from staged rows to the star, shared by both callers --
-# load_feed.sh (ingest) and rebuild.sh (PSA replay). They must share it:
+# load_feed.sh (ingest) and rebuild.sh (archive replay). They must share it:
 # if replay went through its own code, a green rebuild test would prove
 # only that the replay code works, not that it reproduces what ingest
 # actually did. (Same structural rule as the Focal demo.)

@@ -4,7 +4,7 @@
 # against SCD2 dimensions and a transactional fact, plus the
 # Kimball-specific behaviours: frozen surrogate keys in facts, Type-1
 # vs Type-2 change handling, in-place fact restatement, and a
-# PSA-backed rebuild that reproduces every surrogate key.
+# archive-backed rebuild that reproduces every surrogate key.
 #   make test   (or)   ./tests/run_tests.sh
 # =====================================================================
 # No `set -e`: every assertion must run so one failure doesn't hide the rest.
@@ -13,7 +13,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"; PROJ="$(cd "$HERE/.." && pwd)"
 : "${SQLITE:=sqlite3}"
 export SQLITE
 export DB="${TESTDB:-$(mktemp -u 2>/dev/null || echo /tmp/kimball_test).db}"
-export PSA_DB="${DB%.db}_psa.db"
+export ARCHIVE_DB="${DB%.db}_archive.db"
 PASS=0; FAIL=0; FEED_N=0; SKIPPED=0
 LOGDIR="$(mktemp -d)"; trap 'rm -rf "$LOGDIR"' EXIT
 
@@ -22,14 +22,14 @@ q(){  local out rc=0; out="$("$SQLITE" "$DB" "$1" 2>&1)" || rc=$?
                            printf '<SQL-ERROR>'; return 0; }
       printf '%s' "$out"; }
 pq(){ local out rc=0
-      out="$("$SQLITE" -cmd "ATTACH DATABASE '$PSA_DB' AS psa" "$DB" "$1" 2>&1)" || rc=$?
+      out="$("$SQLITE" -cmd "ATTACH DATABASE '$ARCHIVE_DB' AS arch" "$DB" "$1" 2>&1)" || rc=$?
       [ "$rc" -eq 0 ] || { printf "  \033[31mSQL ERROR\033[0m %s\n    %s\n" "$out" "$1" >&2
                            printf '<SQL-ERROR>'; return 0; }
       printf '%s' "$out"; }
 ck(){ if [ "$2" = "$3" ]; then PASS=$((PASS+1)); printf "  \033[32mPASS\033[0m %s\n" "$1";
       else FAIL=$((FAIL+1)); printf "  \033[31mFAIL\033[0m %s  (got '%s', expected '%s')\n" "$1" "$2" "$3"; fi; }
 ck_abort(){ local label="$1" sql="$2" want="$3" out
-      out="$("$SQLITE" "$PSA_DB" "$sql" 2>&1)"
+      out="$("$SQLITE" "$ARCHIVE_DB" "$sql" 2>&1)"
       case "$out" in *"$want"*) PASS=$((PASS+1)); printf "  \033[32mPASS\033[0m %s\n" "$label";;
         *) FAIL=$((FAIL+1)); printf "  \033[31mFAIL\033[0m %s  (got '%s')\n" "$label" "$out";; esac; }
 
@@ -65,16 +65,16 @@ feed(){ local src="$1" file_id="$2" ts="$3" rc=0 log dir="${4:-$PROJ/source}"
   fi
   if grep -q 'SKIP duplicate' "$log"; then SKIPPED=1; else SKIPPED=0; fi
   ck "[$file_id] manifest: recorded exactly once" \
-     "$(pq "SELECT COUNT(*) FROM psa.loaded_files WHERE file_id='$file_id'")" "1"
+     "$(pq "SELECT COUNT(*) FROM arch.loaded_files WHERE file_id='$file_id'")" "1"
   [ "$SKIPPED" -eq 0 ] && ck "[$file_id] manifest: COMPLETE after all loaders" \
-     "$(pq "SELECT status FROM psa.loaded_files WHERE file_id='$file_id'")" "COMPLETE"
+     "$(pq "SELECT status FROM arch.loaded_files WHERE file_id='$file_id'")" "COMPLETE"
   ck "[$file_id] stage blank after delivery" \
      "$(q "SELECT (SELECT COUNT(*) FROM stg_customer_l1)+(SELECT COUNT(*) FROM stg_product_l1)
                 +(SELECT COUNT(*) FROM stg_order_l1)+(SELECT COUNT(*) FROM stg_order_line_l1)")" "0"; }
 
 versions(){ q "SELECT COUNT(*) FROM dim_customer WHERE customer_ref='$1'"; }
 
-echo "== Fresh db + PSA =="; rm -f "$DB" "$PSA_DB"; "$PROJ/scripts/init_db.sh" >/dev/null
+echo "== Fresh db + archive =="; rm -f "$DB" "$ARCHIVE_DB"; "$PROJ/scripts/init_db.sh" >/dev/null
 
 echo; echo "== D0: FULL baseline =="
 feed d0_baseline.sql B0 '2026-02-05 08:00:00'
@@ -85,8 +85,8 @@ ck "baseline: C001 email v1"        "$(q "SELECT email FROM mart_customers WHERE
 ck "baseline: dim_date generated"   "$(q "SELECT COUNT(*)>700 FROM dim_date")" "1"
 ck "baseline: fact joins the calendar (O-100 -> Sunday)" \
    "$(q "SELECT d.weekday FROM fact_orders f JOIN dim_date d ON d.date_key=f.placed_date_key WHERE f.order_ref='O-100'")" "Sunday"
-ck "decode dim: raw 'P' lives in PSA, mart shows PENDING" \
-   "$(pq "SELECT (SELECT DISTINCT status FROM psa.psa_order WHERE order_ref='O-100')||'/'||
+ck "decode dim: raw 'P' lives in archive, mart shows PENDING" \
+   "$(pq "SELECT (SELECT DISTINCT status FROM arch.hist_order WHERE order_ref='O-100')||'/'||
                 (SELECT status FROM mart_orders WHERE order_ref='O-100')")" "P/PENDING"
 
 echo; echo "== D1: CRM 14-day INCREMENTAL window (C001 changed; C002 absent) =="
@@ -146,15 +146,15 @@ before_r="$(census)"
 feed d5_cust_yearly_full.sql D5R '2027-01-10 08:00:00'
 ck "re-asserted current state writes zero star rows" "$(census)" "$before_r"
 
-echo; echo "== PSA: append-only is absolute =="
-ck "PSA captured every delivered row" \
-   "$(pq "SELECT (SELECT COUNT(*) FROM psa.psa_customer)+(SELECT COUNT(*) FROM psa.psa_product)
-              +(SELECT COUNT(*) FROM psa.psa_order)+(SELECT COUNT(*) FROM psa.psa_order_line)")" \
-   "$(pq "SELECT SUM(row_count) FROM psa.loaded_files")"
-ck_abort "UPDATE on psa_customer aborts" "UPDATE psa_customer SET full_name='x';" "append-only"
-ck_abort "DELETE on psa_order aborts"    "DELETE FROM psa_order;" "append-only"
+echo; echo "== Archive: append-only is absolute =="
+ck "archive captured every delivered row" \
+   "$(pq "SELECT (SELECT COUNT(*) FROM arch.hist_customer)+(SELECT COUNT(*) FROM arch.hist_product)
+              +(SELECT COUNT(*) FROM arch.hist_order)+(SELECT COUNT(*) FROM arch.hist_order_line)")" \
+   "$(pq "SELECT SUM(row_count) FROM arch.loaded_files")"
+ck_abort "UPDATE on hist_customer aborts" "UPDATE hist_customer SET full_name='x';" "append-only"
+ck_abort "DELETE on hist_order aborts"    "DELETE FROM hist_order;" "append-only"
 
-echo; echo "== Rebuild: the star is disposable (PSA is the truth) =="
+echo; echo "== Rebuild: the star is disposable (archive is the truth) =="
 before_snap="$(snap)"
 rm -f "$DB"                              # exactly what `make clean` does
 "$PROJ/scripts/rebuild.sh" >/dev/null 2>&1 || echo "  (rebuild exited $?)"
@@ -174,14 +174,86 @@ ck "repoint: fact row count unchanged (an UPDATE, not an insert)" \
    "$(q "SELECT COUNT(*) FROM fact_orders")" "2"
 ck "repoint: O-101 now keyed to C001's current version" \
    "$(q "SELECT placed_by_at_purchase FROM mart_orders WHERE order_ref='O-101'")" "Alice Smith"
-ck "repoint: prior pairing survives ONLY in the PSA" \
-   "$(pq "SELECT COUNT(*) FROM psa.psa_order WHERE order_ref='O-101' AND customer_ref='C002'")" "1"
+ck "repoint: prior pairing survives ONLY in the archive" \
+   "$(pq "SELECT COUNT(*) FROM arch.hist_order WHERE order_ref='O-101' AND customer_ref='C002'")" "1"
 before_d6r="$(census)"
 feed d6_repoint.sql D6R '2027-02-15 08:00:00' "$HERE/fixtures"
 ck "re-asserted repoint writes nothing" "$(census)" "$before_d6r"
 
+echo; echo "== Load control: a file_id names CONTENT (same block in all ten suites) =="
+# Own database pair, so these deliveries never reach the main archive or
+# any rebuild assertion. The crash is simulated at the last step of
+# load_feed.sh -- marking the delivery COMPLETE -- which is the same
+# statement in every model: the loaders have run, the id stays STARTED.
+SAVE_DB="$DB"; SAVE_ARCHIVE_DB="$ARCHIVE_DB"
+export DB="$LOGDIR/reuse.db" ARCHIVE_DB="$LOGDIR/reuse_archive.db"
+rm -f "$DB" "$ARCHIVE_DB"; "$PROJ/scripts/init_db.sh" >/dev/null 2>&1
+R_ORIG="$PROJ/source/d1_cust_win_day60.sql"     # the content X1 names
+R_MORE="$PROJ/source/d4_cust_recency.sql"       # a different row count
+R_EDIT="$LOGDIR/reuse_edited.sql"               # same rows, one value changed
+sed 's/alice@newmail\.com/alice@changed.com/' "$R_ORIG" > "$R_EDIT"
+cat > "$LOGDIR/crash_sqlite" <<SH
+#!/usr/bin/env bash
+for a in "\$@"; do case "\$a" in *"SET status='COMPLETE'"*)
+  echo "simulated crash before COMPLETE" >&2; exit 1;; esac; done
+exec "$SQLITE" "\$@"
+SH
+chmod +x "$LOGDIR/crash_sqlite"
+reuse(){ local rc=0; BATCH_TS='2026-03-02 08:00:00' "$PROJ/scripts/load_feed.sh" "$1" X1 \
+           >"$LOGDIR/reuse.log" 2>&1 || rc=$?; printf '%s' "$rc"; }
+x1_status(){ "$SQLITE" "$ARCHIVE_DB" "SELECT COALESCE((SELECT status FROM loaded_files WHERE file_id='X1'),'<none>')" 2>&1; }
+rejected(){ [ "$1" -ne 0 ] && grep -q '^FATAL' "$LOGDIR/reuse.log" && echo rejected || echo "accepted (exit $1)"; }
+# Archive + warehouse, minus the transient stage (a rejected file stays
+# staged as forensics, exactly like a crashed one).
+frozen(){ "$SQLITE" "$ARCHIVE_DB" .dump; echo "-- warehouse --"
+          "$SQLITE" "$DB" .dump | grep -vE '^INSERT INTO "?(stg_[a-z0-9_]+|source_landing_stage)"? '; }
+
+rc="$(SQLITE="$LOGDIR/crash_sqlite" reuse "$R_ORIG")"
+ck "reuse: crashed delivery X1 is left STARTED" \
+   "$([ "$rc" -ne 0 ] && echo crashed)/$(x1_status)" "crashed/STARTED"
+before="$(frozen)"
+ck "reuse: STARTED X1 re-sent with a different row count is REJECTED" "$(rejected "$(reuse "$R_MORE")")" "rejected"
+ck "reuse:   ... archive and warehouse untouched" "$(frozen)" "$before"
+ck "reuse: STARTED X1 re-sent with the same row count, one value changed, is REJECTED" \
+   "$(rejected "$(reuse "$R_EDIT")")" "rejected"
+ck "reuse:   ... archive and warehouse untouched" "$(frozen)" "$before"
+ck "reuse: STARTED X1 re-sent with its original content retries to COMPLETE" \
+   "$(reuse "$R_ORIG")/$(x1_status)" "0/COMPLETE"
+before="$(frozen)"
+ck "reuse: COMPLETE X1 re-sent with the same row count, one value changed, is REJECTED" \
+   "$(rejected "$(reuse "$R_EDIT")")" "rejected"
+ck "reuse:   ... archive and warehouse untouched" "$(frozen)" "$before"
+ck "reuse: COMPLETE X1 re-sent with a different row count is REJECTED" "$(rejected "$(reuse "$R_MORE")")" "rejected"
+ck "reuse:   ... archive and warehouse untouched" "$(frozen)" "$before"
+ck "reuse: COMPLETE X1 re-sent with its original content is skipped" \
+   "$(reuse "$R_ORIG")/$(grep -c 'SKIP duplicate' "$LOGDIR/reuse.log")" "0/1"
+ck "reuse:   ... archive and warehouse untouched" "$(frozen)" "$before"
+# A crash BEFORE the archive write leaves an id STARTED with nothing
+# archived, so there is no content to compare; the manifest's row count
+# is the only record, and it must still hold.
+cat > "$LOGDIR/crash_sqlite_early" <<SH
+#!/usr/bin/env bash
+for a in "\$@"; do case "\$a" in *"INSERT OR IGNORE INTO arch."*)
+  echo "simulated crash before the archive write" >&2; exit 1;; esac; done
+exec "$SQLITE" "\$@"
+SH
+chmod +x "$LOGDIR/crash_sqlite_early"
+x2(){ local rc=0; BATCH_TS='2026-03-02 08:00:00' "$PROJ/scripts/load_feed.sh" "$1" X2 \
+        >"$LOGDIR/reuse.log" 2>&1 || rc=$?; printf '%s' "$rc"; }
+x2_state(){ "$SQLITE" "$ARCHIVE_DB" "SELECT COALESCE((SELECT status FROM loaded_files WHERE file_id='X2'),'<none>')" 2>&1; }
+rc="$(SQLITE="$LOGDIR/crash_sqlite_early" x2 "$R_ORIG")"
+ck "reuse: delivery X2 crashed before the archive write is left STARTED" \
+   "$([ "$rc" -ne 0 ] && echo crashed)/$(x2_state)" "crashed/STARTED"
+before="$(frozen)"
+ck "reuse: STARTED X2 (nothing archived) re-sent with a different row count is REJECTED" \
+   "$(rejected "$(x2 "$R_MORE")")" "rejected"
+ck "reuse:   ... archive and warehouse untouched" "$(frozen)" "$before"
+ck "reuse: STARTED X2 re-sent with its original content retries to COMPLETE" \
+   "$(x2 "$R_ORIG")/$(x2_state)" "0/COMPLETE"
+export DB="$SAVE_DB" ARCHIVE_DB="$SAVE_ARCHIVE_DB"
+
 echo; echo "====================================================================="
 printf "  RESULT: %d passed, %d failed\n" "$PASS" "$FAIL"
 echo "====================================================================="
-rm -f "$DB" "$PSA_DB"
+rm -f "$DB" "$ARCHIVE_DB"
 [ "$FAIL" -eq 0 ] || exit 1

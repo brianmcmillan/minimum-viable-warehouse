@@ -5,13 +5,13 @@ repo: *how much of that structure did you actually need at load time?* Its
 answer is: almost none. Keep the source tables. Qualify the business keys.
 Build everything else as views.
 
-Same wide deliveries as the DV, Kimball, Inmon and OBT demos,
-byte-identical.
+Same wide deliveries as the DV, Kimball, Inmon, USS, Activity Schema and
+OBT demos, byte-identical.
 
 ```bash
 make demo     # fresh archive + the full delivery sequence + views
 make rebuild  # regenerate the frames by replaying the raw layer
-make test     # 99 assertions, mutation-checked
+make test     # 115 assertions, mutation-checked
 ```
 
 ## The four ideas
@@ -102,5 +102,5 @@ schema/02_archive.sql   raw layer: append-only wide history + manifest
 schema/03_hook.sql      registry (concepts, key sets, frames, hook columns), frames, ref data
 schema/04_views.sql     latest rows, business views, as-of, hub on demand, hook integrity
 scripts/load_frames.sh  the generic, registry-driven delta loader
-tests/run_tests.sh      99 assertions
+tests/run_tests.sh      115 assertions
 ```

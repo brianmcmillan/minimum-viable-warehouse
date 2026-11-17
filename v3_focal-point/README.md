@@ -16,6 +16,24 @@ under 1,000 lines of shell and SQL:
 - A **disposable warehouse over a durable raw layer.** Everything queryable is derived and can be
   regenerated on demand; the only thing that must never be lost is the raw input, captured verbatim.
 
+> **Part of a ten-model comparison set.** This is the metadata-driven,
+> narrow (EAV) leg, and the origin of the archive discipline the others
+> share. The same six logical deliveries run through ten warehouses
+> ([Inmon 3NF EDW](../v3_inmon-3nf), [Kimball star](../v3_data-marts),
+> [Data Vault 2.0](../v3_datavault), this Focal Point,
+> [Anchor](../v3_anchor), [HOOK](../v3_hook),
+> [Unified Star Schema](../v3_unified-star-schema),
+> [Activity Schema](../v3_activity-schema), the
+> [metrics mart](../v3_metrics-mart), and
+> [One Big Table](../v3_one-big-table)), so every difference between them is
+> the *model*, never the input. This model takes the narrow,
+> one-row-per-attribute originals shared byte-for-byte by Focal Point,
+> Anchor and the metrics mart. Its archive uses the same narrow layout
+> (`loaded_files` + `source_landing_history`, append-only triggers) as the
+> [Anchor](../v3_anchor) and [metrics mart](../v3_metrics-mart) archives.
+> **This README stands on its own;** [FOCALPOINT.md](FOCALPOINT.md) draws
+> the cross-model comparison.
+
 ---
 
 ## Requirements
@@ -202,10 +220,11 @@ in [`source/`](source/)). `scripts/load_feed.sh` drives one delivery safely, cap
 *before* applying it:
 
 1. **Stage** the delivery into `source_landing_stage`.
-2. **Load control** — look up the delivery's `file_id`. A `file_id` names a delivery's *content*
-   (a batch/version id, not a filename — extractors reuse filenames). If it is already `COMPLETE`,
-   skip it. If the same `file_id` reappears with *different* rows, reject it loudly rather than let the
-   archive stop describing what was actually applied.
+2. **Load control** — a `file_id` names a delivery's *content* (a batch/version id, not a filename —
+   extractors reuse filenames). compare the staged file with what the archive holds for its `file_id`:
+   the row count must match the manifest, and once rows are archived every row must match exactly, order
+   included. Any mismatch is rejected loudly, whether the id is `COMPLETE` or a crashed `STARTED` one.
+   Only then is a `COMPLETE` id skipped and a `STARTED` one retried.
 3. **Archive** the staged rows verbatim into the append-only `source_landing_history` (idempotent:
    `INSERT OR IGNORE`, which does not fire the delete trigger, so retries are safe).
 4. **Apply** via `apply_delivery.sh` → recency-dedup into `source_landing`, then run the three loaders

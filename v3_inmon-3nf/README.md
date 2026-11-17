@@ -26,14 +26,23 @@ reputation, and unsparing about the two costs its successors exist to fix.
   table; the raw code survives only in the archive — which is what makes the
   conformance rule retroactively fixable by `make rebuild`.
 
-> **Part of a six-model comparison set.** This is the control group of a
-> study that runs the *same six deliveries* — byte-identical files — through
-> six warehouses (this Inmon 3NF EDW, a Kimball star, Data Vault 2.0, Focal
-> Point, Anchor, and One Big Table), so every difference between them is the
-> *model*, never the input. In the classic CIF picture, the
-> [Kimball star](../v3_data-marts) downstream is exactly the kind of
-> departmental mart this EDW would feed. **This README stands on its own;**
-> [INMON.md](INMON.md) draws the cross-model comparison in full.
+> **Part of a ten-model comparison set.** This is the control group. The
+> same six logical deliveries run through ten warehouses (this Inmon 3NF
+> EDW, [Kimball star](../v3_data-marts), [Data Vault 2.0](../v3_datavault),
+> [Focal Point](../v3_focal-point), [Anchor](../v3_anchor),
+> [HOOK](../v3_hook), [Unified Star Schema](../v3_unified-star-schema),
+> [Activity Schema](../v3_activity-schema), the
+> [metrics mart](../v3_metrics-mart), and
+> [One Big Table](../v3_one-big-table)), so every difference between them is
+> the *model*, never the input. This model takes the wide,
+> one-row-per-record restatement shared byte-for-byte by Inmon, Kimball,
+> Data Vault, HOOK, USS, Activity Schema and OBT. Its archive uses the same
+> layout (`loaded_files` + per-feed `hist_*` tables, append-only triggers)
+> as the Kimball, Data Vault, HOOK, USS, Activity Schema and OBT archives.
+> In the classic CIF picture, the [Kimball star](../v3_data-marts)
+> downstream is exactly the kind of departmental mart this EDW would feed.
+> **This README stands on its own;** [INMON.md](INMON.md) draws the
+> cross-model comparison.
 
 ---
 
@@ -55,7 +64,7 @@ directory; nothing reaches the network.
 ```bash
 make demo          # fresh archive + schema + the full 6-delivery sequence, then print the EDW
 make rebuild       # delete the EDW; replay the raw layer to rebuild it
-make test          # 64 assertions: delete semantics, time-variance, range-join PIT, exact rebuild
+make test          # 80 assertions: delete semantics, time-variance, range-join PIT, exact rebuild
 make clean         # delete build/ only — the archive SURVIVES
 make clean-archive # delete archive/ — destroys the raw layer, and the ability to rebuild
 ```
@@ -241,13 +250,15 @@ A delivery is a plain `.sql` file that inserts rows into the `stg_*_l1` stage
 tables (see any file in [`source/`](source/)). `scripts/load_feed.sh` drives
 one delivery safely, capturing the raw input *before* applying it:
 
-1. **Stage** the delivery into `stg_*_l1`, and record its logical timestamp
-   in `edw_load_params`.
-2. **Load control** — look up the delivery's `file_id`. A `file_id` names a
-   delivery's *content* (a batch/version id, not a filename — extractors
-   reuse filenames). If it is already `COMPLETE`, skip it. If the same
-   `file_id` reappears with a *different* row count, reject it loudly rather
-   than let the archive stop describing what was actually applied.
+1. **Stage** the delivery into `stg_*_l1`.
+2. **Load control** — a `file_id` names a delivery's *content* (a
+   batch/version id, not a filename — extractors reuse filenames). compare the
+   staged file with what the archive holds for its `file_id`: the row count
+   must match the manifest, and once rows are archived every row must match
+   exactly, order included. Any mismatch is rejected loudly, whether the id is
+   `COMPLETE` or a crashed `STARTED` one. Only then is a `COMPLETE` id skipped
+   and a `STARTED` one retried.
+   Then record the logical timestamp in `edw_load_params`.
 3. **Archive** the staged rows verbatim into the append-only `hist_*` tables
    — idempotent (`INSERT OR IGNORE` never fires the append-only triggers, so
    retries are safe), assigning `load_seq` on first sight.
@@ -322,7 +333,7 @@ models.
 |----------------------|-----------------------------------------------------------------------------------------|
 | `make demo`          | fresh archive + schema + the full delivery sequence + printed EDW                       |
 | `make rebuild`       | regenerate the EDW by replaying the raw layer                                            |
-| `make test`          | run the EDW test suite (64 assertions)                                                   |
+| `make test`          | run the EDW test suite (80 assertions)                                                   |
 | `make init`          | recreate the EDW from schema (the archive survives)                                      |
 | `make clean`         | delete `build/` only — **the archive survives**; `make rebuild` restores the EDW        |
 | `make clean-archive` | delete `archive/` — destroys the raw layer and the ability to rebuild (deliberately separate from `clean`) |
@@ -367,7 +378,7 @@ once `COMPLETE`; it is the only target that discards the archive implicitly.
 make test
 ```
 
-One suite, pure shell + `sqlite3`, **64 assertions**, mutation-hardened (the
+One suite, pure shell + `sqlite3`, **80 assertions**, mutation-hardened (the
 FULL-guard, replay-order, and churn-guard mutations were all verified to fail
 it). It replays the shared delivery scenario against the EDW and then
 exercises the Inmon-specific behaviours:
@@ -424,5 +435,5 @@ rather than hiding them:
   [`../v3_datavault`](../v3_datavault) (Data Vault 2.0) and
   [`../v3_one-big-table`](../v3_one-big-table) (the null hypothesis) ingest
   the *same deliveries* and reach the *same end state*. The
-  [top-level README](../README.md) sets out all six warehouses and the essays
+  [top-level README](../README.md) sets out all ten warehouses and the essays
   that argue over how to choose between them.
