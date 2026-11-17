@@ -84,6 +84,16 @@ feed(){ local src="$1" file_id="$2" ts="$3" rc=0 log dir="${4:-$PROJ/source}"
      "$(q 'SELECT (SELECT COUNT(*) FROM v_res_type_rel_violation)+(SELECT COUNT(*) FROM v_res_grp_path_violation)')" "0"; }
 
 status(){ q "SELECT status FROM v_res WHERE res_type='$1' AND res_code='$2'"; }
+# Rows the archive holds: the shared wide layout (hist_* per source
+# extract); optional $1 = file_id.
+hist_rows(){ local w=""; [ -n "${1:-}" ] && w=" WHERE file_id='$1'"
+  aq "SELECT (SELECT COUNT(*) FROM arch.hist_customer$w)+(SELECT COUNT(*) FROM arch.hist_product$w)
+            +(SELECT COUNT(*) FROM arch.hist_order$w)+(SELECT COUNT(*) FROM arch.hist_order_line$w)"; }
+# Level 2: a narrow-by-nature delivery straight into the narrow stage and
+# through apply_delivery.sh -- no load control, no archive. $1 file,
+# $2 BATCH_TS, $3 BATCH_NO.
+level2(){ "$SQLITE" "$DB" "DELETE FROM source_landing_stage;"; "$SQLITE" "$DB" < "$1"
+          BATCH_TS="$2" BATCH_NO="$3" "$PROJ/scripts/apply_delivery.sh" >/dev/null 2>&1; }
 price(){  q "SELECT printf('%.2f', price) FROM v_product WHERE sku='$1'"; }
 nsamp(){  q "SELECT COUNT(*) FROM v_metric_sample WHERE res_code='$1' AND metric_code='$2'"; }
 
@@ -157,8 +167,7 @@ ck "CURRENT STATE: the change is an UPDATE in place (still 1 row for C001)" \
    "$(q "SELECT COUNT(*) FROM res_customer WHERE res_id=1")" "1"
 ck "CURRENT STATE: the old email is gone from the mart, kept by the archive" \
    "$(aq "SELECT (SELECT COUNT(*) FROM res_customer WHERE email_addr='alice@example.com')||'/'||
-                 (SELECT COUNT(DISTINCT value_str) FROM arch.source_landing_history
-                  WHERE business_key='C001' AND attribute_name='email_addr')")" "0/2"
+                 (SELECT COUNT(DISTINCT email_addr) FROM arch.hist_customer WHERE customer_id='C001')")" "0/2"
 ck "CHANGED ROWS ONLY: res_customer restamped, RES row for C001 untouched" \
    "$(q "SELECT (SELECT srcd_ts FROM res_customer WHERE res_id=1)||'/'||(SELECT srcd_ts FROM res WHERE res_id=1)")" \
    "2026-03-02 08:00:00/2026-02-05 08:00:00"
@@ -231,12 +240,16 @@ ck "END STATE: census" "$(census)" \
 
 echo; echo "== Raw layer: append-only, no unlock path =="
 ck_abort "archive rejects UPDATE" \
-  "UPDATE source_landing_history SET value_str='x' WHERE seq_nbr=1;" "append-only"
+  "UPDATE hist_customer SET full_name='x' WHERE seq_nbr=1;" "append-only"
 ck_abort "archive rejects DELETE" \
-  "DELETE FROM source_landing_history;" "append-only"
+  "DELETE FROM hist_customer;" "append-only"
+for t in hist_product hist_order hist_order_line; do
+  ck_abort "archive rejects UPDATE on $t" "UPDATE $t SET op=op;" "append-only"
+  ck_abort "archive rejects DELETE on $t" "DELETE FROM $t;"      "append-only"
+done
 cat > "$LOGDIR/drift.sql" <<'SQL'
-INSERT INTO source_landing_stage(source_system,source_entity,business_key,attribute_name,value_str,value_num,value_ts,extract_ts,op,load_mode) VALUES
-('CRM','CUSTOMER','C002','_tombstone',NULL,NULL,NULL,'2026-03-17','DELETE','INCREMENTAL');
+INSERT INTO stg_customer_l1(customer_id, full_name, email_addr, signup_date, extract_dt, op, load_mode) VALUES
+('C002',NULL,NULL,NULL,'2026-03-17','DELETE','INCREMENTAL');
 SQL
 out="$(BATCH_TS='2026-03-17 08:00:00' "$PROJ/scripts/load_feed.sh" "$LOGDIR/drift.sql" D3 2>&1)"; rc=$?
 ck "a used file_id with different content is rejected" \
@@ -249,21 +262,31 @@ rm -f "$DB"
 "$PROJ/scripts/rebuild.sh" >"$LOGDIR/rebuild1.log" 2>&1
 ck "rebuild: census identical" "$(census)" "$before_census"
 ck "rebuild: every surrogate, value and srcd_ts identical" "$(snap)" "$before"
+rm -f "$DB"
+make -s -C "$PROJ" rebuild >/dev/null 2>&1; rc=$?
+ck "make rebuild exits 0" "$rc" "0"
+ck "make rebuild: every surrogate (res_id, provider_id, res_grp_id), value and srcd_ts identical" "$(snap)" "$before"
+ck "archive tables are exactly the shared wide layout" \
+   "$(aq "SELECT group_concat(name,',') FROM (SELECT name FROM arch.sqlite_master WHERE type='table' ORDER BY name)")" \
+   "hist_customer,hist_order,hist_order_line,hist_product,loaded_files"
+ck "no archived table has a key/value (attribute_name) column" \
+   "$(aq "SELECT COUNT(*) FROM arch.sqlite_master m, pragma_table_info(m.name, 'arch') c
+          WHERE m.type='table' AND c.name='attribute_name'")" "0"
 
 echo; echo "== A stale FULL snapshot is not applied twice =="
 # CRM's last delivery (D5) was FULL and still sits in source_landing. An OMS
 # delivery now creates a stub customer. If a later non-CRM delivery re-read
 # the old CRM snapshot, the stub would look "absent from a FULL" and die.
+# Wide rows restate the whole record: O-150 never has an amount, currency
+# or placed_at (empty = NULL, no value), and the second delivery restates
+# the customer it already had.
 cat > "$LOGDIR/stub1.sql" <<'SQL'
-INSERT INTO source_landing_stage(source_system,source_entity,business_key,attribute_name,value_str,value_num,value_ts,extract_ts,op,load_mode) VALUES
-('OMS','ORDER','O-150','order_ref','O-150',NULL,NULL,'2027-01-10','UPSERT','INCREMENTAL'),
-('OMS','ORDER','O-150','customer_ref','C888',NULL,NULL,'2027-01-10','UPSERT','INCREMENTAL'),
-('OMS','ORDER','O-150','status','P',NULL,NULL,'2027-01-10','UPSERT','INCREMENTAL');
+INSERT INTO stg_order_l1(order_ref, customer_ref, status, amount, currency, placed_at, extract_dt, op, load_mode) VALUES
+('O-150','C888','P',NULL,NULL,NULL,'2027-01-10','UPSERT','INCREMENTAL');
 SQL
 cat > "$LOGDIR/stub2.sql" <<'SQL'
-INSERT INTO source_landing_stage(source_system,source_entity,business_key,attribute_name,value_str,value_num,value_ts,extract_ts,op,load_mode) VALUES
-('OMS','ORDER','O-150','order_ref','O-150',NULL,NULL,'2027-01-11','UPSERT','INCREMENTAL'),
-('OMS','ORDER','O-150','status','S',NULL,NULL,'2027-01-11','UPSERT','INCREMENTAL');
+INSERT INTO stg_order_l1(order_ref, customer_ref, status, amount, currency, placed_at, extract_dt, op, load_mode) VALUES
+('O-150','C888','S',NULL,NULL,NULL,'2027-01-11','UPSERT','INCREMENTAL');
 SQL
 feed stub1.sql DS1 '2027-01-10 08:00:00' "$LOGDIR"
 ck "stub customer C888 created by the OMS delivery" "$(status CUSTOMER C888)" "LIVE"
@@ -274,16 +297,15 @@ ck "...and O-150 took its status change in place (P -> S)" \
    "$(q "SELECT status FROM v_order WHERE order_ref='O-150'")" "SHIPPED"
 
 echo; echo "== Tiebreak fixture: same key, same extract_ts, file order decides =="
-feed d6_tiebreak.sql D6 '2027-02-01 08:00:00' "$HERE/fixtures"
+feed d6_tiebreak_wide.sql D6 '2027-02-01 08:00:00' "$HERE/fixtures"
 ck "tiebreak: the LAST row in the file wins" \
    "$(q "SELECT email FROM v_customer WHERE customer_ref='C004'")" "last@x.com"
 
 echo; echo "== Closed code table: an unknown status fails the load =="
 before="$(snap)"
 cat > "$LOGDIR/badstatus.sql" <<'SQL'
-INSERT INTO source_landing_stage(source_system,source_entity,business_key,attribute_name,value_str,value_num,value_ts,extract_ts,op,load_mode) VALUES
-('OMS','ORDER','O-999','order_ref','O-999',NULL,NULL,'2027-01-20','UPSERT','INCREMENTAL'),
-('OMS','ORDER','O-999','status','X',NULL,NULL,'2027-01-20','UPSERT','INCREMENTAL');
+INSERT INTO stg_order_l1(order_ref, customer_ref, status, amount, currency, placed_at, extract_dt, op, load_mode) VALUES
+('O-999',NULL,'X',NULL,NULL,NULL,'2027-01-20','UPSERT','INCREMENTAL');
 SQL
 out="$(BATCH_TS='2027-02-02 08:00:00' "$PROJ/scripts/load_feed.sh" "$LOGDIR/badstatus.sql" DX 2>&1)"; rc=$?
 ck "unknown status code 'X' is REJECTED by the foreign key" \
@@ -292,8 +314,8 @@ ck "  ...and the resource load rolled back as one step (no O-999)" "$(snap)" "$b
 ck "  ...the failed delivery stays retryable (STARTED)" \
    "$(aq "SELECT status FROM arch.loaded_files WHERE file_id='DX'")" "STARTED"
 ck "  ...with its staged rows preserved as forensics" \
-   "$(q 'SELECT COUNT(*) FROM source_landing_stage')" "2"
-q "DELETE FROM source_landing_stage;" >/dev/null   # clean up for the next block
+   "$(q 'SELECT COUNT(*) FROM stg_order_l1')" "1"
+q "DELETE FROM stg_order_l1; DELETE FROM source_landing_stage;" >/dev/null   # clean up for the next block
 
 echo; echo "== Re-point: OMS moves O-101 from C002 to C001 =="
 feed d7_repoint.sql D7 '2027-02-03 08:00:00' "$HERE/fixtures"
@@ -304,8 +326,8 @@ ck "repoint: placed_by resolves to Alice Smith" \
 ck "repoint: IN PLACE -- the mart no longer knows C002 ever owned it" \
    "$(q "SELECT COUNT(*) FROM res WHERE res_code='O-101' AND parent_res=2")" "0"
 ck "repoint: ...the archive does" \
-   "$(aq "SELECT group_concat(value_str,'>') FROM (SELECT value_str FROM arch.source_landing_history
-          WHERE business_key='O-101' AND attribute_name='customer_ref' ORDER BY load_seq)")" "C002>C001"
+   "$(aq "SELECT group_concat(customer_ref,'>') FROM (SELECT customer_ref FROM arch.hist_order
+          WHERE order_ref='O-101' ORDER BY load_seq)")" "C002>C001"
 ck "repoint: unchanged status, currency and placed_at wrote nothing" \
    "$(q "SELECT o.srcd_ts FROM res_order o JOIN res r USING(res_id) WHERE r.res_code='O-101'")" "2026-02-05 08:00:00"
 ck "repoint: the restated amount is a new observation (2 samples)" "$(nsamp O-101 amount)" "2"
@@ -313,13 +335,11 @@ before="$(snap)"
 feed d7_repoint.sql D7R '2027-02-15 08:00:00' "$HERE/fixtures"
 ck "re-asserted repoint (same extract) writes nothing" "$(snap)" "$before"
 
-echo; echo "== Partial narrow delivery: one attribute of one product =="
-feed d8_metric_obs.sql D8 '2027-03-01 08:00:00' "$HERE/fixtures"
-ck "partial: SKU-2 price is the new observation" "$(price SKU-2)" "21.50"
-ck "partial: absent attributes mean no change (name and currency kept)" \
-   "$(q "SELECT product_name||'/'||currency FROM v_product WHERE sku='SKU-2'")" "Gadget/USD"
-ck "partial: INCREMENTAL absence deleted no product" \
-   "$(q "SELECT COUNT(*) FROM v_product")" "2"
+echo; echo "== Price observation: a new SKU-2 price (wide d8) =="
+# The partial-delivery rule this block used to test (absent attributes
+# mean "no change") is narrow by nature: it runs at level 2 below, with
+# the unchanged d8_metric_obs.sql, in a scratch database.
+feed d8_metric_obs_wide.sql D8 '2027-03-01 08:00:00' "$HERE/fixtures"
 
 echo; echo "== Correction: same sample key, different value =="
 before_n="$(nsamp SKU-2 price)"
@@ -328,8 +348,8 @@ ck "correction: the 2027-03-01 sample is OVERWRITTEN (21.5 -> 20.5)" \
    "$(q "SELECT printf('%.2f',value) FROM v_metric_sample WHERE res_code='SKU-2' AND sample_utc_ts='2027-03-01 00:00:00'")" "20.50"
 ck "correction: one new sample only (the 03-03 observation)" "$(nsamp SKU-2 price)" "$((before_n+1))"
 ck "correction: the archive kept both values for that moment" \
-   "$(aq "SELECT COUNT(DISTINCT value_num) FROM arch.source_landing_history
-          WHERE business_key='SKU-2' AND attribute_name='price' AND extract_ts='2027-03-01'")" "2"
+   "$(aq "SELECT COUNT(DISTINCT price) FROM arch.hist_product
+          WHERE sku='SKU-2' AND extract_dt='2027-03-01'")" "2"
 ck "AGGREGATES: the week of 2027-03-01 averages both samples (cnt 2, min 20.5, max 22.5)" \
    "$(q "SELECT printf('%.2f',value)||'/'||value_cnt||'/'||printf('%.2f',value_min)||'/'||printf('%.2f',value_max)
          FROM v_metric_weekly WHERE res_code='SKU-2' AND week_start='2027-03-01'")" "21.50/2/20.50/22.50"
@@ -358,9 +378,8 @@ ck "TYPE GROUPS: a delete takes nothing out of a type group (SKU-3 still in /TYP
 
 echo; echo "== Membership FULL snapshot: an absent order line is removed =="
 cat > "$LOGDIR/lines_full.sql" <<'SQL'
-INSERT INTO source_landing_stage(source_system,source_entity,business_key,attribute_name,value_str,value_num,value_ts,extract_ts,op,load_mode) VALUES
-('OMS','ORDER_LINE','O-100~SKU-2','order_ref','O-100',NULL,NULL,'2027-04-05','UPSERT','FULL'),
-('OMS','ORDER_LINE','O-100~SKU-2','sku','SKU-2',NULL,NULL,'2027-04-05','UPSERT','FULL');
+INSERT INTO stg_order_line_l1(order_ref, sku, extract_dt, op, load_mode) VALUES
+('O-100','SKU-2','2027-04-05','UPSERT','FULL');
 SQL
 feed lines_full.sql DL '2027-04-05 08:00:00' "$LOGDIR"
 ck "FULL absence: O-101~SKU-2 removed, O-100~SKU-2 kept" \
@@ -372,9 +391,8 @@ echo; echo "== RES_TYPE_REL: a parent of the wrong type fails the load =="
 before="$(snap)"
 q "DELETE FROM res_type_rel;" >/dev/null
 cat > "$LOGDIR/badrel.sql" <<'SQL'
-INSERT INTO source_landing_stage(source_system,source_entity,business_key,attribute_name,value_str,value_num,value_ts,extract_ts,op,load_mode) VALUES
-('OMS','ORDER','O-103','order_ref','O-103',NULL,NULL,'2027-04-02','UPSERT','INCREMENTAL'),
-('OMS','ORDER','O-103','customer_ref','C001',NULL,NULL,'2027-04-02','UPSERT','INCREMENTAL');
+INSERT INTO stg_order_l1(order_ref, customer_ref, status, amount, currency, placed_at, extract_dt, op, load_mode) VALUES
+('O-103','C001',NULL,NULL,NULL,NULL,'2027-04-02','UPSERT','INCREMENTAL');
 SQL
 out="$(BATCH_TS='2027-04-02 08:00:00' "$PROJ/scripts/load_feed.sh" "$LOGDIR/badrel.sql" DR 2>&1)"; rc=$?
 ck "pairing not listed in RES_TYPE_REL is REJECTED by the load guard" \
@@ -417,7 +435,15 @@ cat > "$LOGDIR/weight.sql" <<'SQL'
 INSERT INTO source_landing_stage(source_system,source_entity,business_key,attribute_name,value_str,value_num,value_ts,extract_ts,op,load_mode) VALUES
 ('PIM','PRODUCT','SKU-1','weight_kg',NULL,0.35,NULL,'2027-05-01','UPSERT','INCREMENTAL');
 SQL
-feed weight.sql DW '2027-05-01 08:00:00' "$LOGDIR"
+# weight_kg is a NEW attribute: the shared wide layout has no column for
+# it, so this delivery is narrow by nature and runs at level 2 -- straight
+# into the narrow stage, outside load control and the archive. It comes
+# after the last "rebuild reproduces" assertion; the rebuild below only
+# asserts that the seed is reset. (Under a wide raw layer a new metric
+# from a source also needs a new wide column; see README.)
+level2 "$LOGDIR/weight.sql" '2027-05-01 08:00:00' "$(( $(aq 'SELECT MAX(load_seq) FROM arch.loaded_files') + 1 ))"
+ck "[DW] integrity views empty" \
+   "$(q 'SELECT (SELECT COUNT(*) FROM v_res_type_rel_violation)+(SELECT COUNT(*) FROM v_res_grp_path_violation)')" "0"
 ck "new metric: its first sample loaded and aggregated" \
    "$(q "SELECT printf('%.2f',value)||'/'||value_cnt FROM v_metric_weekly WHERE res_code='SKU-1' AND metric_code='weight_kg'")" "0.35/1"
 ck "new metric: the schema did not change" \
@@ -432,8 +458,8 @@ ck "weeks: every week start is a Monday in CALNDR" \
    "$(q "SELECT COUNT(*) FROM metric_weekly w LEFT JOIN calndr c ON c.calndr_date = w.start_lcl_dt
          WHERE c.day_of_week IS NOT 1")" "0"
 cat > "$LOGDIR/outside.sql" <<'SQL'
-INSERT INTO source_landing_stage(source_system,source_entity,business_key,attribute_name,value_str,value_num,value_ts,extract_ts,op,load_mode) VALUES
-('PIM','PRODUCT','SKU-1','price',NULL,7.99,NULL,'2028-01-10','UPSERT','INCREMENTAL');
+INSERT INTO stg_product_l1(sku, prod_name, price, currency, extract_dt, op, load_mode) VALUES
+('SKU-1','Widget',7.99,'USD','2028-01-10','UPSERT','INCREMENTAL');
 SQL
 samples_before="$(q "SELECT COUNT(*) FROM metric_sample")"
 out="$(BATCH_TS='2028-01-10 08:00:00' "$PROJ/scripts/load_feed.sh" "$LOGDIR/outside.sql" DC 2>&1)"; rc=$?
@@ -447,6 +473,131 @@ ck "weeks: the week start comes from CALNDR, not from a date function" \
    "$(q "SELECT n_wk || '/' || (n_wk = n_day AND n_day > 0) FROM
          (SELECT (SELECT COUNT(*) FROM metric_weekly WHERE start_lcl_dt = '2026-02-05') AS n_wk,
                  (SELECT COUNT(*) FROM metric_summary WHERE date(start_utc_ts) = '2026-02-05') AS n_day)" | cut -d/ -f2)" "1"
+echo; echo "== Unpivoted D0..D5 build the same mart as the old narrow files =="
+# Two scratch database pairs, created after every rebuild assertion above
+# and never read by one. The wide files go through load_feed.sh; the old
+# narrow deliveries (tests/fixtures/narrow) go straight into the narrow
+# stage and through apply_delivery.sh (level 2) with the same BATCH_TS and
+# BATCH_NO. Stage row counts differ (D4: 8 unpivoted vs 5 narrow); the
+# loaded result may not.
+SAVE_DB="$DB"; SAVE_ARCHIVE_DB="$ARCHIVE_DB"
+SEQ="d0_baseline B0 1 2026-02-05 08:00:00
+d1_cust_win_day60 D1 2 2026-03-02 08:00:00
+d2_prod_full_v2 D2 3 2026-03-02 09:00:00
+d3_cust_tombstone D3 4 2026-03-16 08:00:00
+d4_cust_recency D4 5 2026-04-02 08:00:00
+d5_cust_yearly_full D5 6 2026-12-31 08:00:00"
+export DB="$LOGDIR/wide.db" ARCHIVE_DB="$LOGDIR/wide_archive.db"
+rm -f "$DB" "$ARCHIVE_DB"; "$PROJ/scripts/init_db.sh" >/dev/null 2>&1
+while read -r n id seq d t; do
+  BATCH_TS="$d $t" "$PROJ/scripts/load_feed.sh" "$PROJ/source/$n.sql" "$id" >/dev/null 2>&1
+done <<< "$SEQ"
+wide_snap="$(snap)"; wide_census="$(census)"
+export DB="$LOGDIR/narrow_ref.db" ARCHIVE_DB="$LOGDIR/narrow_ref_archive.db"
+rm -f "$DB" "$ARCHIVE_DB"; "$PROJ/scripts/init_db.sh" >/dev/null 2>&1
+while read -r n id seq d t; do
+  level2 "$HERE/fixtures/narrow/$n.sql" "$d $t" "$seq"
+done <<< "$SEQ"
+ck "same census from the old narrow files" "$(census)" "$wide_census"
+ck "same mart (every surrogate, value and srcd_ts) from the old narrow files" "$(snap)" "$wide_snap"
+
+echo; echo "== Level 2: partial narrow delivery, one attribute of one product =="
+# d8_metric_obs.sql (unchanged) carries only SKU-2's price. A wide row
+# always restates the whole record, so this rule -- absent attributes mean
+# "no change" -- can only be exercised narrow: straight into the narrow
+# stage, on top of the wide D0..D5 loaded above.
+export DB="$LOGDIR/wide.db" ARCHIVE_DB="$LOGDIR/wide_archive.db"
+level2 "$HERE/fixtures/d8_metric_obs.sql" '2027-03-01 08:00:00' 7
+ck "partial: SKU-2 price is the new observation" "$(price SKU-2)" "21.50"
+ck "partial: absent attributes mean no change (name and currency kept)" \
+   "$(q "SELECT product_name||'/'||currency FROM v_product WHERE sku='SKU-2'")" "Gadget/USD"
+ck "partial: INCREMENTAL absence deleted no product" \
+   "$(q "SELECT COUNT(*) FROM v_product")" "2"
+export DB="$SAVE_DB" ARCHIVE_DB="$SAVE_ARCHIVE_DB"
+
+echo; echo "== Level 1: the wide -> narrow transform (stage_narrow.sh) =="
+# Own scratch database: wide rows go straight into the wide stage and only
+# stage_narrow.sh runs -- no loader, no archive, nothing a rebuild reads.
+SAVE_DB="$DB"; SAVE_ARCHIVE_DB="$ARCHIVE_DB"
+export DB="$LOGDIR/level1.db" ARCHIVE_DB="$LOGDIR/level1_archive.db"
+rm -f "$DB" "$ARCHIVE_DB"; "$PROJ/scripts/init_db.sh" >/dev/null 2>&1
+q "INSERT INTO stg_customer_l1(customer_id,full_name,email_addr,signup_date,extract_dt,op,load_mode) VALUES
+     ('C1','Ann',NULL,'2026-01-01','2026-05-01','UPSERT','INCREMENTAL'),
+     ('C1','Ann','b@x','2026-01-01','2026-05-01','UPSERT','INCREMENTAL'),
+     ('C2',NULL,NULL,NULL,'2026-05-01','DELETE','INCREMENTAL');
+   INSERT INTO stg_product_l1(sku,prod_name,price,currency,extract_dt,op,load_mode) VALUES
+     ('S1','Thing',2.5,'EUR','2026-05-01','UPSERT','FULL');
+   INSERT INTO stg_order_l1(order_ref,customer_ref,status,amount,currency,placed_at,extract_dt,op,load_mode) VALUES
+     ('O1','C1','P',7.25,'USD','2026-04-30 09:00','2026-05-01','UPSERT','INCREMENTAL');
+   INSERT INTO stg_order_line_l1(order_ref,sku,extract_dt,op,load_mode) VALUES
+     ('O1','S1','2026-05-01','UPSERT','INCREMENTAL');" >/dev/null
+"$PROJ/scripts/stage_narrow.sh" >/dev/null 2>&1
+# typeof() of value_str/value_num/value_ts, per attribute, in emitted order.
+types(){ q "SELECT group_concat(attribute_name||':'||typeof(value_str)||'/'||typeof(value_num)||'/'||typeof(value_ts),' ')
+            FROM (SELECT * FROM source_landing_stage WHERE business_key='$1' ORDER BY rowid)"; }
+ck "level 1: 6 wide rows -> 21 narrow rows (customer 4+4+1, product 4, order 6, line 2)" \
+   "$(q 'SELECT COUNT(*) FROM source_landing_stage')" "21"
+ck "level 1: type routing, customer (signup_date -> value_ts; empty email -> all NULL)" "$(types C1)" \
+   "customer_ref:text/null/null full_name:text/null/null email_addr:null/null/null signup_date:null/null/text customer_ref:text/null/null full_name:text/null/null email_addr:text/null/null signup_date:null/null/text"
+ck "level 1: type routing, product (price -> value_num, currency -> value_str)" "$(types S1)" \
+   "sku:text/null/null prod_name:text/null/null price:null/real/null currency:text/null/null"
+ck "level 1: type routing, order (amount -> value_num, placed_at -> value_ts)" "$(types O1)" \
+   "order_ref:text/null/null customer_ref:text/null/null status:text/null/null amount:null/real/null currency:text/null/null placed_at:null/null/text"
+ck "level 1: signup_date lands in value_ts" \
+   "$(q "SELECT DISTINCT value_ts FROM source_landing_stage WHERE business_key='C1' AND attribute_name='signup_date'")" "2026-01-01"
+ck "level 1: derived key rows (customer_ref=C1, sku=S1, order_ref=O1)" \
+   "$(q "SELECT group_concat(a||'='||v,' ') FROM (SELECT attribute_name a, value_str v, MIN(rowid) r
+         FROM source_landing_stage
+         WHERE (business_key,attribute_name) IN (VALUES ('C1','customer_ref'),('S1','sku'),('O1','order_ref'))
+         GROUP BY 1,2 ORDER BY r)")" "customer_ref=C1 sku=S1 order_ref=O1"
+ck "level 1: order line keyed order_ref~sku, carrying both ends" \
+   "$(types 'O1~S1')|$(q "SELECT group_concat(value_str,',') FROM (SELECT value_str FROM source_landing_stage WHERE business_key='O1~S1' ORDER BY rowid)")" \
+   "order_ref:text/null/null sku:text/null/null|O1,S1"
+ck "level 1: empty column -> a row holding SQL NULL (not skipped, not the string)" \
+   "$(q "SELECT COUNT(*)||'/'||typeof(MAX(value_str)) FROM source_landing_stage
+         WHERE business_key='C1' AND attribute_name='email_addr' AND value_str IS NULL")" "1/null"
+ck "level 1: no value is ever the string 'NULL'" \
+   "$(q "SELECT COUNT(*) FROM source_landing_stage WHERE 'NULL' IN (value_str, value_ts)")" "0"
+ck "level 1: a DELETE emits exactly one _tombstone row, op DELETE" \
+   "$(q "SELECT COUNT(*)||'|'||MAX(attribute_name)||'|'||MAX(op) FROM source_landing_stage WHERE business_key='C2'")" "1|_tombstone|DELETE"
+ck "level 1: order is feed, then wide row, then attribute position" \
+   "$(q "SELECT group_concat(e,',') FROM (SELECT source_entity e, MIN(rowid) r FROM source_landing_stage GROUP BY 1 ORDER BY r)")|$(q "SELECT group_concat(attribute_name,',') FROM (SELECT attribute_name FROM source_landing_stage WHERE business_key='C1' ORDER BY rowid)")" \
+   "CUSTOMER,PRODUCT,ORDER,ORDER_LINE|customer_ref,full_name,email_addr,signup_date,customer_ref,full_name,email_addr,signup_date"
+ck "level 1: within one (key, attribute) the later wide row gets the later rowid" \
+   "$(q "SELECT COALESCE(value_str,'<null>') FROM source_landing_stage WHERE business_key='C1' AND attribute_name='email_addr' ORDER BY rowid DESC LIMIT 1")" "b@x"
+first_pass="$(q 'SELECT * FROM source_landing_stage ORDER BY rowid')"
+"$PROJ/scripts/stage_narrow.sh" >/dev/null 2>&1
+ck "level 1: re-running stage_narrow emits identical rows (it clears first, order is fixed)" \
+   "$(q 'SELECT * FROM source_landing_stage ORDER BY rowid')" "$first_pass"
+# The shared corpus: every row of every old narrow delivery is reproduced.
+# Only D4 emits more (8 vs 5): wide sends C003's whole record twice.
+for n in d0_baseline d1_cust_win_day60 d2_prod_full_v2 d3_cust_tombstone d4_cust_recency d5_cust_yearly_full; do
+  q "DELETE FROM stg_customer_l1; DELETE FROM stg_product_l1; DELETE FROM stg_order_l1; DELETE FROM stg_order_line_l1;
+     DROP TABLE IF EXISTS narrow_ref; CREATE TABLE narrow_ref AS SELECT * FROM source_landing_stage WHERE 0;" >/dev/null
+  "$SQLITE" "$DB" < "$PROJ/source/$n.sql"
+  sed 's/INSERT INTO source_landing_stage/INSERT INTO narrow_ref/' "$HERE/fixtures/narrow/$n.sql" | "$SQLITE" "$DB"
+  "$PROJ/scripts/stage_narrow.sh" >/dev/null 2>&1
+  ck "level 1: unpivoted $n reproduces every row of the old narrow file" \
+     "$(q "SELECT COUNT(*) FROM (SELECT * FROM narrow_ref EXCEPT SELECT * FROM source_landing_stage)")/$(q 'SELECT COUNT(*) FROM narrow_ref')" \
+     "0/$(q 'SELECT COUNT(*) FROM narrow_ref')"
+done
+
+echo; echo "== Level 2: the narrow loaders, fed narrow rows directly =="
+# Narrow-by-nature fixtures go straight into source_landing_stage and
+# through apply_delivery.sh. They bypass load_feed.sh and the wide archive,
+# so they run in their own scratch database that no rebuild ever reads.
+export DB="$LOGDIR/level2.db" ARCHIVE_DB="$LOGDIR/level2_archive.db"
+l2(){ "$SQLITE" "$DB" "DELETE FROM source_landing_stage;"; "$SQLITE" "$DB" < "$1"
+      BATCH_TS="$2" "$PROJ/scripts/apply_delivery.sh" >/dev/null 2>&1; }
+rm -f "$DB" "$ARCHIVE_DB"; "$PROJ/scripts/init_db.sh" >/dev/null 2>&1
+l2 "$HERE/fixtures/d6_tiebreak.sql" '2027-02-01 08:00:00'
+ck "level 2: equal extract_ts -> the last narrow row wins (attribute-level tiebreak)" \
+   "$(q "SELECT email FROM v_customer WHERE customer_ref='C004'")" "last@x.com"
+l2 "$HERE/fixtures/narrow/d4_cust_recency.sql" '2027-02-02 08:00:00'
+ck "level 2: per-attribute recency -- newest extract_ts wins, not MAX" \
+   "$(q "SELECT email FROM v_customer WHERE customer_ref='C003'")" "new@x.com"
+export DB="$SAVE_DB" ARCHIVE_DB="$SAVE_ARCHIVE_DB"
+
 echo; echo "== Load control: a file_id names CONTENT (same block in all ten suites) =="
 # Own database pair, so these deliveries never reach the main archive or
 # any rebuild assertion. The crash is simulated at the last step of

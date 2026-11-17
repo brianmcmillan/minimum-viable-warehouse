@@ -38,13 +38,15 @@ their groups). The other says **what was measured on them, and when**.
 > [Unified Star Schema](../v3_unified-star-schema),
 > [Activity Schema](../v3_activity-schema), this metrics mart, and
 > [One Big Table](../v3_one-big-table)), so every difference between them is
-> the *model*, never the input. This model takes the narrow,
-> one-row-per-attribute files shared byte-for-byte with Focal Point and
-> Anchor, and its archive uses their layout (`loaded_files` +
-> `source_landing_history`, append-only triggers). The target is different:
-> a 3NF model with real columns and real foreign keys. **This README stands
-> on its own;** [METRICSMART.md](METRICSMART.md) reviews the ER diagrams and
-> draws the cross-model comparison.
+> the *model*, never the input. Its deliveries are the wide,
+> one-row-per-record files every model shares byte-for-byte, archived in the
+> shared layout (`loaded_files` + per-feed `hist_*` tables, append-only
+> triggers). A second staging step, the same one
+> [Focal Point](../v3_focal-point) and [Anchor](../v3_anchor) use, unpivots
+> them into narrow key/value rows. The target is different: a 3NF model with
+> real columns and real foreign keys. **This README stands on its own;**
+> [METRICSMART.md](METRICSMART.md) reviews the ER diagrams and draws the
+> cross-model comparison.
 
 ---
 
@@ -66,7 +68,7 @@ network.
 ```bash
 make demo          # fresh archive + schema + the full 6-delivery sequence, then print the mart
 make rebuild       # delete the mart; replay the raw layer to rebuild it
-make test          # 192 assertions: delete semantics, samples, aggregates, exact rebuild
+make test          # 222 assertions: delete semantics, samples, aggregates, exact rebuild
 make clean         # delete build/ only — the archive SURVIVES
 make clean-archive # delete archive/ — destroys the raw layer, and the ability to rebuild
 ```
@@ -160,7 +162,7 @@ known and hands the loaders a plain `load_oper = 'D'`.
 | —  | re-send D1                | (same `file_id`)           | load control skips a duplicate delivery (exercised by `make test`)            |
 | D5 | `d5_cust_yearly_full.sql` | CRM.CUSTOMER / FULL        | a yearly full reconciliation deletes C003, gone at source                     |
 
-D0–D5 in `source/` are byte-identical with the Focal and Anchor demos.
+D0–D5 in `source/` are the wide files, byte-identical in all ten models.
 
 ---
 
@@ -169,7 +171,7 @@ D0–D5 in `source/` are byte-identical with the Focal and Anchor demos.
 The mart was drawn for resources that get measured. The shared corpus is
 customers, products and orders. The mapping is a few rows of metadata.
 
-| in the narrow delivery | in the mart |
+| in the narrow row (after `stage_narrow.sh`) | in the mart |
 |---|---|
 | `source_system` (CRM, PIM, OMS) | `PROVIDER` |
 | `source_entity` (CUSTOMER, PRODUCT, ORDER) | `RES_TYPE` |
@@ -318,30 +320,58 @@ whose `CHECK` fails the transaction.
 - **`archive/metrics_archive.db`** — every delivery ever accepted, captured
   *verbatim and before it is applied*, append-only, plus a `loaded_files`
   manifest. **Durable.** `make clean` never touches it. Its layout is the
-  Focal and Anchor archive's.
+  shared wide one (`hist_*` per source extract), the same in all ten models.
 
 The archive matters more here than in most of the siblings. `RES` keeps no
 history, so the raw layer is the only place an earlier email, an earlier
 parent or a corrected sample value can still be found.
 
 `make rebuild` replays every completed delivery in its original order
-through the *same* `apply_delivery.sh` path that ingested it. The suite
+through the *same* `stage_narrow.sh` and `apply_delivery.sh` path that
+ingested it. The suite
 asserts the rebuilt mart is identical, down to each `res_id`, `provider_id`,
 `res_grp_id` and `srcd_ts`.
 
 ### How a delivery flows
 
-1. **Stage** the delivery into `source_landing_stage`.
+1. **Stage** the delivery into the wide `stg_*_l1` tables.
 2. **Load control** — compare the staged file with what the archive holds for
    its `file_id`: the row count must match the manifest, and once rows are
    archived every row must match exactly, order included. Any mismatch is
    rejected loudly, whether the id is `COMPLETE` or a crashed `STARTED` one.
    Only then is a `COMPLETE` id skipped and a `STARTED` one retried.
-3. **Archive** the staged rows verbatim (`INSERT OR IGNORE`, safe to retry).
-   The archive's `load_seq` becomes the mart's `batch_no`.
-4. **Apply** via `apply_delivery.sh`.
-5. **Mark COMPLETE**, then clear the stage. A crash leaves the delivery
+3. **Archive** the staged wide rows verbatim into the `hist_*` tables
+   (`INSERT OR IGNORE`, safe to retry). The archive's `load_seq` becomes the
+   mart's `batch_no`.
+4. **Stage narrow** — `scripts/stage_narrow.sh` (the same script Focal and
+   Anchor use) unpivots each wide row into one key/value row per attribute
+   in `source_landing_stage`: price/amount to `value_num`, dates to
+   `value_ts`, the rest to `value_str`; an empty column as SQL `NULL`; one
+   `_tombstone` row for a `DELETE`; in a fixed order. `route_stage.sh`
+   reads measurements from here, before the landing dedups them.
+5. **Apply** via `apply_delivery.sh`.
+6. **Mark COMPLETE**, then clear both stages. A crash leaves the delivery
    `STARTED` with its staged rows in place as forensics.
+
+### A native narrow archive is a supported option
+
+If your extracts really are narrow (an EAV export, or a change stream that sends one attribute at a
+time), you can stage them straight into `source_landing_stage`, archive that shape (a
+`source_landing_history`-style table keyed on file and row), and skip `stage_narrow.sh`. The loaders
+don't change. Two costs come with it:
+
+- **It makes switching harder, in both directions.** The models that take wide extracts can't
+  replay a narrow archive, and the mart can't replay theirs, without a conversion step. The
+  delivery files also stop being shared, so a cross-model comparison is no longer like for like.
+- **It needs its own content-checked load-control guard.** The shared guard compares the wide
+  stage with the `hist_*` tables only. A narrow archive must compare `source_landing_stage`
+  with its own history table, every row and in order, to keep the same rule: a reused
+  `file_id` whose rows differ is rejected, whether the delivery completed or crashed.
+
+For this mart there is a third consideration, in its favour: a narrow archive keeps "a new metric is
+a row" true all the way down, because a metric a source starts sending is just a new
+`attribute_name`. With the wide raw layer it needs a new column (see "What the metrics mart gives
+up").
 
 ---
 
@@ -366,7 +396,7 @@ asserts the rebuilt mart is identical, down to each `res_id`, `provider_id`,
 |----------------------|-----------------------------------------------------------------------|
 | `make demo`          | fresh archive + schema + the full delivery sequence + printed mart    |
 | `make rebuild`       | regenerate the mart by replaying the raw layer                        |
-| `make test`          | run the test suite (192 assertions)                                   |
+| `make test`          | run the test suite (222 assertions)                                   |
 | `make init`          | recreate the mart database from schema (the archive survives)         |
 | `make clean`         | delete `build/` only — **the archive survives**                       |
 | `make clean-archive` | delete `archive/` — destroys the raw layer and the ability to rebuild |
@@ -382,15 +412,16 @@ asserts the rebuilt mart is identical, down to each `res_id`, `provider_id`,
 ├── docs/
 │   └── er-diagrams.md        # Mermaid ER diagrams, one per layer
 ├── schema/
-│   ├── 01_landing.sql        # narrow landing (shared shape) + routing metadata + load guard
-│   ├── 02_archive.sql        # raw layer: append-only narrow history + manifest + triggers
+│   ├── 01_landing.sql        # wide stage, narrow landing (shared shape) + routing metadata + load guard
+│   ├── 02_archive.sql        # raw layer: append-only wide history (hist_*) + manifest + triggers
 │   ├── 03_mart.sql           # staging and core tables from the diagrams, CALNDR, plus the added subtypes
 │   ├── 04_seed.sql           # reference rows, CALNDR days for 2026-2027, and the routing maps
 │   └── 05_views.sql          # business views, mart views, integrity views
 ├── scripts/
 │   ├── lib.sh                # shared helpers; the single DB choke point (foreign keys ON); sql_tx; ensure_groups_sql
 │   ├── init_db.sh            # (re)create the mart database; preserve the archive
-│   ├── load_feed.sh          # ingest ONE delivery (stage → archive → apply → complete)
+│   ├── load_feed.sh          # ingest ONE delivery (stage → archive → stage narrow → apply → complete)
+│   ├── stage_narrow.sh       # unpivot the wide stage into key/value rows (ingest AND replay)
 │   ├── apply_delivery.sh     # the one path from staged rows to the mart (ingest AND replay)
 │   ├── route_stage.sh        # narrow landing → RES_STG / METRIC_STG / ...; the delete rule
 │   ├── load_res.sh           # resources, aliases, parents, subtype columns
@@ -399,9 +430,9 @@ asserts the rebuilt mart is identical, down to each `res_id`, `provider_id`,
 │   ├── refresh_aggregates.sh # METRIC_SUMMARY, METRIC_WEEKLY, GRP_METRIC_WEEKLY
 │   ├── rebuild.sh            # ordered replay of the archive
 │   └── query.sh              # print the mart
-├── source/                   # D0–D5, byte-identical with the Focal and Anchor demos
+├── source/                   # D0–D5, wide; byte-identical in all ten models
 ├── tests/
-│   ├── run_tests.sh          # 192 assertions
+│   ├── run_tests.sh          # 222 assertions
 │   └── fixtures/
 │       ├── d6_tiebreak.sql           # same-extract tiebreak (identical to Anchor's)
 │       ├── d7_repoint.sql            # O-101 re-pointed to C001 (identical to Anchor's)
@@ -420,7 +451,7 @@ asserts the rebuilt mart is identical, down to each `res_id`, `provider_id`,
 make test
 ```
 
-**192 assertions**, pure shell + `sqlite3`, covering:
+**222 assertions**, pure shell + `sqlite3`, covering:
 
 - **Delete semantics** — the stale-window trap, FULL-absence deletes,
   tombstones, recency dedup, load control, a rejected re-use of a
@@ -430,8 +461,8 @@ make test
   after delete, and a stub created for a parent no feed has delivered yet.
 - **Metrics** — numeric attributes as samples, name resolution through
   `METRIC_STG2`, a re-observed value as a new sample, a corrected value
-  overwriting its sample, and a one-attribute delivery leaving every other
-  attribute alone.
+  overwriting its sample, and (at level 2, narrow) a one-attribute delivery
+  leaving every other attribute alone.
 - **Groups and aggregates** — groups built from paths, membership deletes by
   tombstone and by FULL absence, Monday weeks taken from `CALNDR`, a sample dated outside it rejected,
   a week averaging two samples,
@@ -440,11 +471,18 @@ make test
   the whole step rolled back, a parent pairing missing from `RES_TYPE_REL`
   rejected by the load guard, and both integrity views empty after every
   delivery.
-- **Rebuild** — `make clean` + replay reproduces the mart exactly, twice:
-  after the shared scenario and again after every fixture. Failed deliveries
-  are not replayed.
+- **Rebuild** — `make clean` + replay reproduces the mart exactly, after the
+  shared scenario (by `rebuild.sh` and by `make rebuild`) and again after
+  every fixture. Failed deliveries are not replayed. The archive holds no
+  narrow table.
 - **Reference data** — a status relabel takes effect with no reload, a new
-  metric loads with no DDL, and a rebuild resets both to the schema seed.
+  metric loads with no DDL in the mart (its delivery runs at level 2: the
+  wide layout has no column for it), and a rebuild resets both to the
+  schema seed.
+- **The wide input** — `stage_narrow.sh` checked on its own (types, key
+  rows, NULLs, tombstones, order); narrow fixtures fed straight to the
+  loaders; and the old narrow D0–D5 (`tests/fixtures/narrow`) building the
+  same mart, surrogate for surrogate, as the wide files.
 
 See [METRICSMART.md](METRICSMART.md) for the mutation checks.
 
@@ -457,10 +495,17 @@ See [METRICSMART.md](METRICSMART.md) for the mutation checks.
   say C002 ever owned O-101. Only the archive can. "As it was when the order
   was placed" is not a question this model answers.
 - **Rows mutate.** Resources update in place and a corrected sample
-  overwrites the old value. Every other narrow-shape sibling is insert-only.
+  overwrites the old value. Focal and Anchor, the other models that load
+  through the narrow landing, are insert-only.
 - **Everything that isn't a number needs a column.** The model is generous
   to measurements and strict with descriptors: a new metric is a row, a new
   descriptive attribute is DDL on a populated table.
+- **A new metric from a source needs a wide column.** The mart takes a new
+  metric as a row, but the shared raw layer is wide: a metric a source
+  starts sending (`weight_kg` in the suite) needs a new column in
+  `stg_product_l1` and `hist_product`, which is DDL on a layout all ten
+  models share. A native narrow archive avoids that, at the cost of
+  switching (see above).
 - **One parent per resource.** An order line has two parents, an order and a
   product, and `parent_res` holds one. The second has to become a group
   membership.
@@ -491,5 +536,6 @@ See [METRICSMART.md](METRICSMART.md) for the mutation checks.
 - **Sibling demos** — [`../v3_inmon-3nf`](../v3_inmon-3nf) is the other 3NF
   answer (time-variant entities, wide files);
   [`../v3_focal-point`](../v3_focal-point) and [`../v3_anchor`](../v3_anchor)
-  load the same narrow files into generic and 6NF targets. The
+  unpivot the same wide files into the same narrow landing, then load
+  generic and 6NF targets. The
   [top-level README](../README.md) sets out the comparison set.

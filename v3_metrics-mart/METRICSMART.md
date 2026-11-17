@@ -10,12 +10,13 @@ attribute definitions. `METRIC_SAMPLE` is a narrow fact keyed by resource,
 attribute and time. For numbers, this model made the Focal move years ago
 and kept it typed. For everything that isn't a number, it is plain 3NF.
 
-Same narrow deliveries as the Focal Point and Anchor demos, byte-identical.
+Same wide deliveries as every other model, byte-identical, unpivoted into
+the same narrow landing as the Focal Point and Anchor demos.
 
 ```bash
 make demo     # fresh archive + the full delivery sequence + views
 make rebuild  # regenerate the mart by replaying the raw layer
-make test     # 192 assertions, mutation-checked
+make test     # 222 assertions, mutation-checked
 ```
 
 ## Review of the diagrams
@@ -63,11 +64,13 @@ rest are housekeeping.
 
 For the plumbing, yes. For the core, no.
 
-**The narrow delivery is already the mart's staging shape.** One Focal or
-Anchor delivery row is `(source_system, source_entity, business_key,
+**The narrow row is already the mart's staging shape.** One row of the
+narrow landing (what `stage_narrow.sh` makes of a wide delivery, as for
+Focal and Anchor) is `(source_system, source_entity, business_key,
 attribute_name, value)`. One `METRIC_STG` row is `(provider_name, res_type,
 res_alias, metric_code, value)`. They are the same five things. The narrow
-landing, the archive and the metadata-driven routing carry over unchanged.
+landing and the metadata-driven routing carry over unchanged; the archive
+is the shared wide one.
 
 **The core should stay 3NF.** Moving `RES` into Focal's generic tables or
 Anchor's attribute tables would give it history and DDL-free attributes. It
@@ -87,7 +90,7 @@ dedup key.
 | concern | the diagrams | this demo adds |
 |---|---|---|
 | storage | 3NF core, snowflaked code tables | built as drawn; three subtype tables and two code tables for attributes `RES` has no column for |
-| source shape | `*_STG` tables | the shared narrow files, routed into those tables by two metadata maps |
+| source shape | `*_STG` tables | the shared wide files, unpivoted to the narrow landing, routed into those tables by two metadata maps |
 | identity | `RES_ALIAS` | one alias per resource (its own code); parents and metrics both resolve through it |
 | change capture | not addressed | descriptors: update in place, changed rows only. Numbers: a new sample per observation |
 | deletes | `load_oper`, `res_status` | the shared rule: tombstone always, absence only under FULL |
@@ -198,18 +201,38 @@ against it. All of them turn the suite red.
 The current-feeds mutation survived the first version of the suite. The
 stale-snapshot assertions were added to catch it.
 
+## A native narrow archive is a supported option
+
+If your extracts really are narrow (an EAV export, or a change stream that sends one attribute at a
+time), you can stage them straight into `source_landing_stage`, archive that shape (a
+`source_landing_history`-style table keyed on file and row), and skip `stage_narrow.sh`. The loaders
+don't change. Two costs come with it:
+
+- **It makes switching harder, in both directions.** The models that take wide extracts can't
+  replay a narrow archive, and the mart can't replay theirs, without a conversion step. The
+  delivery files also stop being shared, so a cross-model comparison is no longer like for like.
+- **It needs its own content-checked load-control guard.** The shared guard compares the wide
+  stage with the `hist_*` tables only. A narrow archive must compare `source_landing_stage`
+  with its own history table, every row and in order, to keep the same rule: a reused
+  `file_id` whose rows differ is rejected, whether the delivery completed or crashed.
+
+For this mart there is a third consideration, in its favour: a narrow archive keeps "a new metric is
+a row" true all the way down, because a metric a source starts sending is just a new
+`attribute_name`. With the wide raw layer it needs a new column (see README, "What the metrics mart gives up").
+
 ## Layout
 
 ```
-schema/01_landing.sql          narrow landing (shared shape) + routing metadata + load guard
-schema/02_archive.sql          raw layer: append-only narrow history + manifest
+schema/01_landing.sql          wide stage, narrow landing (shared shape) + routing metadata + load guard
+schema/02_archive.sql          raw layer: append-only wide history (hist_*) + manifest
 schema/03_mart.sql             staging and core tables from the diagrams, CALNDR, plus the added subtypes
 schema/04_seed.sql             reference rows and the routing maps
 schema/05_views.sql            business views, mart views, integrity views
+scripts/stage_narrow.sh        wide stage -> narrow landing rows (ingest AND replay)
 scripts/route_stage.sh         narrow landing -> the mart's staging tables; the shared delete rule
 scripts/load_res.sh            resources, aliases, parents, subtype columns
 scripts/load_groups.sh         groups, type groups and memberships
 scripts/load_metrics.sh        METRIC_STG -> METRIC_STG2 -> METRIC_SAMPLE
 scripts/refresh_aggregates.sh  summaries, weeks, group weeks
-tests/run_tests.sh             192 assertions
+tests/run_tests.sh             222 assertions
 ```

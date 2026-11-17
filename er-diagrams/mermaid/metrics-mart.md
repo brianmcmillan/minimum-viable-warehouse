@@ -74,18 +74,6 @@ erDiagram
         DATE start_lcl_dt PK
         INTEGER provider_id PK, FK
     }
-    CAL_EVT_TYPE {
-        CHAR(20) cal_evt_type PK
-    }
-    CAL_EVT_GRP {
-        INTEGER event_grp_id PK
-    }
-    CALNDR_EVENT {
-        INTEGER event_id PK
-        INTEGER res_grp_id FK
-        INTEGER event_grp_id FK
-        CHAR(20) cal_evt_type FK
-    }
     RES_TYPE ||--o{ RES_TYPE_REL : "may be child"
     RES_TYPE ||--o{ RES_TYPE_REL : "may parent"
     RES |o--o{ RES : "parent of"
@@ -109,9 +97,6 @@ erDiagram
     METRIC ||--o{ GRP_METRIC_WEEKLY : "rolls up as"
     RES_GRP ||--o{ GRP_METRIC_WEEKLY : "rolls up"
     RES ||--o{ GRP_METRIC_WEEKLY : "rolls up in"
-    CAL_EVT_TYPE ||--o{ CALNDR_EVENT : "types"
-    CAL_EVT_GRP |o--o{ CALNDR_EVENT : "collects"
-    RES_GRP ||--o{ CALNDR_EVENT : "is the target of"
 ```
 
 ## 2 · Resources and groups
@@ -291,39 +276,6 @@ erDiagram
         INTEGER res_grp_id PK
         INTEGER parent_res_grp FK
     }
-    CAL_EVT_TYPE {
-        CHAR(20) cal_evt_type PK
-        VARCHAR(100) cal_evt_type_desc
-        TIMESTAMP srcd_ts
-    }
-    CAL_EVT_GRP {
-        INTEGER event_grp_id PK
-        VARCHAR(40) event_grp_code
-        VARCHAR(80) event_grp_name
-        TIMESTAMP srcd_ts
-    }
-    CALNDR_EVENT {
-        INTEGER event_id PK
-        VARCHAR(40) event_code
-        INTEGER res_grp_id FK
-        INTEGER event_grp_id FK
-        CHAR(20) cal_evt_type FK
-        SMALLINT inheritance_flag
-        DATE event_start_dt
-        TIME event_start_tm
-        INTEGER duration
-        DATE active_start_dt
-        DATE active_end_dt
-        CHAR(7) days_of_week
-        CHAR(5) occurs_of_month
-        CHAR(31) days_of_month
-        SMALLINT month_end_flag
-        CHAR(12) months
-        SMALLINT year
-        VARCHAR(40) entered_by
-        TIMESTAMP srcd_ts
-        VARCHAR(80) event_desc
-    }
     CALNDR {
         DATE calndr_date PK
         SMALLINT day_of_week
@@ -336,9 +288,6 @@ erDiagram
         SMALLINT year
         TIMESTAMP srcd_ts
     }
-    CAL_EVT_TYPE ||--o{ CALNDR_EVENT : "types"
-    CAL_EVT_GRP |o--o{ CALNDR_EVENT : "collects"
-    RES_GRP ||--o{ CALNDR_EVENT : "is the target of"
 ```
 
 ## 5 · Extensions for the shared corpus
@@ -429,31 +378,6 @@ Where a delivery lands before it is applied. Staging tables hold source names, s
 
 ```mermaid
 erDiagram
-    CALNDR_EVENT_STG {
-        INTEGER batch_no
-        CHAR(1) load_oper
-        VARCHAR(40) event_code
-        VARCHAR(250) group_path
-        VARCHAR(40) event_grp_code
-        INTEGER event_grp_id
-        CHAR(20) cal_evt_type
-        SMALLINT inheritance_flag
-        DATE event_start_dt
-        TIME event_start_tm
-        INTEGER duration
-        DATE active_start_dt
-        DATE active_end_dt
-        CHAR(7) days_of_week
-        CHAR(5) occurs_of_month
-        CHAR(31) days_of_month
-        SMALLINT month_end_flag
-        CHAR(12) months
-        SMALLINT year
-        VARCHAR(40) entered_by
-        INTEGER sequence_no
-        TIMESTAMP srcd_ts
-        VARCHAR(80) event_desc
-    }
     METRIC_STG {
         INTEGER batch_no
         CHAR(12) res_type
@@ -545,6 +469,42 @@ erDiagram
         TEXT op
         TEXT load_mode
     }
+    STG_CUSTOMER_L1 {
+        TEXT customer_id
+        TEXT full_name
+        TEXT email_addr
+        TEXT signup_date
+        TEXT extract_dt
+        TEXT op
+        TEXT load_mode
+    }
+    STG_ORDER_L1 {
+        TEXT order_ref
+        TEXT customer_ref
+        TEXT status
+        REAL amount
+        TEXT currency
+        TEXT placed_at
+        TEXT extract_dt
+        TEXT op
+        TEXT load_mode
+    }
+    STG_ORDER_LINE_L1 {
+        TEXT order_ref
+        TEXT sku
+        TEXT extract_dt
+        TEXT op
+        TEXT load_mode
+    }
+    STG_PRODUCT_L1 {
+        TEXT sku
+        TEXT prod_name
+        REAL price
+        TEXT currency
+        TEXT extract_dt
+        TEXT op
+        TEXT load_mode
+    }
 ```
 
 ## 8 · Raw layer (archive)
@@ -553,6 +513,62 @@ The durable raw layer, in its own database file. Every delivery is captured here
 
 ```mermaid
 erDiagram
+    HIST_CUSTOMER {
+        TEXT file_id PK, FK
+        INTEGER load_seq
+        TEXT batch_ts
+        INTEGER seq_nbr PK
+        TEXT customer_id
+        TEXT full_name
+        TEXT email_addr
+        TEXT signup_date
+        TEXT extract_dt
+        TEXT op
+        TEXT load_mode
+        TEXT archived_at
+    }
+    HIST_ORDER {
+        TEXT file_id PK, FK
+        INTEGER load_seq
+        TEXT batch_ts
+        INTEGER seq_nbr PK
+        TEXT order_ref
+        TEXT customer_ref
+        TEXT status
+        REAL amount
+        TEXT currency
+        TEXT placed_at
+        TEXT extract_dt
+        TEXT op
+        TEXT load_mode
+        TEXT archived_at
+    }
+    HIST_ORDER_LINE {
+        TEXT file_id PK, FK
+        INTEGER load_seq
+        TEXT batch_ts
+        INTEGER seq_nbr PK
+        TEXT order_ref
+        TEXT sku
+        TEXT extract_dt
+        TEXT op
+        TEXT load_mode
+        TEXT archived_at
+    }
+    HIST_PRODUCT {
+        TEXT file_id PK, FK
+        INTEGER load_seq
+        TEXT batch_ts
+        INTEGER seq_nbr PK
+        TEXT sku
+        TEXT prod_name
+        REAL price
+        TEXT currency
+        TEXT extract_dt
+        TEXT op
+        TEXT load_mode
+        TEXT archived_at
+    }
     LOADED_FILES {
         TEXT file_id PK
         INTEGER load_seq
@@ -561,22 +577,8 @@ erDiagram
         TEXT loaded_at
         INTEGER row_count
     }
-    SOURCE_LANDING_HISTORY {
-        TEXT file_id PK, FK
-        INTEGER load_seq
-        TEXT batch_ts
-        INTEGER seq_nbr PK
-        TEXT source_system
-        TEXT source_entity
-        TEXT business_key
-        TEXT attribute_name
-        TEXT value_str
-        REAL value_num
-        TEXT value_ts
-        TEXT extract_ts
-        TEXT op
-        TEXT load_mode
-        TEXT archived_at
-    }
-    LOADED_FILES ||--o{ SOURCE_LANDING_HISTORY : "file_id"
+    LOADED_FILES ||--o{ HIST_CUSTOMER : "file_id"
+    LOADED_FILES ||--o{ HIST_ORDER : "file_id"
+    LOADED_FILES ||--o{ HIST_ORDER_LINE : "file_id"
+    LOADED_FILES ||--o{ HIST_PRODUCT : "file_id"
 ```

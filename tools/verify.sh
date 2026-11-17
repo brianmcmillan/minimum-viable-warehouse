@@ -40,7 +40,7 @@ published() {
     v3_focal-point:test_archive)      echo 46  ;;
     v3_hook:run_tests)                echo 115 ;;
     v3_inmon-3nf:run_tests)           echo 80  ;;
-    v3_metrics-mart:run_tests)        echo 192 ;;
+    v3_metrics-mart:run_tests)        echo 222 ;;
     v3_one-big-table:run_tests)       echo 71  ;;
     v3_unified-star-schema:run_tests) echo 129 ;;
     *) echo "" ;;
