@@ -215,12 +215,15 @@ ck "replay: SKU-3 still deleted by FULL absence" \
    "$(q "SELECT row_st FROM product_desc WHERE product_key=(SELECT product_key FROM product_idfr WHERE product_idfr='SKU-3')
          AND type_key=20 ORDER BY eff_tmstp DESC, ver_tmstp DESC LIMIT 1")" "N"
 ck "replay: C002 still deleted by tombstone" \
-   "$(q "SELECT COALESCE(email,'<none>') FROM v_customer WHERE customer_ref='C002'")" "<none>"
+   "$(q "SELECT COUNT(*) FROM v_customer WHERE customer_ref='C002'")" "0"
 ck "replay: C003 still reconciled away by the yearly FULL" \
    "$(q "SELECT row_st FROM customer_desc WHERE customer_key=(SELECT customer_key FROM customer_idfr WHERE customer_idfr='C003')
          AND type_key=11 ORDER BY eff_tmstp DESC, ver_tmstp DESC LIMIT 1")" "N"
 ck "replay: C001 survives with its updated email" \
    "$(q "SELECT email FROM v_customer WHERE customer_ref='C001'")" "alice@newmail.com"
+ck "replay: existence is reproduced (C001 ACTIVE, C002 and C003 DELETED)" \
+   "$(q "SELECT group_concat(customer_ref||'='||existence||'@'||eff_tmstp,' ') FROM (SELECT * FROM v_customer_status ORDER BY customer_ref)")" \
+   "C001=ACTIVE@2026-02-05 08:00:00 C002=DELETED@2026-03-16 08:00:00 C003=DELETED@2026-12-31 08:00:00"
 
 # ---------------------------------------------------------------- 9
 echo; echo "== 9. archive-status reports and deletes nothing =="
@@ -247,12 +250,21 @@ ck "no archived table has a key/value (attribute_name) column" \
 
 # ---------------------------------------------------------------- 12
 echo; echo "== 12. make rebuild reproduces every surrogate key =="
-ingested_all="$(all_keys)"; ingested="$(snap)"
+# Every existence version (type_keys 19/29/39): key, eff_tmstp, value, row_st.
+exist_rows(){ q "SELECT group_concat(r,' ') FROM (
+    SELECT 'c'||customer_key||'/'||eff_tmstp||'/'||val_str||'/'||row_st r FROM customer_desc WHERE type_key=19
+    UNION ALL SELECT 'p'||product_key||'/'||eff_tmstp||'/'||val_str||'/'||row_st FROM product_desc WHERE type_key=29
+    UNION ALL SELECT 'o'||order_key||'/'||eff_tmstp||'/'||val_str||'/'||row_st FROM order_desc WHERE type_key=39
+    ORDER BY 1)"; }
+ingested_all="$(all_keys)"; ingested="$(snap)"; ingested_exist="$(exist_rows)"
 rm -f "$DB"
 make -s -C "$PROJ" rebuild >/dev/null 2>&1; rc=$?
 ck "make rebuild exits 0" "$rc" "0"
 ck "make rebuild: every surrogate key (customer, product, order) as ingested" "$(all_keys)" "$ingested_all"
 ck "make rebuild: warehouse identical to INGEST" "$(snap)" "$ingested"
+ck "make rebuild: every existence row as ingested (11 rows: 5 customer, 4 product, 2 order)" \
+   "$(exist_rows)|$(q "SELECT COUNT(*) FROM customer_desc WHERE type_key=19")+$(q "SELECT COUNT(*) FROM product_desc WHERE type_key=29")+$(q "SELECT COUNT(*) FROM order_desc WHERE type_key=39")" \
+   "$ingested_exist|5+4+2"
 
 # ---------------------------------------------------------------- 13
 echo; echo "== 13. Unpivoted D0..D5 build the same warehouse as the old narrow files =="

@@ -59,6 +59,28 @@ by the delivery's mode.
   that complete snapshot is deleted. This is the safety net that catches
   deletes the incremental stream never announced.
 
+Either way, the entity itself is recorded as gone, not just its
+attributes. Presence is one more atomic context per entity —
+`CUSTOMER_EXISTENCE` (19), `PRODUCT_EXISTENCE` (29), `ORDER_EXISTENCE`
+(39), `val_str` `'ACTIVE'` or `'DELETED'` — maintained by the same generic
+delta engine (`load_desc.sh`, role `EXISTS` in `meta_source_map`):
+
+- an UPSERT whose current existence is not `ACTIVE` (a new key, or a
+  restore after a delete) writes `ACTIVE`;
+- a tombstone or FULL absence writes `DELETED`, in the same step that
+  closes the attributes;
+- an `ACTIVE` key delivered again writes nothing (`NOCHANGE`), and so
+  does absence from an INCREMENTAL delivery.
+
+Existence versions are written `row_st='Y'`: a deleted entity is a
+current `DELETED` fact, so its history stays queryable. The semantic
+views list only `ACTIVE` keys, and `v_*_status` lists every key with its
+existence. A key delivered again after a delete reopens both its
+existence and its attributes (`tests/fixtures/d8_restore.sql`). This is
+Anchor's existence knot and Data Vault's status satellite in Focal's
+form, and it needed no DDL: three metadata rows per entity (the context,
+its attribute, its source mapping).
+
 ## The delivery sequence the tests run
 
 | # | file | feed / mode | what it proves |
@@ -146,7 +168,12 @@ durable identifier→key registry in the archive, or deterministic (hashed) keys
   the loaders still read narrow key/value rows.
 - `load_desc.sh` / `load_rel.sh` branch on mode: absence-delete only for FULL,
   tombstone-delete always, NEW/CHANGE/NOCHANGE unchanged.
-- Data layer (`02_data.sql`) and semantic views (`04_views.sql`) untouched.
+- Entity existence (`*_EXISTENCE` contexts 19/29/39): `load_desc.sh` writes
+  `ACTIVE` / `DELETED` versions generically, and `v_customer`, `v_product` and
+  `v_order` list only `ACTIVE` keys; `v_*_status` shows every key. Seeded as
+  metadata, no DDL.
+- Data layer (`02_data.sql`) untouched; the semantic views (`04_views.sql`)
+  gain the existence filter and the `v_*_status` views.
 
 Maps directly to Daana's ingestion strategies (`FULL`, `INCREMENTAL`,
 `FULL_LOG`, `TRANSACTIONAL`) and the Top of Minds principle that the load

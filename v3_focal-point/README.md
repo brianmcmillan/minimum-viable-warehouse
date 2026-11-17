@@ -62,8 +62,6 @@ business-facing views. The reconstructed customer/product/order tables it produc
 customer_key  customer_ref  customer_name  email              signup_date
 ------------  ------------  -------------  -----------------  -----------
 1001          C001          Alice Smith    alice@newmail.com  2026-01-05
-1002          C002
-1003          C003
 
 ### Orders
 order_key  order_ref  status   amount  currency  placed_at         placed_by
@@ -119,6 +117,26 @@ that mode is `FULL`. Same engine, opposite outcomes — driven only by the deliv
 | D4 | `d4_cust_recency.sql`   | CRM.CUSTOMER / INCREMENTAL   | a repeated attribute resolves to the newest by `extract_ts`         |
 | —  | re-send D1              | —                            | a duplicate `file_id` is skipped by load control                    |
 | D5 | `d5_cust_yearly_full.sql` | CRM.CUSTOMER / FULL        | a yearly full reconciliation deletes C003, gone at source           |
+
+### How a delete is represented: existence is a fact
+
+A delete closes the entity's attributes (each current version gets a closing row with `row_st='N'`),
+and it also records that the entity itself is gone. Presence is one more **atomic context** per
+entity — `CUSTOMER_EXISTENCE` (19), `PRODUCT_EXISTENCE` (29), `ORDER_EXISTENCE` (39) — with
+`val_str` `'ACTIVE'` or `'DELETED'`, seeded as metadata and written by the same generic delta engine
+as every other descriptor. No DDL, no per-entity code:
+
+- a new key, or a key delivered again after a delete, gets an `ACTIVE` version;
+- a tombstone, or absence from a FULL delivery, gets a `DELETED` version, in the same step that
+  closes the attributes;
+- an `ACTIVE` key delivered again, or absent from an INCREMENTAL delivery, writes nothing.
+
+Existence versions are always `row_st='Y'`: a deleted entity is a *current* `DELETED` fact, not a
+closed one, so its history stays queryable. `v_customer`, `v_product` and `v_order` list only
+`ACTIVE` keys, so after D5 the end state is `C001` alone — not `C001` plus two rows of empty
+attributes. `v_customer_status` / `v_product_status` / `v_order_status` list every key with its
+current existence and when it was set. This is Anchor's existence knot and Data Vault's
+status-tracking satellite, in Focal's own terms.
 
 ---
 
@@ -266,9 +284,10 @@ Defined in `schema/04_views.sql`, exercised by `scripts/query.sh`:
 
 | View                            | What it gives you                                                    |
 |---------------------------------|----------------------------------------------------------------------|
-| `v_customer` / `v_product` / `v_order` | one readable row per entity (pivots `type_key` back into columns) |
+| `v_customer` / `v_product` / `v_order` | one readable row per `ACTIVE` entity (pivots `type_key` back into columns) |
+| `v_customer_status` / `v_product_status` / `v_order_status` | every key, deleted ones included: current existence and its `eff_tmstp` |
 | `v_*_desc_current`              | the latest active fact per (`*_key`, `type_key`)                     |
-| `v_all_facts`                   | every current atomic fact across all entities, decoded via metadata  |
+| `v_all_facts`                   | every current atomic fact across all entities (existence included), decoded via metadata |
 | `v_order_status_history`        | the full bi-temporal timeline of a single attribute                  |
 | `v_lineage`                     | each fact traced back to the pipeline run that produced it           |
 
@@ -328,6 +347,7 @@ OMS.ORDER_LINE  INCREMENTAL  1           6         6
 ├── tests/
 │   ├── run_tests.sh      # delete-semantics suite (FULL vs INCREMENTAL, tombstones, recency)
 │   ├── test_archive.sh   # raw-layer suite (append-only, exact rebuild, retroactive rules)
+│   ├── mutations_todo.md # mutations a later step will run against both suites
 │   └── fixtures/         # extra deliveries for tests; fixtures/narrow/ holds the old narrow D0–D5
 ├── docs/er-diagrams.md   # ER diagrams for every layer (Mermaid)
 ├── build/                # generated: the derived warehouse (safe to delete)
@@ -347,11 +367,14 @@ Two independent suites, pure shell + `sqlite3`:
 - **`tests/run_tests.sh`** — delete semantics under a realistic cadence: that an incremental window
   does *not* delete an absent-but-unchanged record, that a FULL snapshot *does* delete on absence, that
   tombstones delete in an incremental feed, recency de-duplication, load control (skip/retry), and full
-  idempotence of a replay.
+  idempotence of a replay. Deleted entities are absent from the semantic views (the end state is
+  `C001` only) while `v_*_status` lists them as `DELETED`; a re-delivered `ACTIVE` key writes no
+  existence row; and `tests/fixtures/d8_restore.sql` delivers C002 again after its tombstone, reopening
+  its existence and its attributes.
 - **`tests/test_archive.sh`** — the raw-layer guarantees: the archive captures every delivery verbatim,
   append-only is absolute, rebuild reproduces the warehouse *exactly* (surrogate keys included), keys
-  are derived rather than preserved, recency survives replay, and a changed business rule re-derives
-  from the untouched raw values.
+  are derived rather than preserved, recency survives replay, a changed business rule re-derives
+  from the untouched raw values, and every existence row is reproduced.
 
 Both suites pass with no external setup. The delete-semantics suite additionally reports a **known gap**
 (see below) as non-fatal amber lines rather than hiding it.
