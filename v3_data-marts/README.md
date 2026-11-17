@@ -65,7 +65,7 @@ directory; nothing reaches the network.
 make demo           # fresh archive + schema + the full 6-delivery sequence, then print the star
 make rebuild        # delete the star; replay the archive to rebuild it — surrogate keys included
 make archive-status # what the durable archive holds, and where it is growing
-make test           # 88 assertions: delete semantics, SCD2, frozen keys, exact rebuild
+make test           # 101 assertions (36 core, 65 model): delete semantics, SCD2, frozen keys, exact rebuild
 ```
 
 `make demo` loads six deliveries standing in for a few weeks of real feeds,
@@ -344,7 +344,7 @@ across models.
 | `make demo`           | fresh archive + schema + the full delivery sequence + printed star                         |
 | `make rebuild`        | regenerate the star by replaying the archive                                               |
 | `make archive-status` | report on the archive (read-only): deliveries, rows per feed, growth                       |
-| `make test`           | run the Kimball test suite (88 assertions)                                                 |
+| `make test`           | run the Kimball test suite (101 assertions)                                                |
 | `make init`           | recreate the star from schema (the archive survives)                                       |
 | `make clean`          | delete `build/` only — **the archive survives**; `make rebuild` restores the star          |
 | `make clean-archive`  | delete `archive/` — destroys the raw history and the ability to rebuild (deliberately separate from `clean`) |
@@ -410,10 +410,16 @@ OMS.ORDER       1           2         2
 make test
 ```
 
-One suite, pure shell + `sqlite3`, **88 assertions**, mutation-hardened (the
+One suite, pure shell + `sqlite3`, **101 assertions** (36 core, 65 model), mutation-hardened (the
 FULL-guard, replay-order, and SCD2 churn-guard mutations were all verified to
 fail it). It replays the shared delivery scenario against the star and then
-exercises the Kimball-specific behaviours:
+exercises the Kimball-specific behaviours. The output comes in two parts: CORE,
+the fourteen sections every one of the ten suites runs in the same order with
+the same labels (`../tests/core_spec.tsv`; the nine question answers are the
+SQL files in `tests/answers/`), then MODEL, what only this model shows. One
+core assertion is a known GAP: after the re-point the star no longer holds
+O-101's earlier owner, because the fact row is updated in place (the raw
+archive still does).
 
 - **Delete semantics under a realistic cadence** — an incremental window does
   *not* delete an absent-but-unchanged record; a FULL snapshot *does* delete

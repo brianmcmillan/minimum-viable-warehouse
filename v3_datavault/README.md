@@ -404,8 +404,11 @@ rows, the reference table and the query-assist tables included.
 make test
 ```
 
-One suite, pure shell + `sqlite3`, no external setup. It replays the full delivery sequence against a
-fresh database and asserts, among other things:
+One suite, pure shell + `sqlite3`, no external setup: 319 assertions (36 core, 283 model). The output
+comes in two parts: CORE, the fourteen sections every one of the ten suites runs in the same order with
+the same labels (`../tests/core_spec.tsv`; the nine question answers are the SQL files in
+`tests/answers/`), then MODEL, what only this model shows. It replays the full delivery sequence
+against a fresh database and asserts, among other things:
 
 - **Delete semantics under a realistic cadence** — an incremental window does *not* delete an
   absent-but-unchanged record; a FULL snapshot *does* delete on absence (`sts='D'`); tombstones delete
