@@ -2,7 +2,8 @@
 # ---------------------------------------------------------------------
 # Report on the raw layer. Read-only: there is no prune, and no code in
 # this project deletes an archived row -- the append-only triggers in
-# schema/05_archive.sql have no unlock path.
+# schema/05_archive.sql have no unlock path. The archive is wide (one
+# row per record, hist_* per source extract), like every sibling's.
 #
 # The per-feed breakdown is the number worth watching. FULL feeds
 # re-archive their entire snapshot on every delivery, changed or not,
@@ -22,7 +23,8 @@ fi
 size="$(wc -c < "$ARCHIVE_DB" | tr -d ' ')"
 echo "  file size          : $size bytes"
 echo "  deliveries         : $(asql_scalar 'SELECT COUNT(*) FROM arch.loaded_files;')"
-echo "  archived raw rows  : $(asql_scalar 'SELECT COUNT(*) FROM arch.source_landing_history;')"
+echo "  archived raw rows  : $(asql_scalar 'SELECT (SELECT COUNT(*) FROM arch.hist_customer) + (SELECT COUNT(*) FROM arch.hist_product)
+                                             + (SELECT COUNT(*) FROM arch.hist_order) + (SELECT COUNT(*) FROM arch.hist_order_line);')"
 echo "  oldest delivery    : $(asql_scalar 'SELECT COALESCE(MIN(batch_ts),"-") FROM arch.loaded_files;')"
 echo "  newest delivery    : $(asql_scalar 'SELECT COALESCE(MAX(batch_ts),"-") FROM arch.loaded_files;')"
 
@@ -43,12 +45,17 @@ asql_table "SELECT load_seq, file_id, batch_ts, status, row_count
 
 echo
 echo "### Archived rows per feed  (FULL feeds dominate growth)"
+# One wide row per record: the archive is the shared wide layout, one
+# hist_* table per source extract.
 asql_table "SELECT h.source_system || '.' || h.source_entity AS feed,
                    COALESCE(f.ingestion_strategy,'?')        AS strategy,
                    COUNT(DISTINCT h.file_id)                 AS deliveries,
                    COUNT(*)                                  AS raw_rows,
                    COUNT(*) / COUNT(DISTINCT h.file_id)      AS rows_per_delivery
-            FROM arch.source_landing_history h
+            FROM (SELECT 'CRM' AS source_system, 'CUSTOMER'   AS source_entity, file_id FROM arch.hist_customer
+                  UNION ALL SELECT 'PIM', 'PRODUCT',    file_id FROM arch.hist_product
+                  UNION ALL SELECT 'OMS', 'ORDER',      file_id FROM arch.hist_order
+                  UNION ALL SELECT 'OMS', 'ORDER_LINE', file_id FROM arch.hist_order_line) h
             LEFT JOIN main.meta_source_feed f
                    ON f.source_system = h.source_system
                   AND f.source_entity = h.source_entity

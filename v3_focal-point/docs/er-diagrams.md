@@ -17,7 +17,7 @@ than as a single graph.
 flowchart TB
     subgraph SRC["1 · Source ingestion"]
         direction LR
-        stage["source_landing_stage"] --> land["source_landing"]
+        wide["stg_*_l1 (wide)"] -->|stage_narrow| stage["source_landing_stage"] --> land["source_landing"]
     end
     subgraph META["2 · Metadata (model-driven catalog)"]
         direction LR
@@ -324,12 +324,15 @@ erDiagram
 
 ## 4 · Source ingestion layer
 
-The generic landing zone. Sources deliver **one row per (business key, attribute)** as
-key/value pairs — the same tall shape the core uses.
+The generic landing zone. Sources deliver **one wide row per record** into the `stg_*_l1`
+tables (the shape every model shares, and the shape the archive keeps); `stage_narrow.sh`
+unpivots each one into **one row per (business key, attribute)** as key/value pairs — the
+same tall shape the core uses. The wide stage tables are omitted below; their columns are
+the archive's `hist_*` columns without the file/sequence fields.
 
 ```mermaid
 erDiagram
-    meta_source_feed        ||--o{ source_landing_stage : "governs delivery"
+    meta_source_feed        ||--o{ source_landing_stage : "governs delivery (unpivoted from stg_*_l1)"
     source_landing_stage    ||--|| source_landing       : "promoted (same shape)"
 
     meta_source_feed {

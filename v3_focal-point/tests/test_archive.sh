@@ -38,6 +38,16 @@ ck_abort(){ local label="$1" sql="$2" want="$3" out
         *) FAIL=$((FAIL+1)); printf "  \033[31mFAIL\033[0m %s  (got '%s')\n" "$label" "$out";; esac; }
 feed(){  BATCH_TS="$3" "$PROJ/scripts/load_feed.sh" "$PROJ/source/$1" "$2" >/dev/null 2>&1; }
 feedf(){ BATCH_TS="$3" "$PROJ/scripts/load_feed.sh" "$1" "$2" >/dev/null 2>&1; }
+# Rows the archive holds: the shared wide layout (hist_* per source
+# extract); optional $1 = file_id.
+hist_rows(){ local w=""; [ -n "${1:-}" ] && w=" WHERE file_id='$1'"
+  aq "SELECT (SELECT COUNT(*) FROM arch.hist_customer$w)+(SELECT COUNT(*) FROM arch.hist_product$w)
+            +(SELECT COUNT(*) FROM arch.hist_order$w)+(SELECT COUNT(*) FROM arch.hist_order_line$w)"; }
+# Every surrogate key, as idfr=key per entity.
+all_keys(){ q "SELECT group_concat(k,',') FROM (
+    SELECT 'c:'||customer_idfr||'='||customer_key k FROM customer_idfr
+    UNION ALL SELECT 'p:'||product_idfr||'='||product_key FROM product_idfr
+    UNION ALL SELECT 'o:'||order_idfr||'='||order_key FROM order_idfr ORDER BY 1)"; }
 # Current value of C00n's email, straight from the descriptor table.
 email(){ q "SELECT val_str FROM customer_desc
             WHERE type_key=11 AND customer_key=(SELECT customer_key FROM customer_idfr WHERE customer_idfr='$1')
@@ -76,29 +86,31 @@ echo "== Fresh warehouse + archive =="; demo
 echo; echo "== 1. The archive captured every delivery, verbatim =="
 src_rows=$(grep -hc "^('" "$PROJ"/source/d*.sql | paste -sd+ - | bc)
 ck "archive holds every staged row from every source file" \
-   "$(aq 'SELECT COUNT(*) FROM arch.source_landing_history')" "$src_rows"
+   "$(hist_rows)" "$src_rows"
 ck "6 deliveries recorded, all COMPLETE" \
    "$(aq "SELECT COUNT(*) FROM arch.loaded_files WHERE status='COMPLETE'")" "6"
 ck "load_seq is dense and in ingest order" \
    "$(aq "SELECT group_concat(file_id,',') FROM (SELECT file_id FROM arch.loaded_files ORDER BY load_seq)")" \
    "B0,D1,D2,D3,D4,D5"
 ck "raw value survives ingest-time translation ('P', not 'PENDING')" \
-   "$(aq "SELECT DISTINCT value_str FROM arch.source_landing_history
-          WHERE attribute_name='status' AND business_key='O-100'")" "P"
+   "$(aq "SELECT DISTINCT status FROM arch.hist_order WHERE order_ref='O-100'")" "P"
 
 seq_before="$(aq "SELECT load_seq FROM arch.loaded_files WHERE file_id='D1'")"
-rows_before="$(aq 'SELECT COUNT(*) FROM arch.source_landing_history')"
+rows_before="$(hist_rows)"
 feed d1_cust_win_day60.sql D1 '2027-01-01 08:00:00'
 ck "re-sending D1 archives zero new rows" \
-   "$(aq 'SELECT COUNT(*) FROM arch.source_landing_history')" "$rows_before"
+   "$(hist_rows)" "$rows_before"
 ck "re-sending D1 leaves load_seq unchanged" \
    "$(aq "SELECT load_seq FROM arch.loaded_files WHERE file_id='D1'")" "$seq_before"
 
 # A file_id names a delivery's CONTENT. Reusing it for different content is
 # the one hazard idempotent (INSERT OR IGNORE) archiving cannot detect itself.
+# Wide, like every delivery: D1's id, different customers and a different
+# row count (D1 carries one row).
 cat > "$WORK/tamper.sql" <<'SQL'
-INSERT INTO source_landing_stage(source_system,source_entity,business_key,attribute_name,value_str,value_num,value_ts,extract_ts,op,load_mode) VALUES
-('CRM','CUSTOMER','C009','customer_ref','C009',NULL,NULL,'2027-01-01','UPSERT','INCREMENTAL');
+INSERT INTO stg_customer_l1(customer_id, full_name, email_addr, signup_date, extract_dt, op, load_mode) VALUES
+('C009','Tam Per','t@x.com','2027-01-01','2027-01-01','UPSERT','INCREMENTAL'),
+('C010','Tam Per','u@x.com','2027-01-01','2027-01-01','UPSERT','INCREMENTAL');
 SQL
 out="$(BATCH_TS='2027-01-01 09:00:00' "$PROJ/scripts/load_feed.sh" "$WORK/tamper.sql" D1 2>&1)"; rc=$?
 ck "reused file_id with different content is REJECTED" \
@@ -107,12 +119,12 @@ ck "  ...and says why" "$(printf '%s' "$out" | grep -c 'identifies a delivery' )
 
 # ---------------------------------------------------------------- 2
 echo; echo "== 2. Append-only is absolute (no unlock path exists) =="
-ck_abort "UPDATE on source_landing_history aborts" \
-  "UPDATE source_landing_history SET value_str='x';" "append-only"
-ck_abort "DELETE on source_landing_history aborts" \
-  "DELETE FROM source_landing_history;" "append-only"
+for t in hist_customer hist_product hist_order hist_order_line; do
+  ck_abort "UPDATE on $t aborts" "UPDATE $t SET op=op;" "append-only"
+  ck_abort "DELETE on $t aborts" "DELETE FROM $t;"      "append-only"
+done
 ck "archive intact after both attempts" \
-   "$(aq 'SELECT COUNT(*) FROM arch.source_landing_history')" "$rows_before"
+   "$(hist_rows)" "$rows_before"
 
 # ---------------------------------------------------------------- 3
 echo; echo "== 3. Rebuild reproduces the warehouse exactly (keys included) =="
@@ -168,7 +180,7 @@ ck "ingest: newest email by extract_ts wins" "$(email C003)" "new@x.com"
 # (b) the tiebreak that actually depends on physical row order: two values,
 #     one extract_ts. Only the last row in the file may win. This is the case
 #     seq_nbr exists for, and d4 cannot cover it.
-feedf "$HERE/fixtures/d6_tiebreak.sql" D6 '2027-02-01 08:00:00'
+feedf "$HERE/fixtures/d6_tiebreak_wide.sql" D6 '2027-02-01 08:00:00'
 ck "ingest: equal extract_ts -> last row in the file wins" "$(email C004)" "last@x.com"
 "$PROJ/scripts/rebuild.sh" >/dev/null 2>&1
 ck "after rebuild: extract_ts recency preserved"  "$(email C003)" "new@x.com"
@@ -212,16 +224,56 @@ ck "replay: C001 survives with its updated email" \
 
 # ---------------------------------------------------------------- 9
 echo; echo "== 9. archive-status reports and deletes nothing =="
-rows="$(aq 'SELECT COUNT(*) FROM arch.source_landing_history')"
+rows="$(hist_rows)"
 out="$("$PROJ/scripts/archive_status.sh" 2>&1)"; rc=$?
 ck "archive_status.sh exits 0" "$rc" "0"
 ck "  ...reports the per-feed breakdown" "$(printf '%s' "$out" | grep -c 'rows_per_delivery')" "1"
-ck "  ...and deleted nothing" "$(aq 'SELECT COUNT(*) FROM arch.source_landing_history')" "$rows"
+ck "  ...and deleted nothing" "$(hist_rows)" "$rows"
 
 # ---------------------------------------------------------------- 10
 echo; echo "== 10. demo is repeatable (fresh archive each time) =="
 demo; census_1="$(snap)"
 demo; ck "second demo yields the same warehouse" "$(snap)" "$census_1"
+
+# ---------------------------------------------------------------- 11
+echo; echo "== 11. The archive is wide: no narrow table =="
+demo
+ck "archive tables are exactly the shared wide layout" \
+   "$(aq "SELECT group_concat(name,',') FROM (SELECT name FROM arch.sqlite_master WHERE type='table' ORDER BY name)")" \
+   "hist_customer,hist_order,hist_order_line,hist_product,loaded_files"
+ck "no archived table has a key/value (attribute_name) column" \
+   "$(aq "SELECT COUNT(*) FROM arch.sqlite_master m, pragma_table_info(m.name, 'arch') c
+          WHERE m.type='table' AND c.name='attribute_name'")" "0"
+
+# ---------------------------------------------------------------- 12
+echo; echo "== 12. make rebuild reproduces every surrogate key =="
+ingested_all="$(all_keys)"; ingested="$(snap)"
+rm -f "$DB"
+make -s -C "$PROJ" rebuild >/dev/null 2>&1; rc=$?
+ck "make rebuild exits 0" "$rc" "0"
+ck "make rebuild: every surrogate key (customer, product, order) as ingested" "$(all_keys)" "$ingested_all"
+ck "make rebuild: warehouse identical to INGEST" "$(snap)" "$ingested"
+
+# ---------------------------------------------------------------- 13
+echo; echo "== 13. Unpivoted D0..D5 build the same warehouse as the old narrow files =="
+# The old narrow deliveries (tests/fixtures/narrow) go straight into the
+# narrow stage and through apply_delivery.sh -- level 2, no archive -- in a
+# scratch database created after every rebuild assertion above. Stage row
+# counts differ (D4: 8 unpivoted vs 5 narrow); the loaded result may not.
+wide_snap="$(snap)"; wide_keys="$(all_keys)"
+SAVE_DB="$DB"; SAVE_ARCHIVE_DB="$ARCHIVE_DB"
+export DB="$WORK/narrow_ref.db" ARCHIVE_DB="$WORK/narrow_ref_archive.db"
+"$PROJ/scripts/init_db.sh" >/dev/null 2>&1
+for d in "d0_baseline B0 2026-02-05 08:00:00" "d1_cust_win_day60 D1 2026-03-02 08:00:00" \
+         "d2_prod_full_v2 D2 2026-03-02 09:00:00" "d3_cust_tombstone D3 2026-03-16 08:00:00" \
+         "d4_cust_recency D4 2026-04-02 08:00:00" "d5_cust_yearly_full D5 2026-12-31 08:00:00"; do
+  set -- $d
+  "$SQLITE" "$DB" "DELETE FROM source_landing_stage;"; "$SQLITE" "$DB" < "$HERE/fixtures/narrow/$1.sql"
+  BATCH_TS="$3 $4" "$PROJ/scripts/apply_delivery.sh" >/dev/null 2>&1
+done
+ck "same surrogate keys from the old narrow files" "$(all_keys)" "$wide_keys"
+ck "same derived tables (keys, descriptors, links) from the old narrow files" "$(snap)" "$wide_snap"
+export DB="$SAVE_DB" ARCHIVE_DB="$SAVE_ARCHIVE_DB"
 
 echo; echo "====================================================================="
 printf "  RESULT: %d passed, %d failed\n" "$PASS" "$FAIL"

@@ -228,7 +228,7 @@ model doesn't force a difference.
   place as forensics. Success leaves the stage blank.
 - **`make clean` never touches the durable layer.** Destroying raw
   history takes the explicit `clean-archive` target.
-- **Mutation-tested suites** (Metrics mart 192, Activity 139, Focal 99+33,
+- **Mutation-tested suites** (Metrics mart 192, Activity 139, Focal 120+46,
   DV 130, USS 129, HOOK 115, Kimball 88, Anchor 88, Inmon 80, OBT 71
   assertions). I broke the FULL-absence guard, the replay ordering, the
   dedup tiebreaks, the restatement and idempotence guards, the tie guards,
@@ -242,12 +242,13 @@ model doesn't force a difference.
   that print the suggested fix — and flip the suite red the moment the
   fix lands. See [`v3_focal-point/FOCALPOINT.md`](v3_focal-point/FOCALPOINT.md), "Known gap".
 - **Byte-identical delivery files, pairwise.** DV, Kimball, Inmon, HOOK,
-  USS, Activity Schema and OBT share the wide restatement; Focal, Anchor
+  USS, Activity Schema, OBT and Focal Point share the wide restatement
+  (Focal unpivots it to key/value rows in a second staging step); Anchor
   and the metrics mart share the narrow key-value originals. One logical
   corpus, two physical shapes, ten consumers.
-- **Archives aligned by shape.** The seven wide-shape archives (Inmon,
-  Kimball, Data Vault, HOOK, USS, Activity Schema, OBT) share one layout (`loaded_files` + `hist_*`)
-  and the archive files in the repo are byte-identical. Focal, Anchor and
+- **Archives aligned by shape.** The eight wide-shape archives (Inmon,
+  Kimball, Data Vault, HOOK, USS, Activity Schema, OBT, Focal Point) share one layout (`loaded_files` + `hist_*`)
+  and the archive files in the repo are byte-identical. Anchor and
   the metrics mart share the narrow `source_landing_history` layout. No archive carries
   secondary indexes; at this data volume they add nothing. Re-running
   `make demo` re-stamps the `loaded_at`/`archived_at` columns, so a fresh
