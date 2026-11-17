@@ -28,6 +28,9 @@ FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY order_key,type_key
 WHERE rn=1 AND row_st='Y';
 
 -- ---- Wide, business-friendly reconstructions (pivot by type_key) ----
+-- Each lists only keys whose current EXISTENCE fact (type_key 19/29/39)
+-- is ACTIVE: a deleted entity is absent, not a row of empty attributes.
+-- The full presence picture, deleted keys included, is v_*_status below.
 CREATE VIEW v_customer AS
 SELECT f.customer_key,
        (SELECT customer_idfr FROM customer_idfr i
@@ -36,6 +39,8 @@ SELECT f.customer_key,
        MAX(CASE WHEN d.type_key=11 THEN d.val_str  END) AS email,
        MAX(CASE WHEN d.type_key=12 THEN d.sta_tmstp END) AS signup_date
 FROM customer_focal f
+JOIN v_customer_desc_current e ON e.customer_key=f.customer_key
+                              AND e.type_key=19 AND e.val_str='ACTIVE'
 LEFT JOIN v_customer_desc_current d ON d.customer_key=f.customer_key
 GROUP BY f.customer_key;
 
@@ -47,6 +52,8 @@ SELECT f.product_key,
        MAX(CASE WHEN d.type_key=21 THEN d.val_num END) AS price,
        MAX(CASE WHEN d.type_key=21 THEN d.uom     END) AS currency
 FROM product_focal f
+JOIN v_product_desc_current e ON e.product_key=f.product_key
+                             AND e.type_key=29 AND e.val_str='ACTIVE'
 LEFT JOIN v_product_desc_current d ON d.product_key=f.product_key
 GROUP BY f.product_key;
 
@@ -62,8 +69,36 @@ SELECT f.order_key,
           JOIN v_customer c ON c.customer_key=x.customer_key
          WHERE x.order_key=f.order_key AND x.type_key=90 AND x.row_st='Y' LIMIT 1) AS placed_by
 FROM order_focal f
+JOIN v_order_desc_current e ON e.order_key=f.order_key
+                           AND e.type_key=39 AND e.val_str='ACTIVE'
 LEFT JOIN v_order_desc_current d ON d.order_key=f.order_key
 GROUP BY f.order_key;
+
+-- ---- Presence per key: every key, deleted ones included -------------
+-- The current EXISTENCE fact and the eff_tmstp of the version that set it.
+CREATE VIEW v_customer_status AS
+SELECT f.customer_key,
+       (SELECT customer_idfr FROM customer_idfr i
+         WHERE i.customer_key=f.customer_key AND i.row_st='Y' LIMIT 1) AS customer_ref,
+       e.val_str AS existence, e.eff_tmstp
+FROM customer_focal f
+LEFT JOIN v_customer_desc_current e ON e.customer_key=f.customer_key AND e.type_key=19;
+
+CREATE VIEW v_product_status AS
+SELECT f.product_key,
+       (SELECT product_idfr FROM product_idfr i
+         WHERE i.product_key=f.product_key AND i.row_st='Y' LIMIT 1) AS sku,
+       e.val_str AS existence, e.eff_tmstp
+FROM product_focal f
+LEFT JOIN v_product_desc_current e ON e.product_key=f.product_key AND e.type_key=29;
+
+CREATE VIEW v_order_status AS
+SELECT f.order_key,
+       (SELECT order_idfr FROM order_idfr i
+         WHERE i.order_key=f.order_key AND i.row_st='Y' LIMIT 1) AS order_ref,
+       e.val_str AS existence, e.eff_tmstp
+FROM order_focal f
+LEFT JOIN v_order_desc_current e ON e.order_key=f.order_key AND e.type_key=39;
 
 -- ---- Self-describing "everything" view: proves meaning lives in metadata ----
 -- Every current fact in the warehouse, decoded via the semantic key.

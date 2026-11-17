@@ -52,6 +52,15 @@ ckx(){ if [ "$2" = "$3" ]; then FAIL=$((FAIL+1));
        else GAPS=$((GAPS+1));
          printf "  \033[33mGAP \033[0m %s  (got '%s', wanted '%s')\n" "$1" "$2" "$3"; fi; }
 ckey(){ q "SELECT customer_key FROM customer_idfr WHERE customer_idfr='$1'"; }
+# Existence history of one customer (CUSTOMER_EXISTENCE, type_key 19), oldest first.
+exist_hist(){ q "SELECT group_concat(val_str||'/'||row_st,'>') FROM (SELECT val_str, row_st FROM customer_desc
+                 WHERE type_key=19 AND customer_key=$(ckey "$1") ORDER BY eff_tmstp, ver_tmstp)"; }
+exist_rows(){ q "SELECT (SELECT COUNT(*) FROM customer_desc WHERE type_key=19)
+                      +(SELECT COUNT(*) FROM product_desc WHERE type_key=29)
+                      +(SELECT COUNT(*) FROM order_desc WHERE type_key=39)"; }
+# The end state every model prints: current customers as ref(email).
+end_state(){ q "SELECT group_concat(customer_ref||'('||COALESCE(email,'null')||')',' ')
+                FROM (SELECT * FROM v_customer ORDER BY customer_ref)"; }
 # Deliveries arrive wide. Rows a delivery carried (wide stage) and rows the
 # archive holds for it (the shared hist_* layout; no narrow table).
 wide_rows(){ q "SELECT (SELECT COUNT(*) FROM stg_customer_l1)+(SELECT COUNT(*) FROM stg_product_l1)
@@ -151,6 +160,7 @@ ck "INCREMENTAL: C002 NOT deleted (60-day stale)"    "$(q "SELECT row_st FROM cu
 ck "INCREMENTAL: C002 email unchanged"               "$(q "SELECT email FROM v_customer WHERE customer_ref='C002'")" "bob@example.com"
 ck "INCREMENTAL: C002 no version churn (1 row)"      "$(q "SELECT COUNT(*) FROM customer_desc WHERE customer_key=$(ckey C002) AND type_key=11")" "1"
 ck "INCREMENTAL: still 2 customers"                  "$(q 'SELECT COUNT(*) FROM customer_focal')" "2"
+ck "existence: D1's window writes no existence row for absent C002 (ACTIVE once)" "$(exist_hist C002)" "ACTIVE/Y"
 
 echo; echo "== D2: PIM FULL snapshot (SKU-3 discontinued) =="
 feed d2_prod_full_v2.sql D2 '2026-03-02 09:00:00'
@@ -162,7 +172,7 @@ ck "FULL: SKU-1 price changed 8.99"        "$(q "SELECT price FROM v_product WHE
 echo; echo "== D3: INCREMENTAL tombstone deletes C002 =="
 feed d3_cust_tombstone.sql D3 '2026-03-16 08:00:00'
 ck "tombstone: C002 now deleted"          "$(q "SELECT row_st FROM customer_desc WHERE customer_key=$(ckey C002) AND type_key=11 ORDER BY eff_tmstp DESC,ver_tmstp DESC LIMIT 1")" "N"
-ck "tombstone: C002 gone from v_customer" "$(q "SELECT COALESCE(email,'<none>') FROM v_customer WHERE customer_ref='C002'")" "<none>"
+ck "tombstone: C002 gone from v_customer" "$(q "SELECT COUNT(*) FROM v_customer WHERE customer_ref='C002'")" "0"
 
 echo; echo "== D4: INCREMENTAL adds C003; recency de-dup =="
 feed d4_cust_recency.sql D4 '2026-04-02 08:00:00'
@@ -176,11 +186,34 @@ ck "dup file: D1 recorded once"            "$(aq "SELECT COUNT(*) FROM arch.load
 ck "dup file: D1 archived once"            "$(hist_rows D1)" \
                                            "$(aq "SELECT row_count FROM arch.loaded_files WHERE file_id='D1'")"
 
+echo; echo "== Existence: D4's content under a NEW file_id writes no existence row =="
+exist_before="$(exist_rows)"
+feed d4_cust_recency.sql D4R '2026-04-05 08:00:00'
+ck "existence: re-delivered ACTIVE C003 writes nothing (NOCHANGE)" "$(exist_rows)" "$exist_before"
+ck "existence: C003 is still ACTIVE once" "$(exist_hist C003)" "ACTIVE/Y"
+
 echo; echo "== D5: YEARLY FULL reconciliation (C003 gone at source) =="
 feed d5_cust_yearly_full.sql D5 '2026-12-31 08:00:00'
 ck "reconcile: C003 deleted by absence (FULL)" "$(q "SELECT row_st FROM customer_desc WHERE customer_key=$(ckey C003) AND type_key=11 ORDER BY eff_tmstp DESC,ver_tmstp DESC LIMIT 1")" "N"
 ck "reconcile: C001 survives"                  "$(q "SELECT email FROM v_customer WHERE customer_ref='C001'")" "alice@newmail.com"
-ck "reconcile: C002 stays deleted"             "$(q "SELECT COALESCE(email,'<none>') FROM v_customer WHERE customer_ref='C002'")" "<none>"
+ck "reconcile: C002 stays deleted"             "$(q "SELECT COUNT(*) FROM v_customer WHERE customer_ref='C002'")" "0"
+
+echo; echo "== Existence after D5: deleted entities are absent, not empty rows =="
+ck "end state: v_customer lists C001 only, as every model prints it" "$(end_state)" "C001(alice@newmail.com)"
+ck "v_customer_status: C002 and C003 DELETED, C001 ACTIVE" \
+   "$(q "SELECT group_concat(customer_ref||'='||existence,' ') FROM (SELECT * FROM v_customer_status ORDER BY customer_ref)")" \
+   "C001=ACTIVE C002=DELETED C003=DELETED"
+ck "v_customer_status: C002's DELETED dates from the D3 tombstone" \
+   "$(q "SELECT eff_tmstp FROM v_customer_status WHERE customer_ref='C002'")" "2026-03-16 08:00:00"
+ck "SKU-3 absent from v_product" "$(q "SELECT COUNT(*) FROM v_product WHERE sku='SKU-3'")" "0"
+ck "SKU-3 DELETED in v_product_status (FULL absence, D2)" \
+   "$(q "SELECT existence||'@'||eff_tmstp FROM v_product_status WHERE sku='SKU-3'")" "DELETED@2026-03-02 09:00:00"
+ck "existence history: C002 ACTIVE then DELETED, both current-style 'Y' facts" "$(exist_hist C002)" "ACTIVE/Y>DELETED/Y"
+ck "C002's email history is still in customer_desc" \
+   "$(q "SELECT group_concat(COALESCE(val_str,'')||'/'||row_st,'>') FROM (SELECT val_str,row_st FROM customer_desc
+         WHERE type_key=11 AND customer_key=$(ckey C002) ORDER BY eff_tmstp, ver_tmstp)")" "bob@example.com/Y>bob@example.com/N"
+ck "v_all_facts still lists the DELETED existence fact" \
+   "$(q "SELECT val_str FROM v_all_facts WHERE entity_id='CUSTOMER' AND entity_key=$(ckey C002) AND context_name='CUSTOMER_EXISTENCE'")" "DELETED"
 
 echo; echo "== Contrast: absence deletes under FULL, never under INCREMENTAL =="
 ck "C002 survived the incremental window, only died to a tombstone" \
@@ -255,6 +288,24 @@ if [ "$GAPS" -gt 0 ]; then
   echo "       assertion, and re-run the suite's mutation checks."
   echo "  ---------------------------------------------------------------"
 fi
+
+echo; echo "== Existence: a key delivered again after its delete is restored (d8_restore.sql) =="
+# C002 was tombstoned in D3. Not asserted here: v_order.placed_by for
+# O-101 -- the re-point gap above leaves it undefined.
+BATCH_TS='2027-04-01 08:00:00' "$PROJ/scripts/load_feed.sh" \
+  "$HERE/fixtures/d8_restore.sql" D8 >"$LOGDIR/d8.log" 2>&1 \
+  || { echo "  ABORT: restore fixture crashed the loader"; sed 's/^/  | /' "$LOGDIR/d8.log"; exit 1; }
+ck "restore: C002 existence reopens (ACTIVE > DELETED > ACTIVE)" "$(exist_hist C002)" "ACTIVE/Y>DELETED/Y>ACTIVE/Y"
+ck "restore: C002 ACTIVE in v_customer_status since D8" \
+   "$(q "SELECT existence||'@'||eff_tmstp FROM v_customer_status WHERE customer_ref='C002'")" "ACTIVE@2027-04-01 08:00:00"
+ck "restore: every C002 attribute reopened with a new 'Y' version" \
+   "$(q "SELECT group_concat(type_key||':'||row_st||':'||eff_tmstp,' ') FROM (SELECT * FROM customer_desc
+         WHERE customer_key=$(ckey C002) AND type_key IN (10,11,12) AND eff_tmstp='2027-04-01 08:00:00' ORDER BY type_key)")" \
+   "10:Y:2027-04-01 08:00:00 11:Y:2027-04-01 08:00:00 12:Y:2027-04-01 08:00:00"
+ck "restore: C002 back in v_customer with its new values" \
+   "$(q "SELECT customer_name||'|'||email||'|'||signup_date FROM v_customer WHERE customer_ref='C002'")" \
+   "Bob Jones|bob@restored.com|2026-01-06"
+ck "restore: end state now C001 and C002" "$(end_state)" "C001(alice@newmail.com) C002(bob@restored.com)"
 
 echo; echo "== Level 1: the wide -> narrow transform (stage_narrow.sh) =="
 # Own scratch database: wide rows go straight into the wide stage and only

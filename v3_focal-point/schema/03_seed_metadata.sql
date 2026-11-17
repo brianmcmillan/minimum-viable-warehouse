@@ -19,7 +19,14 @@ INSERT INTO meta_atomic_context(type_key, entity_id, context_name, definition) V
  (21,'PRODUCT' ,'PRODUCT_PRICE' ,'List price -- a NUMBER plus its CURRENCY (one atomic fact)'),
  (30,'ORDER'   ,'ORDER_STATUS'  ,'Current fulfilment status of the order'),
  (31,'ORDER'   ,'ORDER_AMOUNT'  ,'Order total -- amount plus currency (one atomic fact)'),
- (32,'ORDER'   ,'ORDER_PLACED'  ,'When the order was placed');
+ (32,'ORDER'   ,'ORDER_PLACED'  ,'When the order was placed'),
+-- Presence: one EXISTENCE context per entity, val_str 'ACTIVE' | 'DELETED'.
+-- Maintained by the same generic delta engine as every other descriptor
+-- (load_desc.sh, role 'EXISTS' below); the semantic views list only
+-- ACTIVE keys. A delete is a current DELETED fact, not a closed one.
+ (19,'CUSTOMER','CUSTOMER_EXISTENCE','Whether the customer exists at source: ACTIVE or DELETED'),
+ (29,'PRODUCT' ,'PRODUCT_EXISTENCE' ,'Whether the product exists at source: ACTIVE or DELETED'),
+ (39,'ORDER'   ,'ORDER_EXISTENCE'   ,'Whether the order exists at source: ACTIVE or DELETED');
 
 INSERT INTO meta_attribute(type_key, attr_name, phys_column, data_type) VALUES
  (10,'CUSTOMER_NAME'  ,'VAL_STR'  ,'STRING'),
@@ -31,7 +38,10 @@ INSERT INTO meta_attribute(type_key, attr_name, phys_column, data_type) VALUES
  (30,'ORDER_STATUS'   ,'VAL_STR'  ,'STRING'),
  (31,'ORDER_AMOUNT'   ,'VAL_NUM'  ,'NUMBER'),
  (31,'ORDER_CURRENCY' ,'UOM'      ,'UNIT'),
- (32,'ORDER_PLACED'   ,'STA_TMSTP','START_TIMESTAMP');
+ (32,'ORDER_PLACED'   ,'STA_TMSTP','START_TIMESTAMP'),
+ (19,'CUSTOMER_EXISTENCE','VAL_STR','STRING'),
+ (29,'PRODUCT_EXISTENCE' ,'VAL_STR','STRING'),
+ (39,'ORDER_EXISTENCE'   ,'VAL_STR','STRING');
 
 INSERT INTO meta_relationship(type_key, rel_name, source_entity, target_entity, x_table) VALUES
  (90,'PLACED_BY','ORDER','CUSTOMER','order_customer_x'),
@@ -59,7 +69,13 @@ INSERT INTO meta_source_map
  (10,'ORDER'   ,30  ,'OMS','ORDER'   ,'DESC','status'    ,'VAL_STR' ,NULL ),
  (11,'ORDER'   ,31  ,'OMS','ORDER'   ,'DESC','amount'    ,'VAL_NUM' ,NULL ),
  (12,'ORDER'   ,31  ,'OMS','ORDER'   ,'DESC','currency'  ,'UOM'     ,'USD'),
- (13,'ORDER'   ,32  ,'OMS','ORDER'   ,'DESC','placed_at' ,'STA_TMSTP',NULL);
+ (13,'ORDER'   ,32  ,'OMS','ORDER'   ,'DESC','placed_at' ,'STA_TMSTP',NULL),
+-- EXISTENCE: which feed asserts each entity's presence, and into which
+-- context. No source attribute: presence is the key arriving (UPSERT),
+-- a tombstone (op='DELETE'), or absence from a FULL delivery.
+ (14,'CUSTOMER',19  ,'CRM','CUSTOMER','EXISTS',NULL      ,'VAL_STR' ,NULL ),
+ (15,'PRODUCT' ,29  ,'PIM','PRODUCT' ,'EXISTS',NULL      ,'VAL_STR' ,NULL ),
+ (16,'ORDER'   ,39  ,'OMS','ORDER'   ,'EXISTS',NULL      ,'VAL_STR' ,NULL );
 
 INSERT INTO meta_value_map(type_key, source_value, target_value) VALUES
  (30,'P','PENDING'),

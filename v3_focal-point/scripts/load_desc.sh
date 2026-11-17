@@ -9,6 +9,19 @@
 #
 # So an INCREMENTAL (windowed) delivery can never delete a key just
 # because it wasn't in the window. That is the whole point of this variant.
+#
+# EXISTENCE (second loop, role 'EXISTS' in meta_source_map): presence is
+# one more atomic context per entity, val_str 'ACTIVE' | 'DELETED', run by
+# the same generic engine with no per-entity code:
+#   ACTIVE   -- a key delivered as UPSERT whose current existence is not
+#               ACTIVE (a new key, or a restore after a delete)
+#   DELETED  -- a tombstone, or absence from a FULL delivery, for a key
+#               whose current existence is ACTIVE (the same step in which
+#               the first loop closes its attributes)
+#   nothing  -- an ACTIVE key delivered again, or absent from an
+#               INCREMENTAL delivery
+# Existence versions are always row_st 'Y': a deleted entity is a current
+# DELETED fact, not a closed one, so its history stays queryable.
 # ---------------------------------------------------------------------
 source "$(dirname "$0")/lib.sh"
 echo "==> Loading descriptors  (bi-temporal delta, batch_ts=$BATCH_TS)"
@@ -145,5 +158,80 @@ SQL
   sed "s/__INST__/$inst/g" "$tmp" | sql
   n="$(sql_scalar "SELECT COUNT(*) FROM $desc_tbl WHERE inst_key=$inst;")"
   printf "    %-9s %-16s [%-11s]: %s row(s)\n" "$entity" "$ctx" "$mode" "$n"
+  rm -f "$tmp"
+done
+
+# ---- EXISTENCE: one context per entity, same feed scope ------------------
+sql_run "SELECT DISTINCT m.entity_id, m.type_key, m.source_system, m.source_entity
+                 FROM meta_source_map m
+                 WHERE m.role='EXISTS' AND EXISTS (
+                   SELECT 1 FROM source_landing_stage s
+                   WHERE s.source_system=m.source_system AND s.source_entity=m.source_entity)
+                 ORDER BY m.entity_id, m.type_key;" |
+while IFS='|' read -r entity tk ss se; do
+  q_entity="$(sql_quote "$entity")"; q_ss="$(sql_quote "$ss")"; q_se="$(sql_quote "$se")"
+  tk="$(sql_int "$tk")"
+  key_col="$(sql_ident "$(sql_scalar "SELECT key_col FROM meta_entity WHERE entity_id='$q_entity';")")"
+  ctx="$(sql_scalar "SELECT context_name FROM meta_atomic_context WHERE type_key=$tk;")"
+  le="$(printf '%s' "$entity" | tr 'A-Z' 'a-z')"
+  desc_tbl="$(sql_ident "${le}_desc")"; idfr_tbl="$(sql_ident "${le}_idfr")"
+  idfr_col="$(sql_ident "${le}_idfr")"; dk="$tk"
+
+  mode="$(sql_scalar "SELECT COALESCE(
+             (SELECT load_mode FROM source_landing
+              WHERE source_system='$q_ss' AND source_entity='$q_se' AND load_mode IS NOT NULL LIMIT 1),
+             (SELECT ingestion_strategy FROM meta_source_feed
+              WHERE source_system='$q_ss' AND source_entity='$q_se'), 'INCREMENTAL');")"
+
+  if [ "$mode" = "FULL" ]; then
+    ABS_UNION="UNION ALL
+  SELECT t.ek, 'DELETED' FROM tgt t
+  WHERE t.val_str='ACTIVE'
+    AND t.ek NOT IN (SELECT ek FROM upkeys) AND t.ek NOT IN (SELECT ek FROM delkeys)"
+  else
+    ABS_UNION=""
+  fi
+
+  tmp="$(mktemp)"
+  cat > "$tmp" <<SQL
+WITH upkeys AS (
+  SELECT DISTINCT i.$key_col AS ek
+  FROM source_landing sl
+  JOIN $idfr_tbl i ON i.$idfr_col = sl.business_key AND i.row_st='Y'
+  WHERE sl.source_system='$q_ss' AND sl.source_entity='$q_se' AND sl.op='UPSERT'
+),
+delkeys AS (
+  SELECT DISTINCT i.$key_col AS ek
+  FROM source_landing sl
+  JOIN $idfr_tbl i ON i.$idfr_col = sl.business_key AND i.row_st='Y'
+  WHERE sl.source_system='$q_ss' AND sl.source_entity='$q_se' AND sl.op='DELETE'
+),
+tgt AS (
+  SELECT ek, val_str FROM (
+    SELECT $key_col AS ek, val_str,
+           ROW_NUMBER() OVER (PARTITION BY $key_col
+                              ORDER BY eff_tmstp DESC, ver_tmstp DESC) AS rn
+    FROM $desc_tbl WHERE type_key=$tk AND data_key=$dk
+  ) WHERE rn=1
+)
+INSERT INTO $desc_tbl($key_col, type_key, eff_tmstp, ver_tmstp, seq_nbr, row_st,
+                      sta_tmstp, end_tmstp, val_str, val_num, uom,
+                      data_key, inst_key, inst_row_key, popln_tmstp)
+SELECT ek, $tk, '$q_bts', '$q_bts', 0, 'Y',
+       NULL, NULL, existence, NULL, NULL,
+       $dk, __INST__, 1, '$q_bts'
+FROM (
+  SELECT u.ek, 'ACTIVE' AS existence FROM upkeys u LEFT JOIN tgt t ON t.ek=u.ek
+  WHERE (t.ek IS NULL OR t.val_str<>'ACTIVE') AND u.ek NOT IN (SELECT ek FROM delkeys)
+  UNION ALL
+  SELECT t.ek, 'DELETED' FROM tgt t JOIN delkeys d ON d.ek=t.ek
+  WHERE t.val_str='ACTIVE'
+  $ABS_UNION
+) x;
+SQL
+  inst="$(sql_int "$(log_procinst "EXISTS:$entity:$ctx:$ss.$se:$mode" "$tmp")")"
+  sed "s/__INST__/$inst/g" "$tmp" | sql
+  n="$(sql_scalar "SELECT COUNT(*) FROM $desc_tbl WHERE inst_key=$inst;")"
+  printf "    %-9s %-18s [%-11s]: %s row(s)\n" "$entity" "$ctx" "$mode" "$n"
   rm -f "$tmp"
 done
