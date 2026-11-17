@@ -4,7 +4,8 @@
 # against a vault. Same deliveries, same safety rule (absence deletes
 # only under FULL), plus the DV-specific behaviours: whole-row satellite
 # grain, raw values preserved under soft rules, and driving-key
-# effectivity on links. Pure shell + sqlite3, no other deps.
+# effectivity on links, and the raw-layer archive: append-only, replayed
+# by `make rebuild` into an identical vault. Pure shell + sqlite3.
 #   make test   (or)   ./tests/run_tests.sh
 # =====================================================================
 # No `set -e`: every assertion must run so one failure doesn't hide the rest.
@@ -13,6 +14,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"; PROJ="$(cd "$HERE/.." && pwd)"
 : "${SQLITE:=sqlite3}"
 export SQLITE
 export DB="${TESTDB:-$(mktemp -u 2>/dev/null || echo /tmp/dv_test).db}"
+export ARCHIVE_DB="${DB%.db}_archive.db"
 PASS=0; FAIL=0; FEED_N=0; SKIPPED=0
 LOGDIR="$(mktemp -d)"; trap 'rm -rf "$LOGDIR"' EXIT
 
@@ -23,8 +25,17 @@ q(){ local out rc=0
        printf '<SQL-ERROR>'; return 0
      fi
      printf '%s' "$out"; }
+aq(){ local out rc=0
+      out="$("$SQLITE" -cmd "ATTACH DATABASE '$ARCHIVE_DB' AS arch" "$DB" "$1" 2>&1)" || rc=$?
+      [ "$rc" -eq 0 ] || { printf "  \033[31mSQL ERROR\033[0m %s\n    %s\n" "$out" "$1" >&2
+                           printf '<SQL-ERROR>'; return 0; }
+      printf '%s' "$out"; }
 ck(){ if [ "$2" = "$3" ]; then PASS=$((PASS+1)); printf "  \033[32mPASS\033[0m %s\n" "$1";
       else FAIL=$((FAIL+1)); printf "  \033[31mFAIL\033[0m %s  (got '%s', expected '%s')\n" "$1" "$2" "$3"; fi; }
+ck_abort(){ local label="$1" sql="$2" want="$3" out
+      out="$("$SQLITE" "$ARCHIVE_DB" "$sql" 2>&1)"
+      case "$out" in *"$want"*) PASS=$((PASS+1)); printf "  \033[32mPASS\033[0m %s\n" "$label";;
+        *) FAIL=$((FAIL+1)); printf "  \033[31mFAIL\033[0m %s  (got '%s')\n" "$label" "$out";; esac; }
 
 # Row census across every vault table, compared as one string so a
 # failure names the table that grew.
@@ -43,6 +54,30 @@ census(){ q "SELECT group_concat(t||'='||n,' ') FROM (
     UNION ALL SELECT 12,'oc_eff',   COUNT(*) FROM bv_order_customer_l_effsat
     ORDER BY o);"; }
 
+# Every rv_* and bv_* table, as the list of names the schema defines.
+vault_tables(){ q "SELECT name FROM sqlite_master WHERE type='table'
+                   AND (name LIKE 'rv\_%' ESCAPE '\' OR name LIKE 'bv\_%' ESCAPE '\')
+                   ORDER BY name"; }
+# Full content of one table, every column, in a total order (ORDER BY each
+# column position), so two dumps are equal only if the rows are.
+dump(){ q "SELECT * FROM $1 ORDER BY $(q "SELECT group_concat(cid+1,',') FROM pragma_table_info('$1')")"; }
+# Snapshot every vault table, `make rebuild` from the archive, compare
+# table by table. $1 labels the assertions.
+rebuild_check(){ local label="$1" t tables want rc=0 snapdir="$LOGDIR/snap-$FEED_N"
+  mkdir -p "$snapdir"; tables="$(vault_tables)"
+  for t in $tables; do dump "$t" > "$snapdir/$t"; done
+  rm -f "$DB"
+  make -s -C "$PROJ" rebuild >"$LOGDIR/rebuild-$FEED_N.log" 2>&1 || rc=$?
+  ck "[$label] make rebuild exits 0" "$rc" "0"
+  ck "[$label] rebuilt vault has the same rv_*/bv_* tables" "$(vault_tables)" "$tables"
+  for t in $tables; do
+    # An empty or errored snapshot can never match: equal errors are not equal tables.
+    want="$(cat "$snapdir/$t")"
+    case "$want" in ''|*'<SQL-ERROR>'*) want="<no valid snapshot of $t>";; esac
+    ck "[$label] $t reproduced row for row ($(grep -c "" "$snapdir/$t") rows)" \
+       "$(dump "$t")" "$want"
+  done; }
+
 # Run one delivery; abort the suite if a loader crashes (past that point
 # every assertion measures a half-loaded database, not the code).
 feed(){ local src="$1" file_id="$2" ts="$3" rc=0 log dir="${4:-$PROJ/source}"
@@ -54,10 +89,10 @@ feed(){ local src="$1" file_id="$2" ts="$3" rc=0 log dir="${4:-$PROJ/source}"
     printf "\n  %d passed, %d failed before the abort.\n" "$PASS" "$FAIL"; exit 1
   fi
   if grep -q 'SKIP duplicate' "$log"; then SKIPPED=1; else SKIPPED=0; fi
-  ck "[$file_id] audit: recorded exactly once" \
-     "$(q "SELECT COUNT(*) FROM dv_load_audit WHERE file_id='$file_id'")" "1"
-  [ "$SKIPPED" -eq 0 ] && ck "[$file_id] audit: COMPLETE after all loaders" \
-     "$(q "SELECT status FROM dv_load_audit WHERE file_id='$file_id'")" "COMPLETE"
+  ck "[$file_id] manifest: recorded exactly once" \
+     "$(aq "SELECT COUNT(*) FROM arch.loaded_files WHERE file_id='$file_id'")" "1"
+  [ "$SKIPPED" -eq 0 ] && ck "[$file_id] manifest: COMPLETE after all loaders" \
+     "$(aq "SELECT status FROM arch.loaded_files WHERE file_id='$file_id'")" "COMPLETE"
   # Standing invariant: a delivery that returned success left the stage
   # blank. Residue after exit 0 would mean either the success-clear was
   # lost, or a failure was misreported as success.
@@ -67,7 +102,7 @@ feed(){ local src="$1" file_id="$2" ts="$3" rc=0 log dir="${4:-$PROJ/source}"
 
 sts(){ q "SELECT sts FROM v_customer_sts_current WHERE customer_bk='$1'"; }
 
-echo "== Fresh db =="; rm -f "$DB"; "$PROJ/scripts/init_db.sh" >/dev/null
+echo "== Fresh db + archive =="; rm -f "$DB" "$ARCHIVE_DB"; "$PROJ/scripts/init_db.sh" >/dev/null
 
 echo; echo "== D0: FULL baseline =="
 feed d0_baseline.sql B0 '2026-02-05 08:00:00'
@@ -134,6 +169,19 @@ echo; echo "== Contrast: absence deletes under FULL, never under INCREMENTAL =="
 ck "C002 presence timeline is exactly I -> D (2 assertions)" \
    "$(q "SELECT group_concat(sts,'') FROM (SELECT sts FROM rv_customer_sts WHERE customer_bk='C002' ORDER BY ldts)")" "ID"
 
+echo; echo "== Archive: append-only is absolute =="
+ck "archive captured every delivered row" \
+   "$(aq "SELECT (SELECT COUNT(*) FROM arch.hist_customer)+(SELECT COUNT(*) FROM arch.hist_product)
+              +(SELECT COUNT(*) FROM arch.hist_order)+(SELECT COUNT(*) FROM arch.hist_order_line)")" \
+   "$(aq 'SELECT SUM(row_count) FROM arch.loaded_files')"
+for t in hist_customer hist_product hist_order hist_order_line; do
+  ck_abort "UPDATE on $t aborts" "UPDATE $t SET op=op;" "append-only"
+  ck_abort "DELETE on $t aborts" "DELETE FROM $t;"      "append-only"
+done
+
+echo; echo "== Rebuild after the six deliveries: the vault is disposable =="
+rebuild_check "six deliveries"
+
 echo; echo "== Idempotence: replaying the whole sequence must change nothing =="
 census_0="$(census)"
 feed d0_baseline.sql         B0 '2027-01-05 08:00:00'
@@ -169,13 +217,48 @@ before_d6r="$(census)"
 feed d6_repoint.sql D6R '2027-02-15 08:00:00' "$HERE/fixtures"
 ck "re-asserted current state writes zero vault rows" "$(census)" "$before_d6r"
 
+echo; echo "== Rebuild after D6/D6R, then the soft-rule test on the rebuilt vault =="
+rebuild_check "after D6R"
+
 echo; echo "== Soft rule change: retroactive without any reload =="
 q "UPDATE dv_load_params SET batch_ts=batch_ts" >/dev/null   # no-op; vault untouched below
 ck "raw 'P' still in the vault"          "$(q "SELECT status FROM rv_order_hsat WHERE order_bk='O-100'")" "P"
 ck "mart derives PENDING from it today"  "$(q "SELECT status FROM fact_order WHERE order_ref='O-100'")" "PENDING"
 
+echo; echo "== Load control: a reused file_id with different content is rejected =="
+# Own database pair, so the crashed delivery below never enters the main
+# archive. A loader crash leaves the id STARTED with its rows archived;
+# re-sending DIFFERENT content under that id must be refused, and the
+# original content must still retry to COMPLETE.
+SAVE_DB="$DB"; SAVE_ARCHIVE_DB="$ARCHIVE_DB"
+export DB="$LOGDIR/reuse.db" ARCHIVE_DB="$LOGDIR/reuse_archive.db"
+"$PROJ/scripts/init_db.sh" >/dev/null
+cat > "$LOGDIR/crash_sqlite" <<SH
+#!/usr/bin/env bash
+for a in "\$@"; do case "\$a" in *"INSERT INTO rv_customer_h("*)
+  echo "simulated loader crash" >&2; exit 1;; esac; done
+exec "$SQLITE" "\$@"
+SH
+chmod +x "$LOGDIR/crash_sqlite"
+rc=0; SQLITE="$LOGDIR/crash_sqlite" BATCH_TS='2026-03-02 08:00:00' \
+  "$PROJ/scripts/load_feed.sh" "$PROJ/source/d1_cust_win_day60.sql" X1 >"$LOGDIR/reuse-1.log" 2>&1 || rc=$?
+ck "reuse: crashed delivery X1 left STARTED with its 1 row archived" \
+   "$([ "$rc" -ne 0 ] && echo crashed)/$(aq "SELECT status||'/'||row_count FROM arch.loaded_files WHERE file_id='X1'")" \
+   "crashed/STARTED/1"
+rc=0; BATCH_TS='2026-04-02 08:00:00' \
+  "$PROJ/scripts/load_feed.sh" "$PROJ/source/d4_cust_recency.sql" X1 >"$LOGDIR/reuse-2.log" 2>&1 || rc=$?
+ck "reuse: X1 re-sent with different content is REJECTED" \
+   "$([ "$rc" -ne 0 ] && grep -q 'archived with 1 row(s) but this file has 2' "$LOGDIR/reuse-2.log" && echo rejected || echo accepted)" "rejected"
+ck "reuse: rejected content never reached the archive or the vault" \
+   "$(aq "SELECT (SELECT COUNT(*) FROM arch.hist_customer WHERE file_id='X1')||'/'||(SELECT COUNT(*) FROM rv_customer_h)")" "1/0"
+rc=0; BATCH_TS='2026-03-02 08:00:00' \
+  "$PROJ/scripts/load_feed.sh" "$PROJ/source/d1_cust_win_day60.sql" X1 >"$LOGDIR/reuse-3.log" 2>&1 || rc=$?
+ck "reuse: original X1 content retries to COMPLETE" \
+   "$rc/$(aq "SELECT status FROM arch.loaded_files WHERE file_id='X1'")" "0/COMPLETE"
+export DB="$SAVE_DB" ARCHIVE_DB="$SAVE_ARCHIVE_DB"
+
 echo; echo "====================================================================="
 printf "  RESULT: %d passed, %d failed\n" "$PASS" "$FAIL"
 echo "====================================================================="
-rm -f "$DB"
+rm -f "$DB" "$ARCHIVE_DB"
 [ "$FAIL" -eq 0 ] || exit 1

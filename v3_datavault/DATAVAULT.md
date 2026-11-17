@@ -8,7 +8,8 @@ is the model, not the data.
 
 ```bash
 make demo   # baseline + 5 deliveries + info mart
-make test   # 77 assertions: the Focal scenarios + DV-specific behaviours
+make test   # 118 assertions: the Focal scenarios + DV-specific behaviours
+make rebuild   # regenerate the vault by replaying archive/datavault_archive.db
 ```
 
 Structure follows the DV101 Baseline conventions (source → stage L1 →
@@ -50,6 +51,23 @@ Both demos enforce this identically. What differs is the *representation*:
   100% insert driven"): end dates are computed with `LEAD` on the way out,
   never written. The upsert-style effsat with stored `end_date`/`iscurrent`
   was deliberately not used — it breaks insert-only purity.
+- **A separate delivery archive** (`schema/02_archive.sql`, in
+  `archive/datavault_archive.db`). DV2.0 treats the insert-only raw vault
+  as the system of record and has no layer below it; this demo adds the
+  same raw layer its wide-shape siblings carry, ported from
+  `v3_inmon-3nf` with names adapted only. `load_feed.sh` archives each
+  delivery verbatim (pre-dedup) *before* any loader runs, and ingest and
+  `make rebuild` share one apply path (`scripts/apply_delivery.sh`:
+  hubs → sats → links). Load control moved with it: the manifest is the
+  archive's `loaded_files` (the former `dv_load_audit` table is gone).
+  The archive is append-only (UPDATE/DELETE triggers, no unlock path),
+  survives `make clean`, and is destroyed only by `make clean-archive`.
+  Why: without it, a loader bug meant fixing forward; with it the vault
+  is disposable, and `make rebuild` reproduces every `rv_*`/`bv_*` table
+  row for row (asserted in the suite). Hub, link and satellite semantics
+  are unchanged. Like Inmon, a reused `file_id` is checked by row count
+  only, and only while the delivery is still `STARTED`; a `COMPLETE` id is
+  skipped without comparing content.
 - **Scope**: hubs, sats, status sats, links, one effectivity sat, info
   mart. Ghost records, PIT/bridge, same-as links and multi-active sats are
   omitted — the shared sample data has no scenario for them.
@@ -79,13 +97,7 @@ Both demos enforce this identically. What differs is the *representation*:
    the surface that Data Vault shops end up generating. Three entities are
    hand-writable; thirty are not. (This is the code-generator cost that
    motivated the Focal framework in the first place.)
-2. **Delivery replay.** Focal archives every delivery and can rebuild the
-   warehouse from genesis (`make rebuild`), reassigning identical keys.
-   The vault preserves every attribute *state* and presence assertion, but
-   not the deliveries themselves — a loader bug here means fixing forward,
-   not replaying. (Natural keys soften this: there is no key-assignment
-   state to lose.)
-3. **Attribute-grain history.** Focal versions each atomic context
+2. **Attribute-grain history.** Focal versions each atomic context
    independently; a satellite versions the whole row. C001's D1 email
    change writes one narrow row in Focal's `customer_desc` but a full
    `rv_customer_hsat` row (name and signup date duplicated) here. At wide
@@ -110,14 +122,17 @@ for; they spend their rows on different questions.
 ## Layout
 
 ```
-schema/01_stage.sql           stage L1 tables, load params, load audit
+schema/01_stage.sql           stage L1 tables, load params
+schema/02_archive.sql         raw layer: loaded_files + hist_* (separate db, append-only)
 schema/02_stage2_views.sql    system columns + diff_str + recency dedup
 schema/03_raw_vault.sql       hubs, satellites, status sats, links
 schema/04_business_vault.sql  insert-only effectivity sat + LEAD views
 schema/05_info_mart.sql       dim_customer / dim_product / fact_order + audit views
-scripts/load_feed.sh          driver: stage → hubs → sats → links, load control
+scripts/load_feed.sh          driver: stage → archive → apply, load control
+scripts/apply_delivery.sh     hubs → sats → links; shared by ingest and replay
+scripts/rebuild.sh            re-init the vault and replay the archive in load_seq order
 scripts/load_hubs|sats|links.sh   the three loaders (cf. Focal's keys/desc/rel)
 source/d0..d5*.sql            the six deliveries, wide restatement of Focal's
-tests/run_tests.sh            77 assertions incl. mutation-hardened idempotence
+tests/run_tests.sh            118 assertions incl. mutation-hardened idempotence + rebuild
 tests/fixtures/d6_repoint.sql the driving-key scenario Focal cannot express
 ```

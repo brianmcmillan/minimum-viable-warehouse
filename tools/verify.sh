@@ -35,7 +35,7 @@ published() {
     v3_activity-schema:run_tests)     echo 123 ;;
     v3_anchor:run_tests)              echo 72  ;;
     v3_data-marts:run_tests)          echo 72  ;;
-    v3_datavault:run_tests)           echo 77  ;;
+    v3_datavault:run_tests)           echo 118 ;;
     v3_focal-point:run_tests)         echo 83  ;;
     v3_focal-point:test_archive)      echo 33  ;;
     v3_hook:run_tests)                echo 99  ;;

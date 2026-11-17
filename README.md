@@ -32,7 +32,7 @@ cd v3_one-big-table         && make demo && make test   # One Big Table (null hy
 |---|---|---|---|
 | [`v3_inmon-3nf/`](v3_inmon-3nf/README.md) | [Inmon time-variant 3NF EDW](v3_inmon-3nf/INMON.md) (natural keys) | `build/edw.db` | `archive/edw_archive.db` |
 | [`v3_data-marts/`](v3_data-marts/README.md) | [Kimball star](v3_data-marts/DATAMART.md) (SCD2 + facts) | `build/datamart.db` | `archive/datamart_archive.db` |
-| [`v3_datavault/`](v3_datavault/README.md) | [Data Vault 2.0](v3_datavault/DATAVAULT.md) (natural keys) | `build/datavault.db` | the insert-only raw vault itself |
+| [`v3_datavault/`](v3_datavault/README.md) | [Data Vault 2.0](v3_datavault/DATAVAULT.md) (natural keys) | `build/datavault.db` | `archive/datavault_archive.db` |
 | [`v3_focal-point/`](v3_focal-point/README.md) | [Focal Point](v3_focal-point/FOCALPOINT.md) (metadata-driven, narrow/EAV) | `build/focal.db` | `archive/focal_archive.db` |
 | [`v3_anchor/`](v3_anchor/README.md) | [Anchor Modeling](v3_anchor/ANCHOR.md) (6NF, table-per-attribute) | `build/anchor.db` | `archive/anchor_archive.db` |
 | [`v3_hook/`](v3_hook/README.md) | [HOOK](v3_hook/HOOK.md) (frames + key-set-qualified hooks, no hubs or links) | `build/hook.db` | `archive/hook_archive.db` |
@@ -210,10 +210,11 @@ cleanest answer to "what does modeling actually buy?"
 The demos are comparable because the plumbing is identical wherever the
 model doesn't force a difference.
 
-- **Capture raw, then apply.** Every model except Data Vault archives each
-  delivery verbatim, pre-dedup, to a durable append-only layer *before* any
-  loader runs. (Data Vault's insert-only raw vault is its history; its
-  delivery files are the only replayable input.)
+- **Capture raw, then apply.** Every model archives each delivery
+  verbatim, pre-dedup, to a durable append-only layer *before* any loader
+  runs. (Data Vault, whose insert-only raw vault already keeps attribute
+  history, carries the archive as a recorded deviation: see
+  [`v3_datavault/DATAVAULT.md`](v3_datavault/DATAVAULT.md).)
   The triggers have no unlock path. Re-archiving is `INSERT OR IGNORE`,
   and a reused delivery id with different content gets rejected.
 - **Ingest and replay share one code path** (`apply_delivery.sh`) in every
@@ -224,11 +225,9 @@ model doesn't force a difference.
   loader succeeds. A crash leaves it retryable, with the staged rows in
   place as forensics. Success leaves the stage blank.
 - **`make clean` never touches the durable layer.** Destroying raw
-  history takes the explicit `clean-archive` target. (Data Vault has no
-  separate durable layer: `make clean` deletes the vault, and `make demo`
-  rebuilds it from the delivery files.)
+  history takes the explicit `clean-archive` target.
 - **Mutation-tested suites** (Metrics mart 220, Activity 123, Focal 83+33,
-  USS 113, HOOK 99, DV 77, Kimball 72, Anchor 72, Inmon 64, OBT 55
+  DV 118, USS 113, HOOK 99, Kimball 72, Anchor 72, Inmon 64, OBT 55
   assertions). I broke the FULL-absence guard, the replay ordering, the
   dedup tiebreaks, the restatement and idempotence guards, the tie guards,
   the OBT refresh, the activity loader's event-time and immutability
@@ -244,8 +243,8 @@ model doesn't force a difference.
   USS, Activity Schema and OBT share the wide restatement; Focal, Anchor
   and the metrics mart share the narrow key-value originals. One logical
   corpus, two physical shapes, ten consumers.
-- **Archives aligned by shape.** The six wide-shape archives (Inmon,
-  Kimball, HOOK, USS, Activity Schema, OBT) share one layout (`loaded_files` + `hist_*`)
+- **Archives aligned by shape.** The seven wide-shape archives (Inmon,
+  Kimball, Data Vault, HOOK, USS, Activity Schema, OBT) share one layout (`loaded_files` + `hist_*`)
   and the archive files in the repo are byte-identical. Focal, Anchor and
   the metrics mart share the narrow `source_landing_history` layout. No archive carries
   secondary indexes; at this data volume they add nothing. Re-running

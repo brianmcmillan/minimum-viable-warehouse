@@ -63,13 +63,6 @@ CREATE TABLE dv_load_params (
     batch_ts TEXT NOT NULL
 );
 
--- Load control, mirroring the Focal demo's loaded_files: a delivery id
--- already COMPLETE is skipped; STARTED-but-never-COMPLETE is retryable.
-CREATE TABLE dv_load_audit (
-    file_id   TEXT PRIMARY KEY,
-    load_seq  INTEGER NOT NULL UNIQUE,
-    batch_ts  TEXT NOT NULL,
-    status    TEXT NOT NULL DEFAULT 'STARTED',   -- STARTED | COMPLETE
-    loaded_at TEXT NOT NULL DEFAULT (datetime('now')),
-    row_count INTEGER
-);
+-- Load control lives in the archive (schema/02_archive.sql,
+-- loaded_files): a delivery id already COMPLETE is skipped;
+-- STARTED-but-never-COMPLETE is retryable.

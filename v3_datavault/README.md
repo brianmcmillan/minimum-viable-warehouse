@@ -31,9 +31,9 @@ of shell and SQL, following the DV101 Baseline conventions (source → stage L1 
 > [One Big Table](../v3_one-big-table)), so every difference between them is
 > the *model*, never the input. This model takes the wide,
 > one-row-per-record restatement shared byte-for-byte by Inmon, Kimball,
-> Data Vault, HOOK, USS, Activity Schema and OBT. It is the one model with
-> no separate archive: the insert-only raw vault is its history, and the
-> delivery files are its only replayable input. **This README stands on its
+> Data Vault, HOOK, USS, Activity Schema and OBT, and keeps the same
+> durable raw layer as those siblings: every delivery archived verbatim,
+> replayable with `make rebuild`. **This README stands on its
 > own;** [DATAVAULT.md](DATAVAULT.md) draws the cross-model comparison.
 
 ---
@@ -55,6 +55,7 @@ That's the whole list. Everything runs against local files in the project direct
 ```bash
 make demo    # fresh schema + a 6-delivery feed sequence, then print the info mart
 make test    # run the full assertion suite (Focal parity + DV-specific behaviours)
+make rebuild # throw the vault away and regenerate it by replaying the archive
 ```
 
 `make demo` loads six deliveries that stand in for a few weeks of real feeds, then prints the
@@ -242,17 +243,21 @@ purely additive and it gets no effectivity satellite.
 A delivery is a plain `.sql` file that `INSERT`s wide rows into the stage-1 tables (see any file in
 [`source/`](source/)). `scripts/load_feed.sh` drives one delivery safely:
 
-1. **Load control** — look up the delivery's `file_id` in `dv_load_audit`. A `file_id` names a
-   delivery's *content* (a batch/version id, not a filename — extractors reuse filenames). If it is
-   already `COMPLETE`, skip it.
+1. **Load control** — look up the delivery's `file_id` in the archive's `loaded_files`. A `file_id`
+   names a delivery's *content* (a batch/version id, not a filename — extractors reuse filenames). If
+   it is already `COMPLETE`, skip it.
 2. **Stage** — clear the stage-1 tables, set `dv_load_params.batch_ts` (the deterministic `ldts`),
-   and run the delivery file. Record a `STARTED` audit row (or note a retry of a prior `STARTED`).
-3. **Stage 2** — the `v_stg_*_l2` views add `rsrc`/`ldts`/`diff_str` and recency-dedupe within the
+   and run the delivery file. Record a `STARTED` manifest row (or note a retry of a prior `STARTED`;
+   a retry whose row count differs from the archived one is rejected).
+3. **Archive** — copy every staged row verbatim (pre-dedup, with its `seq_nbr`) into the append-only
+   `hist_*` tables of `archive/datavault_archive.db`, and check the archived count equals the staged
+   count — all *before* any loader runs.
+4. **Stage 2** — the `v_stg_*_l2` views add `rsrc`/`ldts`/`diff_str` and recency-dedupe within the
    batch (newest by `extract_dt`, `rowid` breaks ties).
-4. **Load** — run the three loaders in fixed order: `load_hubs` (keys) → `load_sats` (descriptive
+5. **Load** — `scripts/apply_delivery.sh` runs the three loaders in fixed order: `load_hubs` (keys) → `load_sats` (descriptive
    delta + presence) → `load_links` (pairs + driving-key effectivity). Each branches on the effective
    `FULL`/`INCREMENTAL` mode.
-5. **Mark COMPLETE** only after every loader succeeds, then clear the stage. A delivery that crashes
+6. **Mark COMPLETE** only after every loader succeeds, then clear the stage. A delivery that crashes
    half-way stays `STARTED`, leaves its staged rows in place as forensics, and is retried on the next
    run — never skipped as done.
 
@@ -288,13 +293,15 @@ the status satellite on `sts='I'` — presence is enforced at read time, from a 
 | `make demo`  | fresh schema + the full delivery sequence + printed info mart          |
 | `make test`  | run the full assertion suite                                           |
 | `make init`  | recreate the vault database from schema (`build/datavault.db`)         |
-| `make clean` | delete `build/` — the vault is fully regenerable from `make demo`      |
+| `make rebuild` | re-init the vault and replay every archived delivery, in `load_seq` order |
+| `make clean` | delete `build/` — the archive survives; `make rebuild` regenerates the vault |
+| `make clean-archive` | delete `archive/` — destroys the raw layer                    |
 
-There is a **single** database, `build/datavault.db`, and it is disposable: `make clean` throws it
-away and `make demo` rebuilds it from the schema and delivery files. The insert-only raw vault is the
-durable *history* layer within a run — it preserves every attribute state and every presence
-assertion — but note that the delivery files themselves are not archived, so there is no replay of a
-past ingest. Natural keys soften the cost: there are no surrogate-key assignments to lose.
+There are **two** databases. `build/datavault.db` (the vault) is disposable. `archive/datavault_archive.db`
+(the raw layer) is durable: append-only, guarded by `UPDATE`/`DELETE` triggers with no unlock path,
+untouched by `make clean`, and removed only by `make clean-archive` (or by `make demo`, which starts
+from a fresh archive). `make rebuild` replays the archive through the same `apply_delivery.sh` that
+ingest uses, so a rebuilt vault reproduces every `rv_*`/`bv_*` table row for row.
 
 ---
 
@@ -305,7 +312,8 @@ past ingest. Natural keys soften the cost: there are no surrogate-key assignment
 ├── Makefile                      # the entry point for every workflow
 ├── DATAVAULT.md                  # design notes: the side-by-side comparison with the Focal demo
 ├── schema/
-│   ├── 01_stage.sql              # stage L1 tables, load params, load audit
+│   ├── 01_stage.sql              # stage L1 tables, load params
+│   ├── 02_archive.sql            # raw layer: loaded_files + hist_* (separate db, append-only)
 │   ├── 02_stage2_views.sql       # stage L2 views: system columns + diff_str + recency dedup
 │   ├── 03_raw_vault.sql          # hubs, satellites, status sats, links
 │   ├── 04_business_vault.sql     # insert-only effectivity satellite + LEAD history views
@@ -313,7 +321,9 @@ past ingest. Natural keys soften the cost: there are no surrogate-key assignment
 ├── scripts/
 │   ├── lib.sh                    # shared helpers; the single choke point for DB access + SQL guards
 │   ├── init_db.sh                # (re)create the vault database from schema
-│   ├── load_feed.sh              # ingest ONE delivery safely (control → stage → load → complete)
+│   ├── load_feed.sh              # ingest ONE delivery safely (control → stage → archive → apply → complete)
+│   ├── apply_delivery.sh         # hubs → sats → links; the one path shared by ingest and replay
+│   ├── rebuild.sh                # regenerate the vault from the archive
 │   ├── load_hubs.sh              # hubs: business keys, insert-only, from every feed incl. link ends
 │   ├── load_sats.sh              # satellites: whole-row descriptive delta + status tracking
 │   ├── load_links.sh             # links: relationship pairs + driving-key effectivity
@@ -322,7 +332,8 @@ past ingest. Natural keys soften the cost: there are no surrogate-key assignment
 ├── tests/
 │   ├── run_tests.sh              # the assertion suite
 │   └── fixtures/d6_repoint.sql   # the driving-key re-point scenario
-└── build/                        # generated: the vault database (safe to delete)
+├── build/                        # generated: the vault database (safe to delete)
+└── archive/                      # generated: the raw layer (durable; `make clean-archive` only)
 ```
 
 ---
@@ -348,6 +359,10 @@ fresh database and asserts, among other things:
 - **Load control and idempotence** — a duplicate `file_id` is skipped; replaying the whole sequence
   under new `file_id`s runs every loader but writes zero new rows (a mutation-hardened idempotence
   check that catches, e.g., an effectivity satellite that re-opens an already-current pairing).
+- **The raw layer** — every delivered row is archived; `UPDATE` and `DELETE` abort on every `hist_*`
+  table; a crashed delivery's `file_id` re-sent with different content is rejected; and `make rebuild`,
+  run after the six deliveries and again after the re-point, reproduces every `rv_*`/`bv_*` table row
+  for row — with the soft-rule check then run against the rebuilt vault.
 
 The suite prints a per-assertion `PASS`/`FAIL` and exits non-zero if any assertion fails.
 

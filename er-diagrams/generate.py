@@ -231,11 +231,9 @@ SOLUTIONS = [
          core_text="Two facts over conformed dimensions. A fact row holds the "
                    "surrogate key of the dimension version current at load."),
     dict(dir="v3_datavault", name="Data Vault 2.0", notes="DATAVAULT.md",
-         build="build/datavault.db", archive=None,
+         build="build/datavault.db", archive="archive/datavault_archive.db",
          core_text="Hubs (`_h`), links (`_l`), satellites (`_hsat`), status "
-                   "satellites (`_sts`) and one effectivity satellite. The "
-                   "insert-only raw vault is its own durable layer, so there is "
-                   "no archive database."),
+                   "satellites (`_sts`) and one effectivity satellite."),
     dict(dir="v3_focal-point", name="Focal Point", notes="FOCALPOINT.md",
          build="build/focal.db", archive="archive/focal_archive.db",
          core_text="Three generic tables per entity (`_idfr`, `_focal`, `_desc`) "

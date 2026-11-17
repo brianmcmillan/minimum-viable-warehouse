@@ -7,6 +7,9 @@
 #     "$SQLITE" directly -- connection-wide concerns live in one place.
 #   * values interpolated into SQL are escaped with sql_quote();
 #     no interpolation site is left raw.
+#   * two databases -- $DB (the vault, disposable) and $ARCHIVE_DB (the
+#     raw layer, durable). adb() opens the vault with the archive
+#     ATTACHed as `arch`.
 # ---------------------------------------------------------------------
 set -euo pipefail
 
@@ -14,10 +17,11 @@ LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$LIB_DIR/.." && pwd)"
 
 : "${DB:=$ROOT_DIR/build/datavault.db}"        # the vault database
+: "${ARCHIVE_DB:=$ROOT_DIR/archive/datavault_archive.db}"  # raw layer (durable)
 : "${SQLITE:=sqlite3}"                          # sqlite3 binary (override in tests)
 : "${BATCH_TS:=$(date '+%Y-%m-%d %H:%M:%S')}"   # logical load timestamp (= ldts)
 
-mkdir -p "$(dirname "$DB")"
+mkdir -p "$(dirname "$DB")" "$(dirname "$ARCHIVE_DB")"
 
 # ---- the choke point --------------------------------------------------
 db() {
@@ -27,12 +31,22 @@ db() {
   done
   "$SQLITE" ${opts[@]+"${opts[@]}"} "$DB" "$@"
 }
+adb() {
+  local -a opts=()
+  while [ "$#" -gt 0 ]; do
+    case "$1" in -*) opts+=("$1"); shift;; *) break;; esac
+  done
+  "$SQLITE" -cmd "ATTACH DATABASE '$(sql_quote "$ARCHIVE_DB")' AS arch" \
+            ${opts[@]+"${opts[@]}"} "$DB" "$@"
+}
 
 sql()        { db; }                      # multi-statement SQL from stdin
 sql_run()    { db "$1"; }                 # one SQL string, list output
 sql_scalar() { db "$1"; }                 # one SQL string, single value
 sql_file()   { db < "$1"; }               # run a .sql file
 sql_table()  { db -header -column "$1"; } # human-readable (reporting only)
+asql_run()    { adb "$1"; }               # same, with the archive attached
+asql_scalar() { adb "$1"; }
 
 # Escape a value for embedding inside a single-quoted SQL literal.
 sql_quote()  { printf "%s" "$1" | sed "s/'/''/g"; }
