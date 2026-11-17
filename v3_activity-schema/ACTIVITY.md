@@ -56,7 +56,7 @@ rules fill the gaps, as they did for Anchor and HOOK:
 | unchanged re-delivery | writes nothing | writes nothing | writes nothing | writes nothing | **stored again** |
 | relationship | `link` + who + when | a second hook on the row | link + effectivity satellite | FK in the fact | a column |
 | re-point (D6) | `order_reassigned` in the new owner's stream | new order row | new link + effectivity flip | fact restated | derived |
-| "as at purchase" | LAST BEFORE on event time | as-of on load time | satellite as-of (no PIT table here) | frozen surrogate key | `LAG` over the log |
+| "as at purchase" | LAST BEFORE on event time | as-of on load time | satellite as-of (the CPIT tables cover current rows only) | frozen surrogate key | `LAG` over the log |
 | current state | LAST EVER (view) | latest row (view) | latest satellite (view) | `is_current` row | full refresh |
 | row mutation | never | never | never | dims expire, facts restate | never |
 

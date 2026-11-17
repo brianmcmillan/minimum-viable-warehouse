@@ -47,7 +47,7 @@ apply, ordered replay. Each lands on a natively Anchor construct:
 | shared mechanism | Anchor landing spot |
 |---|---|
 | NEW/CHANGE/NOCHANGE | restatement control per attribute table |
-| deletes (tombstone always; absence only under FULL) | the `EST` **existence knot**: presence is *data*. Anchor has no `row_st` to flip, so deletion must be modeled — the ghost-row gap the Focal demo documents cannot arise structurally |
+| deletes (tombstone always; absence only under FULL) | the `EST` **existence knot**: presence is *data*. Anchor has no `row_st` to flip, so deletion must be modeled — the ghost-row gap Focal had before it gained an existence context cannot arise structurally |
 | P→PENDING | the `OST` **knot**: raw code resolved at load, label read at query. Relabel = one `UPDATE`, all history follows; `make rebuild` resets to the seed (same lesson as Kimball's Type 1) |
 | unknown codes | knots are **closed domains**: an unseen status fails the load loudly and the delivery stays retryable, staged rows preserved as forensics |
 | D7 re-point | **historized tie**, latest-per-driving-role; end dates computed via `LEAD`, never stored — Anchor's native equivalent of the DV effectivity satellite |

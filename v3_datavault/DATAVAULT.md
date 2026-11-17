@@ -28,10 +28,10 @@ Both demos enforce this identically. What differs is the *representation*:
 
 | event | Focal | Data Vault |
 |---|---|---|
-| delete detected | closing version row, `row_st='N'`, per atomic context | one `'D'` row in a **status-tracking satellite** |
+| delete detected | closing version row, `row_st='N'`, per atomic context, plus a `DELETED` version of the existence context | one `'D'` row in a **status-tracking satellite** |
 | record returns | delta engine reopens (`NEW`) | one `'I'` row; timeline reads I→D→I |
 | attribute history | kept in `_desc` versions | kept in `_hsat` — deletes never touch it |
-| "is it deleted?" | inferred from descriptor state (its known entity-status gap) | first-class: latest `sts` per key |
+| "is it deleted?" | first-class: the latest version of the entity's existence context | first-class: latest `sts` per key |
 
 ## Deviations from the training package, and why
 
@@ -106,9 +106,6 @@ Both demos enforce this identically. What differs is the *representation*:
    from the latest `ref_order_status` row per code. Insert a new reference
    row and history reflects it instantly. Focal translates at ingest and needs its
    delivery archive + `make rebuild` for the same guarantee.
-3. **Entity presence as a first-class fact.** `dim_customer` excludes
-   deleted customers because the status satellite says so — Focal's
-   `v_customer` still lists them as attribute-less ghost rows.
 
 ## What Focal demonstrates that the vault does not
 
@@ -135,8 +132,8 @@ satellite one ghost row):
 | concept | Focal | Data Vault |
 |---|---|---|
 | customer keys | `customer_idfr` 3 + `customer_focal` 3 | `rv_customer_h` 3 + 3 reserved |
-| customer attributes | `customer_desc` 16 rows (narrow: per context, incl. closing rows) | `rv_customer_hsat` 4 rows + 1 ghost (wide, per change; deletes write none) |
-| customer presence | inside `_desc` via `row_st` | `rv_customer_sts` 5 rows + 1 ghost |
+| customer attributes | `customer_desc` 16 attribute rows (narrow: per context, incl. closing rows) | `rv_customer_hsat` 4 rows + 1 ghost (wide, per change; deletes write none) |
+| customer presence | `customer_desc` 5 existence rows (`CUSTOMER_EXISTENCE`: ACTIVE, then DELETED for C002 and C003) | `rv_customer_sts` 5 rows + 1 ghost |
 | order↔customer | `order_customer_x` 2 | `rv_order_customer_l` 2 + effsat 2 |
 | status decode | `meta_value_map`, applied at ingest | `ref_order_status` 4 rows + `bv_order_status_bsat` (a view) |
 | current-row lookup | — | `bv_customer_cpit` 3, `bv_product_cpit` 3, `bv_order_cpit` 2 (generated) |

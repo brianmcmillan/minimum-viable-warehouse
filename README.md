@@ -70,7 +70,7 @@ And all ten converge on the same end state:
 inmon   : C001(alice@newmail.com)
 kimball : C001(alice@newmail.com)
 vault   : C001(alice@newmail.com)
-focal   : C001(alice@newmail.com) C002(null) C003(null)   <- ghost rows: see below
+focal   : C001(alice@newmail.com)
 anchor  : C001(alice@newmail.com)
 hook    : C001(alice@newmail.com)
 uss     : C001(alice@newmail.com)
@@ -87,16 +87,18 @@ derive-everything-from-the-log — get their own section below.
 | event | Focal Point | Data Vault 2.0 | Kimball | Anchor |
 |---|---|---|---|---|
 | attribute change | new version row **per atomic context** (narrow) | new satellite row (whole-row grain) | expire current dim row (**UPDATE**) + new SCD2 version | new row in **that attribute's own typed table** |
-| delete detected | closing row, `row_st='N'` | `'D'` row in a status-tracking satellite | deleted-marker version, `is_deleted=1`, last-known attrs carried | `DELETED` assertion in the **existence knot** — presence is data |
+| delete detected | closing row (`row_st='N'`) per attribute, plus a `DELETED` version of the entity's **existence context** | `'D'` row in a status-tracking satellite | deleted-marker version, `is_deleted=1`, last-known attrs carried | `DELETED` assertion in the **existence knot** — presence is data |
 | unchanged re-delivery | `NOCHANGE` — writes nothing | diff-string match — writes nothing | diff-string match — writes nothing | **restatement control** — writes nothing |
 | keys | sequence surrogates, reproduced by ordered replay | natural business keys | rowid surrogates, reproduced by ordered replay | per-anchor sequences, reproduced by ordered replay |
 | business rule (P→PENDING) | applied **at ingest** (`meta_value_map`); archive + rebuild makes it retroactive | raw `'P'` stored; decoded **on read** by a business-vault computed satellite (a view over a reference table) | raw `'P'` in the archive; decode **dimension** (Type 1) | raw code resolved to a **knot**; label read at query |
-| row mutation | never | never | dims expire, facts restate — the archive keeps it honest | never |
+| row mutation | never | never in the raw vault; the business vault's point-in-time and bridge tables are regenerated | dims expire, facts restate — the archive keeps it honest | never |
 
 ## What each demo is best at showing
 
 **Focal Point: schema evolution without DDL.** A new attribute is a
-metadata row, not an `ALTER TABLE`. One generic delta engine loads every
+metadata row, not an `ALTER TABLE`. Presence is a metadata row too: each
+entity has an existence context, so a deleted customer drops out of the
+views and keeps its history. One generic delta engine loads every
 entity. The other demos hand-write near-identical SQL per entity — fine
 at three entities, and at thirty it becomes the code-generator burden
 that pushed me off Data Vault in the first place. The archive makes the
@@ -104,9 +106,7 @@ warehouse disposable: `make rebuild` replays every delivery and
 reproduces every surrogate key.
 
 **Data Vault 2.0: presence and relationships as first-class facts.**
-Status satellites answer "is it deleted?" directly. Focal's `v_customer`
-still shows deleted customers as ghost rows — a known gap, documented and
-tested. The driving-key effectivity satellite handles an order re-pointed
+Status satellites answer "is it deleted?" directly. The driving-key effectivity satellite handles an order re-pointed
 to a different customer, which Focal's relationship loader currently
 cannot. Hard rules in the vault, soft rules on read: the status decode
 is a reference table and a computed satellite kept as a view, so a new
@@ -232,7 +232,7 @@ model doesn't force a difference.
 - **`make clean` never touches the durable layer.** Destroying raw
   history takes the explicit `clean-archive` target.
 - **Mutation-tested suites** (Metrics mart 222, Activity 139, Focal 120+46,
-  DV 304, USS 129, HOOK 115, Kimball 88, Anchor 124, Inmon 80, OBT 71
+  DV 304, USS 129, HOOK 115, Kimball 88, Anchor 124, Inmon 94, OBT 71
   assertions). I broke the FULL-absence guard, the replay ordering, the
   dedup tiebreaks, the restatement and idempotence guards, the tie guards,
   the OBT refresh, the activity loader's event-time and immutability

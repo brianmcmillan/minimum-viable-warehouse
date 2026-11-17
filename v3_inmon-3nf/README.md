@@ -64,7 +64,7 @@ directory; nothing reaches the network.
 ```bash
 make demo          # fresh archive + schema + the full 6-delivery sequence, then print the EDW
 make rebuild       # delete the EDW; replay the raw layer to rebuild it
-make test          # 80 assertions: delete semantics, time-variance, range-join PIT, exact rebuild
+make test          # 94 assertions (36 core, 58 model): delete semantics, time-variance, range-join PIT, exact rebuild
 make clean         # delete build/ only — the archive SURVIVES
 make clean-archive # delete archive/ — destroys the raw layer, and the ability to rebuild
 ```
@@ -333,7 +333,7 @@ models.
 |----------------------|-----------------------------------------------------------------------------------------|
 | `make demo`          | fresh archive + schema + the full delivery sequence + printed EDW                       |
 | `make rebuild`       | regenerate the EDW by replaying the raw layer                                            |
-| `make test`          | run the EDW test suite (80 assertions)                                                   |
+| `make test`          | run the EDW test suite (94 assertions)                                                   |
 | `make init`          | recreate the EDW from schema (the archive survives)                                      |
 | `make clean`         | delete `build/` only — **the archive survives**; `make rebuild` restores the EDW        |
 | `make clean-archive` | delete `archive/` — destroys the raw layer and the ability to rebuild (deliberately separate from `clean`) |
@@ -378,10 +378,13 @@ once `COMPLETE`; it is the only target that discards the archive implicitly.
 make test
 ```
 
-One suite, pure shell + `sqlite3`, **80 assertions**, mutation-hardened (the
+One suite, pure shell + `sqlite3`, **94 assertions** (36 core, 58 model), mutation-hardened (the
 FULL-guard, replay-order, and churn-guard mutations were all verified to fail
 it). It replays the shared delivery scenario against the EDW and then
-exercises the Inmon-specific behaviours:
+exercises the Inmon-specific behaviours. The output comes in two parts: CORE,
+the fourteen sections every one of the ten suites runs in the same order with
+the same labels (`../tests/core_spec.tsv`; the nine question answers are the
+SQL files in `tests/answers/`), then MODEL, what only this model shows.
 
 - **Delete semantics under a realistic cadence** — an incremental window does
   *not* delete an absent-but-unchanged record; a FULL snapshot *does* delete
