@@ -15,7 +15,7 @@ Same narrow deliveries as the Focal Point and Anchor demos, byte-identical.
 ```bash
 make demo     # fresh archive + the full delivery sequence + views
 make rebuild  # regenerate the mart by replaying the raw layer
-make test     # 176 assertions, mutation-checked
+make test     # 192 assertions, mutation-checked
 ```
 
 ## Review of the diagrams
@@ -211,5 +211,5 @@ scripts/load_res.sh            resources, aliases, parents, subtype columns
 scripts/load_groups.sh         groups, type groups and memberships
 scripts/load_metrics.sh        METRIC_STG -> METRIC_STG2 -> METRIC_SAMPLE
 scripts/refresh_aggregates.sh  summaries, weeks, group weeks
-tests/run_tests.sh             176 assertions
+tests/run_tests.sh             192 assertions
 ```

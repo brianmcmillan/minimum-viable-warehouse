@@ -11,7 +11,7 @@ exactly opposite physical routes.
 ```bash
 make demo     # fresh archive + the full delivery sequence + perspectives
 make rebuild  # throw the constellation away; replay the raw layer
-make test     # 72 assertions, mutation-hardened
+make test     # 88 assertions, mutation-hardened
 ```
 
 ## Anchor vs Focal: the same idea, inverted
@@ -96,7 +96,7 @@ scripts/load_attributes.sh metadata-driven per-attribute loop + existence
 scripts/load_ties.sh       historized / static ties
 scripts/rebuild.sh         ordered replay of the archive
 source/d0..d5*.sql         byte-identical copies of the Focal deliveries
-tests/run_tests.sh         72 assertions; FULL-guard, restatement-control,
+tests/run_tests.sh         88 assertions; FULL-guard, restatement-control,
                            tie-guard and replay-order mutations all verified
 tests/fixtures/            d6_tiebreak (dedup), d7_repoint (driving role)
 ```

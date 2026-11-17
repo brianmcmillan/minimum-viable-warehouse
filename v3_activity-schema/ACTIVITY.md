@@ -12,7 +12,7 @@ byte-identical.
 ```bash
 make demo     # fresh archive + the full delivery sequence + views
 make rebuild  # regenerate the streams by replaying the raw layer
-make test     # 123 assertions, mutation-checked
+make test     # 139 assertions, mutation-checked
 ```
 
 ## The four ideas
@@ -111,5 +111,5 @@ schema/02_archive.sql        raw layer: append-only wide history + manifest
 schema/03_activity.sql       the two streams, immutability triggers, activity catalog, LAST EVER state views
 schema/04_views.sql          business views, LAST BEFORE / FIRST EVER / FIRST AFTER views
 scripts/load_activities.sh   snapshot -> activities: change detection + the shared delete rule
-tests/run_tests.sh           123 assertions
+tests/run_tests.sh           139 assertions
 ```

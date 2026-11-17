@@ -8,7 +8,7 @@ is the model, not the data.
 
 ```bash
 make demo   # baseline + 5 deliveries + info mart
-make test   # 118 assertions: the Focal scenarios + DV-specific behaviours
+make test   # 130 assertions: the Focal scenarios + DV-specific behaviours
 make rebuild   # regenerate the vault by replaying archive/datavault_archive.db
 ```
 
@@ -133,6 +133,6 @@ scripts/apply_delivery.sh     hubs → sats → links; shared by ingest and repl
 scripts/rebuild.sh            re-init the vault and replay the archive in load_seq order
 scripts/load_hubs|sats|links.sh   the three loaders (cf. Focal's keys/desc/rel)
 source/d0..d5*.sql            the six deliveries, wide restatement of Focal's
-tests/run_tests.sh            118 assertions incl. mutation-hardened idempotence + rebuild
+tests/run_tests.sh            130 assertions incl. mutation-hardened idempotence + rebuild
 tests/fixtures/d6_repoint.sql the driving-key scenario Focal cannot express
 ```

@@ -10,7 +10,7 @@ byte-identical.
 ```bash
 make demo     # fresh archive + the full delivery sequence + tables
 make rebuild  # init + ONE refresh -- no replay loop, nothing incremental
-make test     # 55 assertions, mutation-hardened
+make test     # 71 assertions, mutation-hardened
 ```
 
 This demo exists to answer the question the other eight raise:
@@ -69,7 +69,7 @@ scripts/load_feed.sh      stage -> append -> refresh; shared load control
 scripts/refresh_latest.sh the ONE transform: full recomputation over the log
 scripts/rebuild.sh        init + one refresh
 source/d0..d5*.sql        byte-identical copies of the v3_datavault deliveries
-tests/run_tests.sh        55 assertions; mode-filter, ranking-order and
+tests/run_tests.sh        71 assertions; mode-filter, ranking-order and
                           skipped-refresh mutations all verified to fail it
 tests/fixtures/d6_repoint.sql  the restatement fixture (latest wins here)
 ```

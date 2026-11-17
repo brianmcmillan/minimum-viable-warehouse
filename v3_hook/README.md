@@ -62,7 +62,7 @@ network.
 ```bash
 make demo          # fresh archive + schema + the full 6-delivery sequence, then print the warehouse
 make rebuild       # delete the frames; replay the raw layer to rebuild them
-make test          # 99 assertions: delete semantics, hooks, delta frames, as-of, exact rebuild
+make test          # 115 assertions: delete semantics, hooks, delta frames, as-of, exact rebuild
 make clean         # delete build/ only — the archive SURVIVES
 make clean-archive # delete archive/ — destroys the raw layer, and the ability to rebuild
 ```
@@ -283,7 +283,7 @@ never close a row.
 |----------------------|--------------------------------------------------------------------------|
 | `make demo`          | fresh archive + schema + the full delivery sequence + printed warehouse  |
 | `make rebuild`       | regenerate the frames by replaying the raw layer                         |
-| `make test`          | run the test suite (99 assertions)                                       |
+| `make test`          | run the test suite (115 assertions)                                       |
 | `make init`          | recreate the frame database from schema (the archive survives)           |
 | `make clean`         | delete `build/` only — **the archive survives**                          |
 | `make clean-archive` | delete `archive/` — destroys the raw layer and the ability to rebuild    |
@@ -311,7 +311,7 @@ never close a row.
 │   └── query.sh             # print the warehouse
 ├── source/                  # D0–D5, byte-identical with ../v3_datavault and ../v3_inmon-3nf
 ├── tests/
-│   ├── run_tests.sh         # 99 assertions
+│   ├── run_tests.sh         # 115 assertions
 │   └── fixtures/d6_repoint.sql   # O-101 re-pointed to C001 (data row identical to the siblings')
 ├── build/                   # generated: the frames (safe to delete)
 └── archive/                 # generated: the durable raw layer
@@ -325,7 +325,7 @@ never close a row.
 make test
 ```
 
-**99 assertions**, pure shell + `sqlite3`, covering:
+**115 assertions**, pure shell + `sqlite3`, covering:
 
 - **Delete semantics** — the stale-window trap, FULL-absence deletes,
   tombstones, recency dedup, load control, and zero-churn idempotence.

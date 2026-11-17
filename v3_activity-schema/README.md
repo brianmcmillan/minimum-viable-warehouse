@@ -66,7 +66,7 @@ network.
 ```bash
 make demo          # fresh archive + schema + the full 6-delivery sequence, then print the warehouse
 make rebuild       # delete the streams; replay the raw layer to rebuild them
-make test          # 123 assertions: delete semantics, immutability, temporal joins, exact rebuild
+make test          # 139 assertions: delete semantics, immutability, temporal joins, exact rebuild
 make clean         # delete build/ only — the archive SURVIVES
 make clean-archive # delete archive/ — destroys the raw layer, and the ability to rebuild
 ```
@@ -287,7 +287,7 @@ suite asserts the rebuilt streams are identical, down to each activity's
 |----------------------|--------------------------------------------------------------------------|
 | `make demo`          | fresh archive + schema + the full delivery sequence + printed warehouse  |
 | `make rebuild`       | regenerate the streams by replaying the raw layer                        |
-| `make test`          | run the test suite (123 assertions)                                      |
+| `make test`          | run the test suite (139 assertions)                                      |
 | `make init`          | recreate the activity database from schema (the archive survives)        |
 | `make clean`         | delete `build/` only — **the archive survives**                          |
 | `make clean-archive` | delete `archive/` — destroys the raw layer and the ability to rebuild    |
@@ -315,7 +315,7 @@ suite asserts the rebuilt streams are identical, down to each activity's
 │   └── query.sh             # print the warehouse
 ├── source/                  # D0–D5, byte-identical with the other wide-shape demos
 ├── tests/
-│   ├── run_tests.sh         # 123 assertions
+│   ├── run_tests.sh         # 139 assertions
 │   └── fixtures/
 │       ├── d6_repoint.sql   # O-101 re-pointed to C001 (data row identical to the siblings')
 │       ├── d7_lifecycle.sql # restore, order status change, line tombstone
@@ -332,7 +332,7 @@ suite asserts the rebuilt streams are identical, down to each activity's
 make test
 ```
 
-**123 assertions**, pure shell + `sqlite3`, covering:
+**139 assertions**, pure shell + `sqlite3`, covering:
 
 - **Delete semantics** — the stale-window trap, FULL-absence deletes,
   tombstones, recency dedup, load control, and zero-activity idempotence.

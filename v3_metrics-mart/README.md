@@ -64,7 +64,7 @@ network.
 ```bash
 make demo          # fresh archive + schema + the full 6-delivery sequence, then print the mart
 make rebuild       # delete the mart; replay the raw layer to rebuild it
-make test          # 176 assertions: delete semantics, samples, aggregates, exact rebuild
+make test          # 192 assertions: delete semantics, samples, aggregates, exact rebuild
 make clean         # delete build/ only — the archive SURVIVES
 make clean-archive # delete archive/ — destroys the raw layer, and the ability to rebuild
 ```
@@ -364,7 +364,7 @@ asserts the rebuilt mart is identical, down to each `res_id`, `provider_id`,
 |----------------------|-----------------------------------------------------------------------|
 | `make demo`          | fresh archive + schema + the full delivery sequence + printed mart    |
 | `make rebuild`       | regenerate the mart by replaying the raw layer                        |
-| `make test`          | run the test suite (176 assertions)                                   |
+| `make test`          | run the test suite (192 assertions)                                   |
 | `make init`          | recreate the mart database from schema (the archive survives)         |
 | `make clean`         | delete `build/` only — **the archive survives**                       |
 | `make clean-archive` | delete `archive/` — destroys the raw layer and the ability to rebuild |
@@ -399,7 +399,7 @@ asserts the rebuilt mart is identical, down to each `res_id`, `provider_id`,
 │   └── query.sh              # print the mart
 ├── source/                   # D0–D5, byte-identical with the Focal and Anchor demos
 ├── tests/
-│   ├── run_tests.sh          # 176 assertions
+│   ├── run_tests.sh          # 192 assertions
 │   └── fixtures/
 │       ├── d6_tiebreak.sql           # same-extract tiebreak (identical to Anchor's)
 │       ├── d7_repoint.sql            # O-101 re-pointed to C001 (identical to Anchor's)
@@ -418,7 +418,7 @@ asserts the rebuilt mart is identical, down to each `res_id`, `provider_id`,
 make test
 ```
 
-**176 assertions**, pure shell + `sqlite3`, covering:
+**192 assertions**, pure shell + `sqlite3`, covering:
 
 - **Delete semantics** — the stale-window trap, FULL-absence deletes,
   tombstones, recency dedup, load control, a rejected re-use of a

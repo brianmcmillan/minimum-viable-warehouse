@@ -228,7 +228,7 @@ model doesn't force a difference.
   place as forensics. Success leaves the stage blank.
 - **`make clean` never touches the durable layer.** Destroying raw
   history takes the explicit `clean-archive` target.
-- **Mutation-tested suites** (Metrics mart 236, Activity 139, Focal 99+33,
+- **Mutation-tested suites** (Metrics mart 192, Activity 139, Focal 99+33,
   DV 130, USS 129, HOOK 115, Kimball 88, Anchor 88, Inmon 80, OBT 71
   assertions). I broke the FULL-absence guard, the replay ordering, the
   dedup tiebreaks, the restatement and idempotence guards, the tie guards,

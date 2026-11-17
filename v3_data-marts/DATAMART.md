@@ -12,7 +12,7 @@ makes the mart disposable.
 make demo           # fresh archive + the full delivery sequence + the star
 make rebuild        # throw the star away; replay the archive to rebuild it
 make archive-status # what the archive holds, and where it is growing
-make test           # 72 assertions, mutation-hardened
+make test           # 88 assertions, mutation-hardened
 ```
 
 ## The same core rule, a third mechanism
@@ -106,7 +106,7 @@ scripts/load_dims.sh     SCD2: expire → new versions → deleted markers
 scripts/load_facts.sh    insert new, UPDATE restated, unknown members (-1)
 scripts/rebuild.sh       replay the archive in load_seq order
 source/d0..d5*.sql       byte-identical copies of the v3_datavault deliveries
-tests/run_tests.sh       72 assertions; FULL-guard, replay-order and SCD2
+tests/run_tests.sh       88 assertions; FULL-guard, replay-order and SCD2
                          churn-guard mutations all verified to fail it
 tests/fixtures/d6_repoint.sql  the restatement fixture (fact UPDATE here)
 ```

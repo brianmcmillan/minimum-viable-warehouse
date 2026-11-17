@@ -60,7 +60,7 @@ directory; nothing reaches the network.
 ```bash
 make demo          # fresh archive + schema + the full 6-delivery sequence, then print the tables
 make rebuild       # init + ONE full refresh — no replay loop, nothing incremental
-make test          # 55 assertions: derived deletes, the storage bill, history-as-a-query
+make test          # 71 assertions: derived deletes, the storage bill, history-as-a-query
 make clean         # delete build/ only — the archive (the real warehouse) SURVIVES
 make clean-archive # delete archive/ — destroys the log, and with it everything
 ```
@@ -303,7 +303,7 @@ exists.
 |----------------------|--------------------------------------------------------------------------------------------|
 | `make demo`          | fresh archive + schema + the full delivery sequence + printed tables                       |
 | `make rebuild`       | `init` + ONE full refresh (no replay loop needed)                                          |
-| `make test`          | run the OBT test suite (55 assertions)                                                      |
+| `make test`          | run the OBT test suite (71 assertions)                                                      |
 | `make init`          | recreate the latest tables from schema (the archive survives)                              |
 | `make clean`         | delete `build/` only — **the archive, the real warehouse, survives**; `make rebuild` restores the tables |
 | `make clean-archive` | delete `archive/` — destroys the log and therefore everything (deliberately separate from `clean`) |
@@ -346,7 +346,7 @@ once `COMPLETE`; it is the only target that discards the log implicitly.
 make test
 ```
 
-One suite, pure shell + `sqlite3`, **55 assertions**, mutation-hardened (the
+One suite, pure shell + `sqlite3`, **71 assertions**, mutation-hardened (the
 mode-filter, ranking-order, and skipped-refresh mutations were all verified to
 fail it). It replays the shared delivery scenario against the latest tables
 and then exercises the OBT-specific behaviours:
