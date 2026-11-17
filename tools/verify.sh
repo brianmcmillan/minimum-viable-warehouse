@@ -32,17 +32,17 @@ fi
 # The counts README.md publishes, keyed by directory and suite.
 published() {
   case "$1" in
-    v3_activity-schema:run_tests)     echo 123 ;;
-    v3_anchor:run_tests)              echo 72  ;;
-    v3_data-marts:run_tests)          echo 72  ;;
-    v3_datavault:run_tests)           echo 118 ;;
-    v3_focal-point:run_tests)         echo 83  ;;
+    v3_activity-schema:run_tests)     echo 139 ;;
+    v3_anchor:run_tests)              echo 88  ;;
+    v3_data-marts:run_tests)          echo 88  ;;
+    v3_datavault:run_tests)           echo 130 ;;
+    v3_focal-point:run_tests)         echo 99  ;;
     v3_focal-point:test_archive)      echo 33  ;;
-    v3_hook:run_tests)                echo 99  ;;
-    v3_inmon-3nf:run_tests)           echo 64  ;;
-    v3_metrics-mart:run_tests)        echo 220 ;;
-    v3_one-big-table:run_tests)       echo 55  ;;
-    v3_unified-star-schema:run_tests) echo 113 ;;
+    v3_hook:run_tests)                echo 115 ;;
+    v3_inmon-3nf:run_tests)           echo 80  ;;
+    v3_metrics-mart:run_tests)        echo 236 ;;
+    v3_one-big-table:run_tests)       echo 71  ;;
+    v3_unified-star-schema:run_tests) echo 129 ;;
     *) echo "" ;;
   esac
 }

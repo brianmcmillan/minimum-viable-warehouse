@@ -330,8 +330,11 @@ asserts the rebuilt mart is identical, down to each `res_id`, `provider_id`,
 ### How a delivery flows
 
 1. **Stage** the delivery into `source_landing_stage`.
-2. **Load control** — skip a `file_id` already `COMPLETE`; reject a reused
-   `file_id` whose content differs from what was archived.
+2. **Load control** — compare the staged file with what the archive holds for
+   its `file_id`: the row count must match the manifest, and once rows are
+   archived every row must match exactly, order included. Any mismatch is
+   rejected loudly, whether the id is `COMPLETE` or a crashed `STARTED` one.
+   Only then is a `COMPLETE` id skipped and a `STARTED` one retried.
 3. **Archive** the staged rows verbatim (`INSERT OR IGNORE`, safe to retry).
    The archive's `load_seq` becomes the mart's `batch_no`.
 4. **Apply** via `apply_delivery.sh`.

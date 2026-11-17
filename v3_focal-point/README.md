@@ -218,10 +218,11 @@ in [`source/`](source/)). `scripts/load_feed.sh` drives one delivery safely, cap
 *before* applying it:
 
 1. **Stage** the delivery into `source_landing_stage`.
-2. **Load control** — look up the delivery's `file_id`. A `file_id` names a delivery's *content*
-   (a batch/version id, not a filename — extractors reuse filenames). If it is already `COMPLETE`,
-   skip it. If the same `file_id` reappears with *different* rows, reject it loudly rather than let the
-   archive stop describing what was actually applied.
+2. **Load control** — a `file_id` names a delivery's *content* (a batch/version id, not a filename —
+   extractors reuse filenames). compare the staged file with what the archive holds for its `file_id`:
+   the row count must match the manifest, and once rows are archived every row must match exactly, order
+   included. Any mismatch is rejected loudly, whether the id is `COMPLETE` or a crashed `STARTED` one.
+   Only then is a `COMPLETE` id skipped and a `STARTED` one retried.
 3. **Archive** the staged rows verbatim into the append-only `source_landing_history` (idempotent:
    `INSERT OR IGNORE`, which does not fire the delete trigger, so retries are safe).
 4. **Apply** via `apply_delivery.sh` → recency-dedup into `source_landing`, then run the three loaders

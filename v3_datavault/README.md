@@ -243,12 +243,13 @@ purely additive and it gets no effectivity satellite.
 A delivery is a plain `.sql` file that `INSERT`s wide rows into the stage-1 tables (see any file in
 [`source/`](source/)). `scripts/load_feed.sh` drives one delivery safely:
 
-1. **Load control** — look up the delivery's `file_id` in the archive's `loaded_files`. A `file_id`
-   names a delivery's *content* (a batch/version id, not a filename — extractors reuse filenames). If
-   it is already `COMPLETE`, skip it.
-2. **Stage** — clear the stage-1 tables, set `dv_load_params.batch_ts` (the deterministic `ldts`),
-   and run the delivery file. Record a `STARTED` manifest row (or note a retry of a prior `STARTED`;
-   a retry whose row count differs from the archived one is rejected).
+1. **Stage** — clear the stage-1 tables and run the delivery file.
+2. **Load control** — a `file_id` names a delivery's *content* (a batch/version id, not a filename —
+   extractors reuse filenames). compare the staged file with what the archive holds for its
+   `file_id`: the row count must match the manifest, and once rows are archived every row must match
+   exactly, order included. Any mismatch is rejected loudly, whether the id is `COMPLETE` or a
+   crashed `STARTED` one. Only then is a `COMPLETE` id skipped and a `STARTED` one retried. A new id gets a `STARTED` manifest row in the archive's `loaded_files`; then
+   `dv_load_params.batch_ts` (the deterministic `ldts`) is set.
 3. **Archive** — copy every staged row verbatim (pre-dedup, with its `seq_nbr`) into the append-only
    `hist_*` tables of `archive/datavault_archive.db`, and check the archived count equals the staged
    count — all *before* any loader runs.

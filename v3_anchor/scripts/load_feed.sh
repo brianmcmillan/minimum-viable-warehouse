@@ -30,6 +30,12 @@ rc="$(sql_int "$(sql_scalar "SELECT COUNT(*) FROM source_landing_stage;")")"
 
 prev_status="$(asql_scalar "SELECT status FROM arch.loaded_files WHERE file_id='$q_file_id';")"
 if [ -n "$prev_status" ]; then
+  prev_rc="$(asql_scalar "SELECT COALESCE(row_count,-1) FROM arch.loaded_files
+                          WHERE file_id='$q_file_id';")"
+  [ "$prev_rc" = "$rc" ] || {
+    echo "FATAL: delivery '$FILE_ID' was archived with $prev_rc row(s) but this file has $rc." >&2
+    echo "       A file_id identifies a delivery's CONTENT. Issue a new file_id." >&2
+    exit 1; }
   if [ "$(asql_scalar "SELECT COUNT(*) FROM arch.source_landing_history
                        WHERE file_id='$q_file_id';")" -gt 0 ]; then
     drift="$(sql_int "$(asql_scalar "

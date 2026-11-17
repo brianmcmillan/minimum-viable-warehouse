@@ -225,36 +225,76 @@ q "UPDATE dv_load_params SET batch_ts=batch_ts" >/dev/null   # no-op; vault unto
 ck "raw 'P' still in the vault"          "$(q "SELECT status FROM rv_order_hsat WHERE order_bk='O-100'")" "P"
 ck "mart derives PENDING from it today"  "$(q "SELECT status FROM fact_order WHERE order_ref='O-100'")" "PENDING"
 
-echo; echo "== Load control: a reused file_id with different content is rejected =="
-# Own database pair, so the crashed delivery below never enters the main
-# archive. A loader crash leaves the id STARTED with its rows archived;
-# re-sending DIFFERENT content under that id must be refused, and the
-# original content must still retry to COMPLETE.
+echo; echo "== Load control: a file_id names CONTENT (same block in all ten suites) =="
+# Own database pair, so these deliveries never reach the main archive or
+# any rebuild assertion. The crash is simulated at the last step of
+# load_feed.sh -- marking the delivery COMPLETE -- which is the same
+# statement in every model: the loaders have run, the id stays STARTED.
 SAVE_DB="$DB"; SAVE_ARCHIVE_DB="$ARCHIVE_DB"
 export DB="$LOGDIR/reuse.db" ARCHIVE_DB="$LOGDIR/reuse_archive.db"
-"$PROJ/scripts/init_db.sh" >/dev/null
+rm -f "$DB" "$ARCHIVE_DB"; "$PROJ/scripts/init_db.sh" >/dev/null 2>&1
+R_ORIG="$PROJ/source/d1_cust_win_day60.sql"     # the content X1 names
+R_MORE="$PROJ/source/d4_cust_recency.sql"       # a different row count
+R_EDIT="$LOGDIR/reuse_edited.sql"               # same rows, one value changed
+sed 's/alice@newmail\.com/alice@changed.com/' "$R_ORIG" > "$R_EDIT"
 cat > "$LOGDIR/crash_sqlite" <<SH
 #!/usr/bin/env bash
-for a in "\$@"; do case "\$a" in *"INSERT INTO rv_customer_h("*)
-  echo "simulated loader crash" >&2; exit 1;; esac; done
+for a in "\$@"; do case "\$a" in *"SET status='COMPLETE'"*)
+  echo "simulated crash before COMPLETE" >&2; exit 1;; esac; done
 exec "$SQLITE" "\$@"
 SH
 chmod +x "$LOGDIR/crash_sqlite"
-rc=0; SQLITE="$LOGDIR/crash_sqlite" BATCH_TS='2026-03-02 08:00:00' \
-  "$PROJ/scripts/load_feed.sh" "$PROJ/source/d1_cust_win_day60.sql" X1 >"$LOGDIR/reuse-1.log" 2>&1 || rc=$?
-ck "reuse: crashed delivery X1 left STARTED with its 1 row archived" \
-   "$([ "$rc" -ne 0 ] && echo crashed)/$(aq "SELECT status||'/'||row_count FROM arch.loaded_files WHERE file_id='X1'")" \
-   "crashed/STARTED/1"
-rc=0; BATCH_TS='2026-04-02 08:00:00' \
-  "$PROJ/scripts/load_feed.sh" "$PROJ/source/d4_cust_recency.sql" X1 >"$LOGDIR/reuse-2.log" 2>&1 || rc=$?
-ck "reuse: X1 re-sent with different content is REJECTED" \
-   "$([ "$rc" -ne 0 ] && grep -q 'archived with 1 row(s) but this file has 2' "$LOGDIR/reuse-2.log" && echo rejected || echo accepted)" "rejected"
-ck "reuse: rejected content never reached the archive or the vault" \
-   "$(aq "SELECT (SELECT COUNT(*) FROM arch.hist_customer WHERE file_id='X1')||'/'||(SELECT COUNT(*) FROM rv_customer_h)")" "1/0"
-rc=0; BATCH_TS='2026-03-02 08:00:00' \
-  "$PROJ/scripts/load_feed.sh" "$PROJ/source/d1_cust_win_day60.sql" X1 >"$LOGDIR/reuse-3.log" 2>&1 || rc=$?
-ck "reuse: original X1 content retries to COMPLETE" \
-   "$rc/$(aq "SELECT status FROM arch.loaded_files WHERE file_id='X1'")" "0/COMPLETE"
+reuse(){ local rc=0; BATCH_TS='2026-03-02 08:00:00' "$PROJ/scripts/load_feed.sh" "$1" X1 \
+           >"$LOGDIR/reuse.log" 2>&1 || rc=$?; printf '%s' "$rc"; }
+x1_status(){ "$SQLITE" "$ARCHIVE_DB" "SELECT COALESCE((SELECT status FROM loaded_files WHERE file_id='X1'),'<none>')" 2>&1; }
+rejected(){ [ "$1" -ne 0 ] && grep -q '^FATAL' "$LOGDIR/reuse.log" && echo rejected || echo "accepted (exit $1)"; }
+# Archive + warehouse, minus the transient stage (a rejected file stays
+# staged as forensics, exactly like a crashed one).
+frozen(){ "$SQLITE" "$ARCHIVE_DB" .dump; echo "-- warehouse --"
+          "$SQLITE" "$DB" .dump | grep -vE '^INSERT INTO "?(stg_[a-z0-9_]+|source_landing_stage)"? '; }
+
+rc="$(SQLITE="$LOGDIR/crash_sqlite" reuse "$R_ORIG")"
+ck "reuse: crashed delivery X1 is left STARTED" \
+   "$([ "$rc" -ne 0 ] && echo crashed)/$(x1_status)" "crashed/STARTED"
+before="$(frozen)"
+ck "reuse: STARTED X1 re-sent with a different row count is REJECTED" "$(rejected "$(reuse "$R_MORE")")" "rejected"
+ck "reuse:   ... archive and warehouse untouched" "$(frozen)" "$before"
+ck "reuse: STARTED X1 re-sent with the same row count, one value changed, is REJECTED" \
+   "$(rejected "$(reuse "$R_EDIT")")" "rejected"
+ck "reuse:   ... archive and warehouse untouched" "$(frozen)" "$before"
+ck "reuse: STARTED X1 re-sent with its original content retries to COMPLETE" \
+   "$(reuse "$R_ORIG")/$(x1_status)" "0/COMPLETE"
+before="$(frozen)"
+ck "reuse: COMPLETE X1 re-sent with the same row count, one value changed, is REJECTED" \
+   "$(rejected "$(reuse "$R_EDIT")")" "rejected"
+ck "reuse:   ... archive and warehouse untouched" "$(frozen)" "$before"
+ck "reuse: COMPLETE X1 re-sent with a different row count is REJECTED" "$(rejected "$(reuse "$R_MORE")")" "rejected"
+ck "reuse:   ... archive and warehouse untouched" "$(frozen)" "$before"
+ck "reuse: COMPLETE X1 re-sent with its original content is skipped" \
+   "$(reuse "$R_ORIG")/$(grep -c 'SKIP duplicate' "$LOGDIR/reuse.log")" "0/1"
+ck "reuse:   ... archive and warehouse untouched" "$(frozen)" "$before"
+# A crash BEFORE the archive write leaves an id STARTED with nothing
+# archived, so there is no content to compare; the manifest's row count
+# is the only record, and it must still hold.
+cat > "$LOGDIR/crash_sqlite_early" <<SH
+#!/usr/bin/env bash
+for a in "\$@"; do case "\$a" in *"INSERT OR IGNORE INTO arch."*)
+  echo "simulated crash before the archive write" >&2; exit 1;; esac; done
+exec "$SQLITE" "\$@"
+SH
+chmod +x "$LOGDIR/crash_sqlite_early"
+x2(){ local rc=0; BATCH_TS='2026-03-02 08:00:00' "$PROJ/scripts/load_feed.sh" "$1" X2 \
+        >"$LOGDIR/reuse.log" 2>&1 || rc=$?; printf '%s' "$rc"; }
+x2_state(){ "$SQLITE" "$ARCHIVE_DB" "SELECT COALESCE((SELECT status FROM loaded_files WHERE file_id='X2'),'<none>')" 2>&1; }
+rc="$(SQLITE="$LOGDIR/crash_sqlite_early" x2 "$R_ORIG")"
+ck "reuse: delivery X2 crashed before the archive write is left STARTED" \
+   "$([ "$rc" -ne 0 ] && echo crashed)/$(x2_state)" "crashed/STARTED"
+before="$(frozen)"
+ck "reuse: STARTED X2 (nothing archived) re-sent with a different row count is REJECTED" \
+   "$(rejected "$(x2 "$R_MORE")")" "rejected"
+ck "reuse:   ... archive and warehouse untouched" "$(frozen)" "$before"
+ck "reuse: STARTED X2 re-sent with its original content retries to COMPLETE" \
+   "$(x2 "$R_ORIG")/$(x2_state)" "0/COMPLETE"
 export DB="$SAVE_DB" ARCHIVE_DB="$SAVE_ARCHIVE_DB"
 
 echo; echo "====================================================================="

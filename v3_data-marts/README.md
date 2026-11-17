@@ -259,13 +259,15 @@ A delivery is a plain `.sql` file that inserts rows into the `stg_*_l1` stage
 tables (see any file in [`source/`](source/)). `scripts/load_feed.sh` drives
 one delivery safely, capturing the raw input *before* applying it:
 
-1. **Stage** the delivery into `stg_*_l1`, and record its logical timestamp
-   in `mart_load_params`.
-2. **Load control** — look up the delivery's `file_id`. A `file_id` names a
-   delivery's *content* (a batch/version id, not a filename — extractors
-   reuse filenames). If it is already `COMPLETE`, skip it. If the same
-   `file_id` reappears with a *different* row count, reject it loudly rather
-   than let the archive stop describing what was actually applied.
+1. **Stage** the delivery into `stg_*_l1`.
+2. **Load control** — a `file_id` names a delivery's *content* (a
+   batch/version id, not a filename — extractors reuse filenames). compare the
+   staged file with what the archive holds for its `file_id`: the row count
+   must match the manifest, and once rows are archived every row must match
+   exactly, order included. Any mismatch is rejected loudly, whether the id is
+   `COMPLETE` or a crashed `STARTED` one. Only then is a `COMPLETE` id skipped
+   and a `STARTED` one retried.
+   Then record the logical timestamp in `mart_load_params`.
 3. **Archive** the staged rows verbatim into the append-only archive tables —
    idempotent (`INSERT OR IGNORE`, which does not fire the append-only
    triggers, so retries are safe), assigning `load_seq` on first sight.

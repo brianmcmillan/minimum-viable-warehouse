@@ -226,10 +226,13 @@ at its most literal — stage, append, refresh, with no merge or delta engine
 anywhere:
 
 1. **Stage** the delivery into `stg_*_l1`.
-2. **Load control** — look up the delivery's `file_id`. A `file_id` names a
-   delivery's *content* (a batch/version id, not a filename). If it is
-   already `COMPLETE`, skip it. If the same `file_id` reappears with a
-   *different* row count, reject it loudly.
+2. **Load control** — a `file_id` names a delivery's *content* (a
+   batch/version id, not a filename). compare the staged file with what the
+   archive holds for its `file_id`: the row count must match the manifest, and
+   once rows are archived every row must match exactly, order included. Any
+   mismatch is rejected loudly, whether the id is `COMPLETE` or a crashed
+   `STARTED` one. Only then is a `COMPLETE` id skipped and a `STARTED` one
+   retried.
 3. **Append** the staged rows verbatim into the append-only `hist_*` log —
    idempotent (`INSERT OR IGNORE` never fires the append-only triggers), so a
    retry is safe.

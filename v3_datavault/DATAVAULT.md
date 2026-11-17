@@ -65,9 +65,9 @@ Both demos enforce this identically. What differs is the *representation*:
   Why: without it, a loader bug meant fixing forward; with it the vault
   is disposable, and `make rebuild` reproduces every `rv_*`/`bv_*` table
   row for row (asserted in the suite). Hub, link and satellite semantics
-  are unchanged. Like Inmon, a reused `file_id` is checked by row count
-  only, and only while the delivery is still `STARTED`; a `COMPLETE` id is
-  skipped without comparing content.
+  are unchanged. Load control is the rule all ten models share: a reused
+  `file_id` whose rows differ from the archived ones (count, values or
+  order) is rejected, whether the delivery is `COMPLETE` or crashed.
 - **Scope**: hubs, sats, status sats, links, one effectivity sat, info
   mart. Ghost records, PIT/bridge, same-as links and multi-active sats are
   omitted — the shared sample data has no scenario for them.

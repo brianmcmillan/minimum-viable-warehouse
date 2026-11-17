@@ -252,10 +252,13 @@ suite asserts the rebuilt streams are identical, down to each activity's
 
 ### How a delivery flows
 
-1. **Stage** the delivery into `stg_*_l1`; record `batch_ts` and `file_id` in
-   `act_load_params`.
-2. **Load control** — skip a `file_id` already `COMPLETE`; reject a reused
-   `file_id` with a different row count.
+1. **Stage** the delivery into `stg_*_l1`.
+2. **Load control** — compare the staged file with what the archive holds for
+   its `file_id`: the row count must match the manifest, and once rows are
+   archived every row must match exactly, order included. Any mismatch is
+   rejected loudly, whether the id is `COMPLETE` or a crashed `STARTED` one.
+   Only then is a `COMPLETE` id skipped and a `STARTED` one retried.
+   Then record `batch_ts` and `file_id` in `act_load_params`.
 3. **Archive** the staged rows verbatim (`INSERT OR IGNORE`, safe to retry).
 4. **Apply** via `apply_delivery.sh` → `load_activities.sh`.
 5. **Mark COMPLETE**, then clear the stage. A crash leaves the delivery

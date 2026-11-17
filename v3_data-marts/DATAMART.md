@@ -67,8 +67,8 @@ make test           # 72 assertions, mutation-hardened
 Same properties, same proofs, same tests:
 
 - **Append-only absolutely** — triggers with no unlock path; `INSERT OR
-  IGNORE` re-archiving; a reused `file_id` with different row count is
-  rejected.
+  IGNORE` re-archiving; a reused `file_id` whose rows differ from the
+  archived ones (count, values or order) is rejected, `COMPLETE` or not.
 - **Self-describing** — `load_seq` + `batch_ts` denormalised onto every row;
   the archive replays even if the mart file is destroyed.
 - **Complete ⇒ keys reproduce.** Dimension surrogates are rowids assigned

@@ -216,7 +216,9 @@ model doesn't force a difference.
   history, carries the archive as a recorded deviation: see
   [`v3_datavault/DATAVAULT.md`](v3_datavault/DATAVAULT.md).)
   The triggers have no unlock path. Re-archiving is `INSERT OR IGNORE`,
-  and a reused delivery id with different content gets rejected.
+  and a reused delivery id whose rows differ from the archived ones (count,
+  values or order) gets rejected, whether it completed or crashed. The rule
+  and its 16 assertions are the same text in all ten models.
 - **Ingest and replay share one code path** (`apply_delivery.sh`) in every
   model that replays. A green rebuild test proves the real loaders, not a
   parallel replay path. OBT has nothing to replay (rebuild is one full
@@ -226,8 +228,8 @@ model doesn't force a difference.
   place as forensics. Success leaves the stage blank.
 - **`make clean` never touches the durable layer.** Destroying raw
   history takes the explicit `clean-archive` target.
-- **Mutation-tested suites** (Metrics mart 220, Activity 123, Focal 83+33,
-  DV 118, USS 113, HOOK 99, Kimball 72, Anchor 72, Inmon 64, OBT 55
+- **Mutation-tested suites** (Metrics mart 236, Activity 139, Focal 99+33,
+  DV 130, USS 129, HOOK 115, Kimball 88, Anchor 88, Inmon 80, OBT 71
   assertions). I broke the FULL-absence guard, the replay ordering, the
   dedup tiebreaks, the restatement and idempotence guards, the tie guards,
   the OBT refresh, the activity loader's event-time and immutability
