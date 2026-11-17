@@ -34,11 +34,11 @@ published() {
   case "$1" in
     v3_activity-schema:run_tests)     echo 139 ;;
     v3_anchor:run_tests)              echo 124 ;;
-    v3_data-marts:run_tests)          echo 88  ;;
-    v3_datavault:run_tests)           echo 304 ;;
+    v3_data-marts:run_tests)          echo 100 ;;
+    v3_datavault:run_tests)           echo 319 ;;
     v3_focal-point:run_tests)         echo 142 ;;
     v3_focal-point:test_archive)      echo 48  ;;
-    v3_hook:run_tests)                echo 115 ;;
+    v3_hook:run_tests)                echo 129 ;;
     v3_inmon-3nf:run_tests)           echo 94  ;;
     v3_metrics-mart:run_tests)        echo 222 ;;
     v3_one-big-table:run_tests)       echo 71  ;;

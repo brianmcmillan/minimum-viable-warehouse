@@ -8,7 +8,7 @@ is the model, not the data.
 
 ```bash
 make demo   # baseline + 5 deliveries + info mart
-make test   # 304 assertions: the Focal scenarios + DV-specific behaviours
+make test   # 319 assertions (36 core, 283 model): the Focal scenarios + DV-specific behaviours
 make rebuild   # regenerate the vault by replaying archive/datavault_archive.db
 ```
 
@@ -158,7 +158,7 @@ scripts/refresh_query_assist.sh  rewrite the CPIT and bridge tables after every 
 scripts/rebuild.sh            re-init the vault and replay the archive in load_seq order
 scripts/load_hubs|sats|links.sh   the three loaders (cf. Focal's keys/desc/rel)
 source/d0..d5*.sql            the six deliveries, wide restatement of Focal's
-tests/run_tests.sh            304 assertions incl. mutation-hardened idempotence + rebuild
+tests/run_tests.sh            319 assertions incl. mutation-hardened idempotence + rebuild
 tests/mutations_todo.md       five mutations for C3 to run against the suite
 tests/fixtures/d6_repoint.sql the driving-key scenario Focal cannot express
 tests/fixtures/d7_null_customer.sql  a null customer_ref, and a customer with no satellite row

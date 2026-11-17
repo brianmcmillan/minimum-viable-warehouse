@@ -63,7 +63,7 @@ network.
 ```bash
 make demo          # fresh archive + schema + the full 6-delivery sequence, then print the warehouse
 make rebuild       # delete the frames; replay the raw layer to rebuild them
-make test          # 115 assertions: delete semantics, hooks, delta frames, as-of, exact rebuild
+make test          # 129 assertions (36 core, 93 model): delete semantics, hooks, delta frames, as-of, exact rebuild
 make clean         # delete build/ only — the archive SURVIVES
 make clean-archive # delete archive/ — destroys the raw layer, and the ability to rebuild
 ```
@@ -284,7 +284,7 @@ never close a row.
 |----------------------|--------------------------------------------------------------------------|
 | `make demo`          | fresh archive + schema + the full delivery sequence + printed warehouse  |
 | `make rebuild`       | regenerate the frames by replaying the raw layer                         |
-| `make test`          | run the test suite (115 assertions)                                       |
+| `make test`          | run the test suite (129 assertions)                                       |
 | `make init`          | recreate the frame database from schema (the archive survives)           |
 | `make clean`         | delete `build/` only — **the archive survives**                          |
 | `make clean-archive` | delete `archive/` — destroys the raw layer and the ability to rebuild    |
@@ -312,7 +312,7 @@ never close a row.
 │   └── query.sh             # print the warehouse
 ├── source/                  # D0–D5, byte-identical with ../v3_datavault and ../v3_inmon-3nf
 ├── tests/
-│   ├── run_tests.sh         # 115 assertions
+│   ├── run_tests.sh         # 129 assertions
 │   └── fixtures/d6_repoint.sql   # O-101 re-pointed to C001 (data row identical to the siblings')
 ├── build/                   # generated: the frames (safe to delete)
 └── archive/                 # generated: the durable raw layer
@@ -326,7 +326,10 @@ never close a row.
 make test
 ```
 
-**115 assertions**, pure shell + `sqlite3`, covering:
+**129 assertions** (36 core, 93 model), pure shell + `sqlite3`. The output comes in two parts:
+CORE, the fourteen sections every one of the ten suites runs in the same order with the same labels
+(`../tests/core_spec.tsv`; the nine question answers are the SQL files in `tests/answers/`), then
+MODEL, what only this model shows. Between them they cover:
 
 - **Delete semantics** — the stale-window trap, FULL-absence deletes,
   tombstones, recency dedup, load control, and zero-churn idempotence.
