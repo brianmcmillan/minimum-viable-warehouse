@@ -1,0 +1,37 @@
+id	section_id	section	label
+C01.1	C01	Fresh build	derived layer and archive are created empty
+C02.1	C02	D0 FULL baseline	2 customers, 3 products, 2 orders and 3 order lines are current
+C02.2	C02	D0 FULL baseline	O-100's status 'P' reads PENDING (Q5)
+C02.3	C02	D0 FULL baseline	the order total is 48.99 (Q6)
+C03.1	C03	D1 INCREMENTAL window	C001's email is the new one, alice@newmail.com
+C03.2	C03	D1 INCREMENTAL window	absent C002 is not deleted
+C03.3	C03	D1 INCREMENTAL window	absent C002 writes nothing
+C03.4	C03	D1 INCREMENTAL window	no change is recorded for C001's unchanged attributes
+C04.1	C04	D2 FULL snapshot	SKU-1's price is 8.99
+C04.2	C04	D2 FULL snapshot	absent SKU-3 is discontinued
+C04.3	C04	D2 FULL snapshot	unchanged SKU-2 writes nothing
+C04.4	C04	D2 FULL snapshot	SKU-1's price history is 9.99 then 8.99 (Q4)
+C05.1	C05	D3 tombstone	C002 is deleted
+C05.2	C05	D3 tombstone	C002 is not in the current customer list
+C05.3	C05	D3 tombstone	O-101's current owner is null
+C05.4	C05	D3 tombstone	C002's earlier values are still answerable
+C05.5	C05	D3 tombstone	O-101 was placed by Bob Jones as at purchase (Q7)
+C06.1	C06	D4 recency	C003 is live
+C06.2	C06	D4 recency	C003's email is new@x.com, the newest
+C07.1	C07	Load control	D1 re-sent under the same id is skipped
+C07.2	C07	Load control	the skipped re-send leaves the derived layer unchanged
+C07.3	C07	Load control	the skipped re-send leaves the archive unchanged
+C07.4	C07	Load control	a reused id with different content is rejected
+C08.1	C08	D5 FULL reconciliation	absent C003 is deleted
+C08.2	C08	D5 FULL reconciliation	the live customers are C001 only (Q1)
+C08.3	C08	D5 FULL reconciliation	the deleted customers are C002 and C003 (Q2)
+C08.4	C08	D5 FULL reconciliation	C001's email history has both addresses (Q3)
+C09.1	C09	Idempotence	the same content under a new delivery id writes nothing to the derived layer
+C10.1	C10	Archive is append-only	every delivery is archived verbatim
+C10.2	C10	Archive is append-only	UPDATE on the archive is refused
+C10.3	C10	Archive is append-only	DELETE on the archive is refused
+C11.1	C11	Rebuild	rebuild from the archive reproduces the derived layer row for row
+C12.1	C12	Rule change	a changed status label reaches every past order (Q9)
+C13.1	C13	Re-point	O-101 is owned by Alice Smith and nobody else (Q8)
+C13.2	C13	Re-point	O-101's earlier owner is still answerable
+C14.1	C14	End state	the end state is C001(alice@newmail.com)

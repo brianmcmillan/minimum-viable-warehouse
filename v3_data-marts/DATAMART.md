@@ -90,8 +90,6 @@ loaders reproduce the real ingest, not that a separate replay path works.
 business views column-for-column (with `placed_by_current` as the matching
 column). End state after D0–D5 matches the rest of the set: C001 alive with
 `alice@newmail.com`, C002/C003 deleted, SKU-3 discontinued, SKU-1 at 8.99.
-(Focal's `v_customer` still lists deleted customers as ghost rows; see the
-[top-level README](../README.md).)
 
 ## Layout
 
