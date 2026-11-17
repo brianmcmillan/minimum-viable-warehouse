@@ -246,7 +246,7 @@ A delivery is a plain `.sql` file that `INSERT`s wide rows into the stage-1 tabl
 
 1. **Stage** — clear the stage-1 tables and run the delivery file.
 2. **Load control** — a `file_id` names a delivery's *content* (a batch/version id, not a filename —
-   extractors reuse filenames). compare the staged file with what the archive holds for its
+   extractors reuse filenames). Compare the staged file with what the archive holds for its
    `file_id`: the row count must match the manifest, and once rows are archived every row must match
    exactly, order included. Any mismatch is rejected loudly, whether the id is `COMPLETE` or a
    crashed `STARTED` one. Only then is a `COMPLETE` id skipped and a `STARTED` one retried. A new id gets a `STARTED` manifest row in the archive's `loaded_files`; then

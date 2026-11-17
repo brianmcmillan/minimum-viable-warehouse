@@ -228,7 +228,7 @@ anywhere:
 
 1. **Stage** the delivery into `stg_*_l1`.
 2. **Load control** — a `file_id` names a delivery's *content* (a
-   batch/version id, not a filename). compare the staged file with what the
+   batch/version id, not a filename). Compare the staged file with what the
    archive holds for its `file_id`: the row count must match the manifest, and
    once rows are archived every row must match exactly, order included. Any
    mismatch is rejected loudly, whether the id is `COMPLETE` or a crashed

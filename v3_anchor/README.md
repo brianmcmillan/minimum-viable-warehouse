@@ -238,7 +238,7 @@ capturing the raw input *before* applying it:
 
 1. **Stage** the delivery into `source_landing_stage`.
 2. **Load control** — a `file_id` names a delivery's *content* (a batch/version id, not a filename —
-   extractors reuse filenames). compare the staged file with what the archive holds for its `file_id`:
+   extractors reuse filenames). Compare the staged file with what the archive holds for its `file_id`:
    the row count must match the manifest, and once rows are archived every row must match exactly, order
    included. Any mismatch is rejected loudly, whether the id is `COMPLETE` or a crashed `STARTED` one.
    Only then is a `COMPLETE` id skipped and a `STARTED` one retried.
