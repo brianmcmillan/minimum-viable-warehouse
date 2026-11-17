@@ -89,6 +89,16 @@ feed(){ local src="$1" file_id="$2" ts="$3" rc=0 log dir="${4:-$PROJ/source}"
      "$(q 'SELECT COUNT(*) FROM source_landing_stage')" "0"; }
 
 cuid(){ q "SELECT CU_ID FROM CU_REF_Customer_Reference WHERE Customer_Reference='$1'"; }
+# Rows the archive holds: the shared wide layout (hist_* per source
+# extract); optional $1 = file_id.
+hist_rows(){ local w=""; [ -n "${1:-}" ] && w=" WHERE file_id='$1'"
+  aq "SELECT (SELECT COUNT(*) FROM arch.hist_customer$w)+(SELECT COUNT(*) FROM arch.hist_product$w)
+            +(SELECT COUNT(*) FROM arch.hist_order$w)+(SELECT COUNT(*) FROM arch.hist_order_line$w)"; }
+# Every anchor surrogate, as business key=ID per anchor.
+all_keys(){ q "SELECT group_concat(k,',') FROM (
+    SELECT 'c:'||Customer_Reference||'='||CU_ID k FROM CU_REF_Customer_Reference
+    UNION ALL SELECT 'p:'||Product_Reference||'='||PR_ID FROM PR_REF_Product_Reference
+    UNION ALL SELECT 'o:'||Order_Reference||'='||OD_ID FROM OD_REF_Order_Reference ORDER BY 1)"; }
 est(){  q "SELECT k.ExistenceStatus FROM lCU_EST x JOIN EST_ExistenceStatus k USING(EST_ID)
            WHERE x.CU_ID=$(cuid "$1")"; }
 
@@ -105,8 +115,7 @@ ck "baseline: C001 email v1" "$(q "SELECT email FROM v_customer WHERE customer_r
 ck "baseline: typed column (Product_Price is REAL, not a slot)" \
    "$(q "SELECT typeof(Product_Price) FROM PR_PRC_Product_Price LIMIT 1")" "real"
 ck "KNOT: raw 'P' in the archive, knot label PENDING on read" \
-   "$(aq "SELECT (SELECT DISTINCT value_str FROM arch.source_landing_history
-                  WHERE attribute_name='status' AND business_key='O-100')||'/'||
+   "$(aq "SELECT (SELECT DISTINCT status FROM arch.hist_order WHERE order_ref='O-100')||'/'||
                 (SELECT status FROM v_order WHERE order_ref='O-100')")" "P/PENDING"
 
 echo; echo "== D1: CRM 14-day INCREMENTAL window (C001 changed; C002 absent) =="
@@ -155,8 +164,8 @@ before="$(census)"
 feed d1_cust_win_day60.sql D1 '2026-04-10 08:00:00'
 ck "dup file skipped: constellation unchanged" "$(census)" "$before"
 cat > "$LOGDIR/tamper.sql" <<'SQL'
-INSERT INTO source_landing_stage(source_system,source_entity,business_key,attribute_name,value_str,value_num,value_ts,extract_ts,op,load_mode) VALUES
-('CRM','CUSTOMER','C009','customer_ref','C009',NULL,NULL,'2026-05-01','UPSERT','INCREMENTAL');
+INSERT INTO stg_customer_l1(customer_id, full_name, email_addr, signup_date, extract_dt, op, load_mode) VALUES
+('C009','Tam Per','t@x.com','2026-05-01','2026-05-01','UPSERT','INCREMENTAL');
 SQL
 out="$(BATCH_TS='2026-05-01 08:00:00' "$PROJ/scripts/load_feed.sh" "$LOGDIR/tamper.sql" D1 2>&1)"; rc=$?
 ck "reused file_id with different content is REJECTED" \
@@ -179,18 +188,30 @@ ck "re-asserted current state writes zero rows" "$(census)" "$before_r"
 
 echo; echo "== Archive: append-only is absolute =="
 ck "archive captured every delivered row" \
-   "$(aq 'SELECT COUNT(*) FROM arch.source_landing_history')" \
+   "$(hist_rows)" \
    "$(aq 'SELECT SUM(row_count) FROM arch.loaded_files')"
-ck_abort "UPDATE on source_landing_history aborts" \
-  "UPDATE source_landing_history SET value_str='x';" "append-only"
-ck_abort "DELETE on source_landing_history aborts" \
-  "DELETE FROM source_landing_history;" "append-only"
+for t in hist_customer hist_product hist_order hist_order_line; do
+  ck_abort "UPDATE on $t aborts" "UPDATE $t SET op=op;" "append-only"
+  ck_abort "DELETE on $t aborts" "DELETE FROM $t;"      "append-only"
+done
 
 echo; echo "== Rebuild: the constellation is disposable =="
 ingested="$(snap)"
 rm -f "$DB"                              # exactly what `make clean` does
 "$PROJ/scripts/rebuild.sh" >/dev/null 2>&1 || echo "  (rebuild exited $?)"
 ck "clean+rebuild: identical, anchor surrogates included" "$(snap)" "$ingested"
+ingested_keys="$(all_keys)"
+rm -f "$DB"
+make -s -C "$PROJ" rebuild >/dev/null 2>&1; rc=$?
+ck "make rebuild exits 0" "$rc" "0"
+ck "make rebuild: every anchor surrogate (customer, product, order) as ingested" "$(all_keys)" "$ingested_keys"
+ck "make rebuild: constellation identical to INGEST" "$(snap)" "$ingested"
+ck "archive tables are exactly the shared wide layout" \
+   "$(aq "SELECT group_concat(name,',') FROM (SELECT name FROM arch.sqlite_master WHERE type='table' ORDER BY name)")" \
+   "hist_customer,hist_order,hist_order_line,hist_product,loaded_files"
+ck "no archived table has a key/value (attribute_name) column" \
+   "$(aq "SELECT COUNT(*) FROM arch.sqlite_master m, pragma_table_info(m.name, 'arch') c
+          WHERE m.type='table' AND c.name='attribute_name'")" "0"
 
 echo; echo "== Knot relabel: label lives in one place, history included =="
 q "UPDATE OST_OrderStatus SET Order_Status='PLACED' WHERE Status_Code='P';" >/dev/null
@@ -201,10 +222,11 @@ ck "  ...and rebuild resets it: schema seed is the source of truth" \
    "$(q "SELECT DISTINCT status FROM v_order")" "PENDING"
 
 echo; echo "== Closed knot domain: an unknown code fails the load =="
+# Wide, like every delivery: a complete order row whose ONLY defect is the
+# status code 'X'.
 cat > "$LOGDIR/badknot.sql" <<'SQL'
-INSERT INTO source_landing_stage(source_system,source_entity,business_key,attribute_name,value_str,value_num,value_ts,extract_ts,op,load_mode) VALUES
-('OMS','ORDER','O-999','order_ref','O-999',NULL,NULL,'2027-01-20','UPSERT','INCREMENTAL'),
-('OMS','ORDER','O-999','status','X',NULL,NULL,'2027-01-20','UPSERT','INCREMENTAL');
+INSERT INTO stg_order_l1(order_ref, customer_ref, status, amount, currency, placed_at, extract_dt, op, load_mode) VALUES
+('O-999','C001','X',1.0,'USD','2027-01-20 10:00','2027-01-20','UPSERT','INCREMENTAL');
 SQL
 out="$(BATCH_TS='2027-01-20 08:00:00' "$PROJ/scripts/load_feed.sh" "$LOGDIR/badknot.sql" DX 2>&1)"; rc=$?
 ck "unknown status code 'X' is REJECTED, not invented" \
@@ -212,8 +234,8 @@ ck "unknown status code 'X' is REJECTED, not invented" \
 ck "  ...and the failed delivery stays retryable (STARTED)" \
    "$(aq "SELECT status FROM arch.loaded_files WHERE file_id='DX'")" "STARTED"
 ck "  ...with its staged rows preserved as forensics" \
-   "$(q 'SELECT COUNT(*) FROM source_landing_stage')" "2"
-q "DELETE FROM source_landing_stage;" >/dev/null   # clean up for the next block
+   "$(q 'SELECT COUNT(*) FROM stg_order_l1')" "1"
+q "DELETE FROM stg_order_l1; DELETE FROM source_landing_stage;" >/dev/null   # clean up for the next block
 
 echo; echo "== Historized tie: OMS re-points O-101 from C002 to C001 =="
 feed d7_repoint.sql D7 '2027-02-01 08:00:00' "$HERE/fixtures"
@@ -230,6 +252,130 @@ ck "repoint: restatement control kept every attribute silent" \
 before_d7r="$(census)"
 feed d7_repoint.sql D7R '2027-02-15 08:00:00' "$HERE/fixtures"
 ck "re-asserted repoint writes nothing" "$(census)" "$before_d7r"
+
+echo; echo "== Unpivoted D0..D5 build the same constellation as the old narrow files =="
+# Two scratch database pairs, created after every rebuild assertion above
+# and never read by one. The wide files go through load_feed.sh; the old
+# narrow deliveries (tests/fixtures/narrow) go straight into the narrow
+# stage and through apply_delivery.sh (level 2). Stage row counts differ
+# (D4: 8 unpivoted vs 5 narrow); the loaded result may not.
+SAVE_DB="$DB"; SAVE_ARCHIVE_DB="$ARCHIVE_DB"
+SEQ="d0_baseline B0 2026-02-05 08:00:00
+d1_cust_win_day60 D1 2026-03-02 08:00:00
+d2_prod_full_v2 D2 2026-03-02 09:00:00
+d3_cust_tombstone D3 2026-03-16 08:00:00
+d4_cust_recency D4 2026-04-02 08:00:00
+d5_cust_yearly_full D5 2026-12-31 08:00:00"
+export DB="$LOGDIR/wide.db" ARCHIVE_DB="$LOGDIR/wide_archive.db"
+rm -f "$DB" "$ARCHIVE_DB"; "$PROJ/scripts/init_db.sh" >/dev/null 2>&1
+while read -r n id d t; do
+  BATCH_TS="$d $t" "$PROJ/scripts/load_feed.sh" "$PROJ/source/$n.sql" "$id" >/dev/null 2>&1
+done <<< "$SEQ"
+wide_snap="$(snap)"; wide_keys="$(all_keys)"
+export DB="$LOGDIR/narrow_ref.db" ARCHIVE_DB="$LOGDIR/narrow_ref_archive.db"
+rm -f "$DB" "$ARCHIVE_DB"; "$PROJ/scripts/init_db.sh" >/dev/null 2>&1
+while read -r n id d t; do
+  "$SQLITE" "$DB" "DELETE FROM source_landing_stage;"; "$SQLITE" "$DB" < "$HERE/fixtures/narrow/$n.sql"
+  BATCH_TS="$d $t" "$PROJ/scripts/apply_delivery.sh" >/dev/null 2>&1
+done <<< "$SEQ"
+ck "same anchor surrogates from the old narrow files" "$(all_keys)" "$wide_keys"
+ck "same constellation (anchors, attributes, ties, ChangedAt) from the old narrow files" "$(snap)" "$wide_snap"
+
+echo; echo "== Recency tiebreak survives replay (wide fixture d6_tiebreak_wide.sql) =="
+# C004 arrives twice in one delivery with an identical extract_dt: only
+# the LAST row in the file may win, on ingest and again after rebuild.
+export DB="$LOGDIR/tie.db" ARCHIVE_DB="$LOGDIR/tie_archive.db"
+rm -f "$DB" "$ARCHIVE_DB"; "$PROJ/scripts/init_db.sh" >/dev/null 2>&1
+BATCH_TS='2027-02-01 08:00:00' "$PROJ/scripts/load_feed.sh" "$HERE/fixtures/d6_tiebreak_wide.sql" D6 >/dev/null 2>&1
+ck "ingest: equal extract_ts -> last row in the file wins" \
+   "$(q "SELECT email FROM v_customer WHERE customer_ref='C004'")" "last@x.com"
+"$PROJ/scripts/rebuild.sh" >/dev/null 2>&1
+ck "after rebuild: rowid tiebreak preserved" \
+   "$(q "SELECT email FROM v_customer WHERE customer_ref='C004'")" "last@x.com"
+export DB="$SAVE_DB" ARCHIVE_DB="$SAVE_ARCHIVE_DB"
+
+echo; echo "== Level 1: the wide -> narrow transform (stage_narrow.sh) =="
+# Own scratch database: wide rows go straight into the wide stage and only
+# stage_narrow.sh runs -- no loader, no archive, nothing a rebuild reads.
+SAVE_DB="$DB"; SAVE_ARCHIVE_DB="$ARCHIVE_DB"
+export DB="$LOGDIR/level1.db" ARCHIVE_DB="$LOGDIR/level1_archive.db"
+rm -f "$DB" "$ARCHIVE_DB"; "$PROJ/scripts/init_db.sh" >/dev/null 2>&1
+q "INSERT INTO stg_customer_l1(customer_id,full_name,email_addr,signup_date,extract_dt,op,load_mode) VALUES
+     ('C1','Ann',NULL,'2026-01-01','2026-05-01','UPSERT','INCREMENTAL'),
+     ('C1','Ann','b@x','2026-01-01','2026-05-01','UPSERT','INCREMENTAL'),
+     ('C2',NULL,NULL,NULL,'2026-05-01','DELETE','INCREMENTAL');
+   INSERT INTO stg_product_l1(sku,prod_name,price,currency,extract_dt,op,load_mode) VALUES
+     ('S1','Thing',2.5,'EUR','2026-05-01','UPSERT','FULL');
+   INSERT INTO stg_order_l1(order_ref,customer_ref,status,amount,currency,placed_at,extract_dt,op,load_mode) VALUES
+     ('O1','C1','P',7.25,'USD','2026-04-30 09:00','2026-05-01','UPSERT','INCREMENTAL');
+   INSERT INTO stg_order_line_l1(order_ref,sku,extract_dt,op,load_mode) VALUES
+     ('O1','S1','2026-05-01','UPSERT','INCREMENTAL');" >/dev/null
+"$PROJ/scripts/stage_narrow.sh" >/dev/null 2>&1
+# typeof() of value_str/value_num/value_ts, per attribute, in emitted order.
+types(){ q "SELECT group_concat(attribute_name||':'||typeof(value_str)||'/'||typeof(value_num)||'/'||typeof(value_ts),' ')
+            FROM (SELECT * FROM source_landing_stage WHERE business_key='$1' ORDER BY rowid)"; }
+ck "level 1: 6 wide rows -> 21 narrow rows (customer 4+4+1, product 4, order 6, line 2)" \
+   "$(q 'SELECT COUNT(*) FROM source_landing_stage')" "21"
+ck "level 1: type routing, customer (signup_date -> value_ts; empty email -> all NULL)" "$(types C1)" \
+   "customer_ref:text/null/null full_name:text/null/null email_addr:null/null/null signup_date:null/null/text customer_ref:text/null/null full_name:text/null/null email_addr:text/null/null signup_date:null/null/text"
+ck "level 1: type routing, product (price -> value_num, currency -> value_str)" "$(types S1)" \
+   "sku:text/null/null prod_name:text/null/null price:null/real/null currency:text/null/null"
+ck "level 1: type routing, order (amount -> value_num, placed_at -> value_ts)" "$(types O1)" \
+   "order_ref:text/null/null customer_ref:text/null/null status:text/null/null amount:null/real/null currency:text/null/null placed_at:null/null/text"
+ck "level 1: signup_date lands in value_ts" \
+   "$(q "SELECT DISTINCT value_ts FROM source_landing_stage WHERE business_key='C1' AND attribute_name='signup_date'")" "2026-01-01"
+ck "level 1: derived key rows (customer_ref=C1, sku=S1, order_ref=O1)" \
+   "$(q "SELECT group_concat(a||'='||v,' ') FROM (SELECT attribute_name a, value_str v, MIN(rowid) r
+         FROM source_landing_stage
+         WHERE (business_key,attribute_name) IN (VALUES ('C1','customer_ref'),('S1','sku'),('O1','order_ref'))
+         GROUP BY 1,2 ORDER BY r)")" "customer_ref=C1 sku=S1 order_ref=O1"
+ck "level 1: order line keyed order_ref~sku, carrying both ends" \
+   "$(types 'O1~S1')|$(q "SELECT group_concat(value_str,',') FROM (SELECT value_str FROM source_landing_stage WHERE business_key='O1~S1' ORDER BY rowid)")" \
+   "order_ref:text/null/null sku:text/null/null|O1,S1"
+ck "level 1: empty column -> a row holding SQL NULL (not skipped, not the string)" \
+   "$(q "SELECT COUNT(*)||'/'||typeof(MAX(value_str)) FROM source_landing_stage
+         WHERE business_key='C1' AND attribute_name='email_addr' AND value_str IS NULL")" "1/null"
+ck "level 1: no value is ever the string 'NULL'" \
+   "$(q "SELECT COUNT(*) FROM source_landing_stage WHERE 'NULL' IN (value_str, value_ts)")" "0"
+ck "level 1: a DELETE emits exactly one _tombstone row, op DELETE" \
+   "$(q "SELECT COUNT(*)||'|'||MAX(attribute_name)||'|'||MAX(op) FROM source_landing_stage WHERE business_key='C2'")" "1|_tombstone|DELETE"
+ck "level 1: order is feed, then wide row, then attribute position" \
+   "$(q "SELECT group_concat(e,',') FROM (SELECT source_entity e, MIN(rowid) r FROM source_landing_stage GROUP BY 1 ORDER BY r)")|$(q "SELECT group_concat(attribute_name,',') FROM (SELECT attribute_name FROM source_landing_stage WHERE business_key='C1' ORDER BY rowid)")" \
+   "CUSTOMER,PRODUCT,ORDER,ORDER_LINE|customer_ref,full_name,email_addr,signup_date,customer_ref,full_name,email_addr,signup_date"
+ck "level 1: within one (key, attribute) the later wide row gets the later rowid" \
+   "$(q "SELECT COALESCE(value_str,'<null>') FROM source_landing_stage WHERE business_key='C1' AND attribute_name='email_addr' ORDER BY rowid DESC LIMIT 1")" "b@x"
+first_pass="$(q 'SELECT * FROM source_landing_stage ORDER BY rowid')"
+"$PROJ/scripts/stage_narrow.sh" >/dev/null 2>&1
+ck "level 1: re-running stage_narrow emits identical rows (it clears first, order is fixed)" \
+   "$(q 'SELECT * FROM source_landing_stage ORDER BY rowid')" "$first_pass"
+# The shared corpus: every row of every old narrow delivery is reproduced.
+# Only D4 emits more (8 vs 5): wide sends C003's whole record twice.
+for n in d0_baseline d1_cust_win_day60 d2_prod_full_v2 d3_cust_tombstone d4_cust_recency d5_cust_yearly_full; do
+  q "DELETE FROM stg_customer_l1; DELETE FROM stg_product_l1; DELETE FROM stg_order_l1; DELETE FROM stg_order_line_l1;
+     DROP TABLE IF EXISTS narrow_ref; CREATE TABLE narrow_ref AS SELECT * FROM source_landing_stage WHERE 0;" >/dev/null
+  "$SQLITE" "$DB" < "$PROJ/source/$n.sql"
+  sed 's/INSERT INTO source_landing_stage/INSERT INTO narrow_ref/' "$HERE/fixtures/narrow/$n.sql" | "$SQLITE" "$DB"
+  "$PROJ/scripts/stage_narrow.sh" >/dev/null 2>&1
+  ck "level 1: unpivoted $n reproduces every row of the old narrow file" \
+     "$(q "SELECT COUNT(*) FROM (SELECT * FROM narrow_ref EXCEPT SELECT * FROM source_landing_stage)")/$(q 'SELECT COUNT(*) FROM narrow_ref')" \
+     "0/$(q 'SELECT COUNT(*) FROM narrow_ref')"
+done
+
+echo; echo "== Level 2: the narrow loaders, fed narrow rows directly =="
+# Narrow-by-nature fixtures go straight into source_landing_stage and
+# through apply_delivery.sh. They bypass load_feed.sh and the wide archive,
+# so they run in their own scratch database that no rebuild ever reads.
+export DB="$LOGDIR/level2.db" ARCHIVE_DB="$LOGDIR/level2_archive.db"
+l2(){ "$SQLITE" "$DB" "DELETE FROM source_landing_stage;"; "$SQLITE" "$DB" < "$1"
+      BATCH_TS="$2" "$PROJ/scripts/apply_delivery.sh" >/dev/null 2>&1; }
+rm -f "$DB" "$ARCHIVE_DB"; "$PROJ/scripts/init_db.sh" >/dev/null 2>&1
+l2 "$HERE/fixtures/d6_tiebreak.sql" '2027-02-01 08:00:00'
+ck "level 2: equal extract_ts -> the last narrow row wins (attribute-level tiebreak)" \
+   "$(q "SELECT email FROM v_customer WHERE customer_ref='C004'")" "last@x.com"
+l2 "$HERE/fixtures/narrow/d4_cust_recency.sql" '2027-02-02 08:00:00'
+ck "level 2: per-attribute recency -- newest extract_ts wins, not MAX" \
+   "$(q "SELECT email FROM v_customer WHERE customer_ref='C003'")" "new@x.com"
+export DB="$SAVE_DB" ARCHIVE_DB="$SAVE_ARCHIVE_DB"
 
 echo; echo "== Load control: a file_id names CONTENT (same block in all ten suites) =="
 # Own database pair, so these deliveries never reach the main archive or

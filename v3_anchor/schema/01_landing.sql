@@ -1,12 +1,14 @@
 -- =====================================================================
 -- ANCHOR :: LANDING + LOADER METADATA
 -- ---------------------------------------------------------------------
--- The narrow (key-value) landing is BYTE-IDENTICAL to the Focal demo's:
--- the same source_landing_stage / source_landing pair, consuming the
--- same delivery files. Anchor loading is inherently per-attribute, and
--- this landing is already at attribute grain -- each staged row IS one
--- attribute assertion. (The DV and Kimball demos share the wide files;
--- Anchor and Focal share the narrow ones.)
+-- Deliveries arrive WIDE, one row per record, in the stg_*_l1 tables --
+-- the same files and the same DDL as every wide-shape sibling. That is
+-- what load control compares and what the archive keeps.
+-- scripts/stage_narrow.sh then unpivots them into the narrow (key-value)
+-- source_landing_stage / source_landing pair, which is byte-identical to
+-- the Focal demo's. Anchor loading is inherently per-attribute, and the
+-- narrow landing is at attribute grain -- each narrow row IS one attribute
+-- assertion.
 --
 -- op / load_mode carry the shared delivery semantics:
 --   op        = UPSERT | DELETE (tombstone)
@@ -29,8 +31,47 @@ CREATE TABLE source_landing (
 );
 CREATE INDEX ix_landing ON source_landing(source_system, source_entity, attribute_name);
 
--- Staging: a delivery file lands here first; the driver then recency-
--- dedupes it into source_landing.
+-- Wide staging: a delivery file lands here first (same DDL as the
+-- wide-shape siblings).
+CREATE TABLE stg_customer_l1 (
+    customer_id  TEXT NOT NULL,
+    full_name    TEXT,
+    email_addr   TEXT,
+    signup_date  TEXT,
+    extract_dt   TEXT NOT NULL,
+    op           TEXT NOT NULL DEFAULT 'UPSERT',
+    load_mode    TEXT NOT NULL
+);
+CREATE TABLE stg_product_l1 (
+    sku          TEXT NOT NULL,
+    prod_name    TEXT,
+    price        REAL,
+    currency     TEXT,
+    extract_dt   TEXT NOT NULL,
+    op           TEXT NOT NULL DEFAULT 'UPSERT',
+    load_mode    TEXT NOT NULL
+);
+CREATE TABLE stg_order_l1 (
+    order_ref    TEXT NOT NULL,
+    customer_ref TEXT,
+    status       TEXT,
+    amount       REAL,
+    currency     TEXT,
+    placed_at    TEXT,
+    extract_dt   TEXT NOT NULL,
+    op           TEXT NOT NULL DEFAULT 'UPSERT',
+    load_mode    TEXT NOT NULL
+);
+CREATE TABLE stg_order_line_l1 (
+    order_ref    TEXT NOT NULL,
+    sku          TEXT NOT NULL,
+    extract_dt   TEXT NOT NULL,
+    op           TEXT NOT NULL DEFAULT 'UPSERT',
+    load_mode    TEXT NOT NULL
+);
+
+-- Narrow staging: stage_narrow.sh unpivots the wide stage into key/value
+-- rows here; the driver then recency-dedupes it into source_landing.
 CREATE TABLE source_landing_stage (
     source_system  TEXT NOT NULL,
     source_entity  TEXT NOT NULL,

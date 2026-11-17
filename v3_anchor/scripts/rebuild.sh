@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------
 # REBUILD the constellation from the raw layer: init + ordered replay
-# through apply_delivery.sh. Anchor surrogate IDs come back identical
-# because the archive is complete and three orderings hold -- load_seq
-# across deliveries, seq_nbr within one, ORDER BY business key inside
-# the REF inserts. Same proofs, same tests, as the Focal archive.
+# through stage_narrow.sh and apply_delivery.sh, the same two steps as
+# ingest. Anchor surrogate IDs come back identical because the archive is
+# complete and three orderings hold -- load_seq across deliveries,
+# seq_nbr within one (the wide stage is restored in that order and
+# stage_narrow.sh keeps it within every key and attribute), ORDER BY
+# business key inside the REF inserts. Same proofs, same tests, as the
+# Focal archive.
 # ---------------------------------------------------------------------
 source "$(dirname "$0")/lib.sh"
 
@@ -25,17 +28,25 @@ while IFS='|' read -r fid bts; do
   echo "############################################################"
   echo "# REPLAY: id=$fid   (ts=$bts)"
   echo "############################################################"
-  adb "DELETE FROM source_landing_stage;
-       INSERT INTO source_landing_stage(source_system,source_entity,business_key,
-                                        attribute_name,value_str,value_num,value_ts,
-                                        extract_ts,op,load_mode)
-       SELECT source_system,source_entity,business_key,attribute_name,
-              value_str,value_num,value_ts,extract_ts,op,load_mode
-       FROM arch.source_landing_history
-       WHERE file_id='$q_fid'
-       ORDER BY seq_nbr;"
+  adb "DELETE FROM stg_customer_l1; DELETE FROM stg_product_l1;
+       DELETE FROM stg_order_l1;    DELETE FROM stg_order_line_l1;
+       INSERT INTO stg_customer_l1(customer_id,full_name,email_addr,signup_date,extract_dt,op,load_mode)
+         SELECT customer_id,full_name,email_addr,signup_date,extract_dt,op,load_mode
+         FROM arch.hist_customer WHERE file_id='$q_fid' ORDER BY seq_nbr;
+       INSERT INTO stg_product_l1(sku,prod_name,price,currency,extract_dt,op,load_mode)
+         SELECT sku,prod_name,price,currency,extract_dt,op,load_mode
+         FROM arch.hist_product WHERE file_id='$q_fid' ORDER BY seq_nbr;
+       INSERT INTO stg_order_l1(order_ref,customer_ref,status,amount,currency,placed_at,extract_dt,op,load_mode)
+         SELECT order_ref,customer_ref,status,amount,currency,placed_at,extract_dt,op,load_mode
+         FROM arch.hist_order WHERE file_id='$q_fid' ORDER BY seq_nbr;
+       INSERT INTO stg_order_line_l1(order_ref,sku,extract_dt,op,load_mode)
+         SELECT order_ref,sku,extract_dt,op,load_mode
+         FROM arch.hist_order_line WHERE file_id='$q_fid' ORDER BY seq_nbr;"
+  "$(dirname "$0")/stage_narrow.sh"
   BATCH_TS="$bts" "$(dirname "$0")/apply_delivery.sh"
 done
 
-sql_run "DELETE FROM source_landing_stage;"
+sql_run "DELETE FROM stg_customer_l1; DELETE FROM stg_product_l1;
+         DELETE FROM stg_order_l1;    DELETE FROM stg_order_line_l1;
+         DELETE FROM source_landing_stage;"
 echo "==> Rebuild complete: $n_deliv delivery(ies) replayed."

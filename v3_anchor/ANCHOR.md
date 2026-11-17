@@ -1,7 +1,7 @@
 # Anchor Modeling — same deliveries, fourth model
 
-The 6NF leg of the model-comparison set. The **same six narrow deliveries**
-(byte-identical files shared with `../v3_focal-point`) flow into an
+The 6NF leg of the model-comparison set. The **same six wide deliveries**
+(byte-identical files shared with every other model) flow into an
 Anchor constellation: 3 anchors, 3 knots, 16 individually typed attribute
 tables, 2 ties — **24 tables for the data the Focal demo holds in 4 generic
 ones**. That number is the exhibit: Anchor and Focal share the same goals
@@ -11,7 +11,7 @@ exactly opposite physical routes.
 ```bash
 make demo     # fresh archive + the full delivery sequence + perspectives
 make rebuild  # throw the constellation away; replay the raw layer
-make test     # 88 assertions, mutation-hardened
+make test     # 124 assertions, mutation-hardened
 ```
 
 ## Anchor vs Focal: the same idea, inverted
@@ -30,8 +30,9 @@ The last line is the build's finding: `load_attributes.sh` is structurally
 Focal's `load_desc.sh` — a metadata-driven loop — except each iteration
 inserts into that attribute's own typed table. The narrow key-value landing
 made that a retarget, not a rewrite, because it is already at attribute
-grain (Anchor and Focal consume the same files; DV and Kimball share the
-wide ones).
+grain. Deliveries arrive wide like every other model's and are archived
+wide; `stage_narrow.sh`, the same script Focal uses, unpivots them into that
+narrow landing on ingest and on replay alike.
 
 ## No loading doctrine, so we brought one
 
@@ -81,22 +82,39 @@ keyword); `Metadata_LDTS` stands in for Anchor's metadata construct; no
 positor/reliability machinery (concurrent-reliance modeling is out of scope
 for every demo in the set).
 
+## A native narrow archive is a supported option
+
+If your extracts really are narrow (an EAV export, or a change stream that sends one attribute at a
+time), you can stage them straight into `source_landing_stage`, archive that shape (a
+`source_landing_history`-style table keyed on file and row), and skip `stage_narrow.sh`. The loaders
+don't change. Two costs come with it:
+
+- **It makes switching harder, in both directions.** The models that take wide extracts can't
+  replay a narrow archive, and Anchor can't replay theirs, without a conversion step. The
+  delivery files also stop being shared, so a cross-model comparison is no longer like for like.
+- **It needs its own content-checked load-control guard.** The shared guard compares the wide
+  stage with the `hist_*` tables only. A narrow archive must compare `source_landing_stage`
+  with its own history table, every row and in order, to keep the same rule: a reused
+  `file_id` whose rows differ is rejected, whether the delivery completed or crashed.
+
 ## Layout
 
 ```
-schema/01_landing.sql   narrow landing (Focal-identical) + loader metadata maps
-schema/02_archive.sql   raw layer: append-only, no unlock path, manifest
+schema/01_landing.sql   wide stage + narrow landing (Focal-identical) + loader maps
+schema/02_archive.sql   wide raw layer (hist_*): append-only, no unlock path, manifest
 schema/03_anchor.sql    the 24-table constellation + knot and map seeds
 schema/04_views.sql     latest perspectives, business views, timelines
 scripts/load_feed.sh    capture-raw-then-apply, content-drift guard,
                         clear-on-success / forensics-on-failure
+scripts/stage_narrow.sh    unpivot wide stage -> key/value rows (ingest AND replay)
 scripts/apply_delivery.sh  one shared path for ingest AND replay
 scripts/load_anchors.sh    identities + *_REF registry (deterministic keys)
 scripts/load_attributes.sh metadata-driven per-attribute loop + existence
 scripts/load_ties.sh       historized / static ties
 scripts/rebuild.sh         ordered replay of the archive
-source/d0..d5*.sql         byte-identical copies of the Focal deliveries
-tests/run_tests.sh         88 assertions; FULL-guard, restatement-control,
+source/d0..d5*.sql         the wide deliveries, byte-identical in every model
+tests/run_tests.sh         124 assertions; FULL-guard, restatement-control,
                            tie-guard and replay-order mutations all verified
-tests/fixtures/            d6_tiebreak (dedup), d7_repoint (driving role)
+tests/fixtures/            d6_tiebreak narrow+wide (dedup), d7_repoint (driving role),
+                           narrow/ (the old narrow D0..D5, the equivalence reference)
 ```
