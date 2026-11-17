@@ -16,6 +16,11 @@
 -- recency rule as the Focal demo's landing dedup.
 --
 -- rsrc: record source in dot form, per the standard, for row lineage.
+--
+-- Null link ends: a link end the source left null becomes a reserved key
+-- here, '-1' for a required relationship and '-2' for an optional one.
+-- Both relationships in this corpus are required (an order's customer,
+-- an order line's product), and only customer_ref can be null in stage 1.
 -- =====================================================================
 
 CREATE VIEW v_stg_customer_l2 AS
@@ -61,7 +66,9 @@ FROM (
   SELECT 'OMS.ORDER'                       AS rsrc,
          (SELECT batch_ts FROM dv_load_params) AS ldts,
          TRIM(order_ref)                   AS order_bk,
-         TRIM(customer_ref)                AS customer_bk,
+         -- An order's customer is a REQUIRED link end: a null or blank
+         -- customer_ref links the order to the reserved key '-1'.
+         COALESCE(NULLIF(TRIM(customer_ref),''), '-1') AS customer_bk,
          status, amount, currency, placed_at, op, load_mode, extract_dt,
          ROW_NUMBER() OVER (PARTITION BY TRIM(order_ref)
                             ORDER BY extract_dt DESC, rowid DESC) AS rn

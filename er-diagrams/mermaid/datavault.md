@@ -8,10 +8,31 @@ Generated from [`v3_datavault/build/datavault.db`](../../v3_datavault/build/data
 
 ## 1 · Core model
 
-Hubs (`_h`), links (`_l`), satellites (`_hsat`), status satellites (`_sts`) and one effectivity satellite.
+Hubs (`_h`), links (`_l`), satellites (`_hsat`), status satellites (`_sts`), a reference table, one effectivity satellite, and the generated point-in-time (`_cpit`) and bridge tables.
 
 ```mermaid
 erDiagram
+    bv_customer_cpit {
+        TEXT customer_bk PK, FK
+        TEXT hsat_bk FK
+        TEXT hsat_ldts FK
+        TEXT sts_bk FK
+        TEXT sts_ldts FK
+    }
+    bv_order_bridge {
+        TEXT order_bk PK, FK
+        TEXT product_bk PK, FK
+        TEXT customer_bk FK
+    }
+    bv_order_cpit {
+        TEXT order_bk PK, FK
+        TEXT hsat_bk FK
+        TEXT hsat_ldts FK
+        TEXT sts_bk FK
+        TEXT sts_ldts FK
+        TEXT eff_customer_bk
+        TEXT eff_ldts
+    }
     bv_order_customer_l_effsat {
         TEXT order_bk PK, FK
         TEXT customer_bk PK, FK
@@ -19,6 +40,19 @@ erDiagram
         TEXT rsrc
         TEXT start_date
         TEXT old_customer_bk
+    }
+    bv_product_cpit {
+        TEXT product_bk PK, FK
+        TEXT hsat_bk FK
+        TEXT hsat_ldts FK
+        TEXT sts_bk FK
+        TEXT sts_ldts FK
+    }
+    ref_order_status {
+        TEXT code PK
+        TEXT label
+        TEXT ldts PK
+        TEXT rsrc
     }
     rv_customer_h {
         TEXT customer_bk PK
@@ -93,7 +127,18 @@ erDiagram
         TEXT rsrc
         TEXT sts
     }
+    rv_customer_sts ||--o{ bv_customer_cpit : "sts_bk, sts_ldts"
+    rv_customer_hsat ||--o{ bv_customer_cpit : "hsat_bk, hsat_ldts"
+    rv_customer_h ||--o| bv_customer_cpit : "customer_bk"
+    rv_customer_h ||--o{ bv_order_bridge : "customer_bk"
+    rv_order_product_l ||--o| bv_order_bridge : "order_bk, product_bk"
+    rv_order_sts ||--o{ bv_order_cpit : "sts_bk, sts_ldts"
+    rv_order_hsat ||--o{ bv_order_cpit : "hsat_bk, hsat_ldts"
+    rv_order_h ||--o| bv_order_cpit : "order_bk"
     rv_order_customer_l ||--o{ bv_order_customer_l_effsat : "order_bk, customer_bk"
+    rv_product_sts ||--o{ bv_product_cpit : "sts_bk, sts_ldts"
+    rv_product_hsat ||--o{ bv_product_cpit : "hsat_bk, hsat_ldts"
+    rv_product_h ||--o| bv_product_cpit : "product_bk"
     rv_customer_h ||--o{ rv_customer_hsat : "customer_bk"
     rv_customer_h ||--o{ rv_customer_sts : "customer_bk"
     rv_customer_h ||--o{ rv_order_customer_l : "customer_bk"

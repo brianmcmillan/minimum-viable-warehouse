@@ -38,17 +38,18 @@ ck_abort(){ local label="$1" sql="$2" want="$3" out
         *) FAIL=$((FAIL+1)); printf "  \033[31mFAIL\033[0m %s  (got '%s')\n" "$label" "$out";; esac; }
 
 # Row census across every vault table, compared as one string so a
-# failure names the table that grew.
+# failure names the table that grew. Hub and satellite counts exclude the
+# reserved keys '0', '-1' and '-2' (written at init, not by a delivery).
 census(){ q "SELECT group_concat(t||'='||n,' ') FROM (
-    SELECT 1 o,'cust_h'   t,COUNT(*) n FROM rv_customer_h
-    UNION ALL SELECT 2,'cust_hsat', COUNT(*) FROM rv_customer_hsat
-    UNION ALL SELECT 3,'cust_sts',  COUNT(*) FROM rv_customer_sts
-    UNION ALL SELECT 4,'prod_h',    COUNT(*) FROM rv_product_h
-    UNION ALL SELECT 5,'prod_hsat', COUNT(*) FROM rv_product_hsat
-    UNION ALL SELECT 6,'prod_sts',  COUNT(*) FROM rv_product_sts
-    UNION ALL SELECT 7,'ord_h',     COUNT(*) FROM rv_order_h
-    UNION ALL SELECT 8,'ord_hsat',  COUNT(*) FROM rv_order_hsat
-    UNION ALL SELECT 9,'ord_sts',   COUNT(*) FROM rv_order_sts
+    SELECT 1 o,'cust_h'   t,COUNT(*) n FROM rv_customer_h WHERE customer_bk NOT IN ('0','-1','-2')
+    UNION ALL SELECT 2,'cust_hsat', COUNT(*) FROM rv_customer_hsat WHERE customer_bk NOT IN ('0','-1','-2')
+    UNION ALL SELECT 3,'cust_sts',  COUNT(*) FROM rv_customer_sts WHERE customer_bk NOT IN ('0','-1','-2')
+    UNION ALL SELECT 4,'prod_h',    COUNT(*) FROM rv_product_h WHERE product_bk NOT IN ('0','-1','-2')
+    UNION ALL SELECT 5,'prod_hsat', COUNT(*) FROM rv_product_hsat WHERE product_bk NOT IN ('0','-1','-2')
+    UNION ALL SELECT 6,'prod_sts',  COUNT(*) FROM rv_product_sts WHERE product_bk NOT IN ('0','-1','-2')
+    UNION ALL SELECT 7,'ord_h',     COUNT(*) FROM rv_order_h WHERE order_bk NOT IN ('0','-1','-2')
+    UNION ALL SELECT 8,'ord_hsat',  COUNT(*) FROM rv_order_hsat WHERE order_bk NOT IN ('0','-1','-2')
+    UNION ALL SELECT 9,'ord_sts',   COUNT(*) FROM rv_order_sts WHERE order_bk NOT IN ('0','-1','-2')
     UNION ALL SELECT 10,'oc_l',     COUNT(*) FROM rv_order_customer_l
     UNION ALL SELECT 11,'op_l',     COUNT(*) FROM rv_order_product_l
     UNION ALL SELECT 12,'oc_eff',   COUNT(*) FROM bv_order_customer_l_effsat
@@ -58,14 +59,18 @@ census(){ q "SELECT group_concat(t||'='||n,' ') FROM (
 vault_tables(){ q "SELECT name FROM sqlite_master WHERE type='table'
                    AND (name LIKE 'rv\_%' ESCAPE '\' OR name LIKE 'bv\_%' ESCAPE '\')
                    ORDER BY name"; }
+# Vault objects outside the rv_*/bv_* table list: the reference table and
+# every bv_ view.
+extra_objects(){ q "SELECT name FROM sqlite_master WHERE (type='table' AND name LIKE 'ref\_%' ESCAPE '\')
+                    OR (type='view' AND name LIKE 'bv\_%' ESCAPE '\') ORDER BY name"; }
 # Full content of one table, every column, in a total order (ORDER BY each
 # column position), so two dumps are equal only if the rows are.
 dump(){ q "SELECT * FROM $1 ORDER BY $(q "SELECT group_concat(cid+1,',') FROM pragma_table_info('$1')")"; }
 # Snapshot every vault table, `make rebuild` from the archive, compare
 # table by table. $1 labels the assertions.
 rebuild_check(){ local label="$1" t tables want rc=0 snapdir="$LOGDIR/snap-$FEED_N"
-  mkdir -p "$snapdir"; tables="$(vault_tables)"
-  for t in $tables; do dump "$t" > "$snapdir/$t"; done
+  mkdir -p "$snapdir"; tables="$(vault_tables)"; extra="$(extra_objects)"
+  for t in $tables $extra; do dump "$t" > "$snapdir/$t"; done
   rm -f "$DB"
   make -s -C "$PROJ" rebuild >"$LOGDIR/rebuild-$FEED_N.log" 2>&1 || rc=$?
   ck "[$label] make rebuild exits 0" "$rc" "0"
@@ -76,7 +81,78 @@ rebuild_check(){ local label="$1" t tables want rc=0 snapdir="$LOGDIR/snap-$FEED
     case "$want" in ''|*'<SQL-ERROR>'*) want="<no valid snapshot of $t>";; esac
     ck "[$label] $t reproduced row for row ($(grep -c "" "$snapdir/$t") rows)" \
        "$(dump "$t")" "$want"
+  done
+  # The reference table and the business vault's views (the computed
+  # status satellite) are rebuilt too; snapshots were taken above.
+  for t in $extra; do
+    want="$(cat "$snapdir/$t")"
+    case "$want" in ''|*'<SQL-ERROR>'*) want="<no valid snapshot of $t>";; esac
+    ck "[$label] $t reproduced row for row ($(grep -c "" "$snapdir/$t") rows)" \
+       "$(dump "$t")" "$want"
   done; }
+
+# ---- reserved keys, CPIT tables, bridge -------------------------------
+RES="('0','-1','-2')"
+GHOST_TS='1900-01-01 00:00:00'
+# Every hub holds exactly the three reserved rows, every raw satellite
+# exactly one ghost row, all written at init with the BASELINE- sources.
+reserved_check(){ local label="$1" e k t want
+  for e in customer product order; do k="${e}_bk"
+    for t in "rv_${e}_h" "rv_${e}_hsat" "rv_${e}_sts"; do
+      case "$t" in
+        *_h) want="-1=BASELINE-nullkey-required@$GHOST_TS,-2=BASELINE-nullkey-optional@$GHOST_TS,0=BASELINE-ghostrec@$GHOST_TS";;
+        *)   want="0=BASELINE-ghostrec@$GHOST_TS";;
+      esac
+      ck "[$label] $t holds exactly its reserved rows" \
+         "$(q "SELECT group_concat(k||'='||rsrc||'@'||ldts, ',') FROM
+                 (SELECT $k k, rsrc, ldts FROM $t WHERE $k IN $RES ORDER BY k)")" "$want"
+    done
+  done; }
+# CPIT invariants for one entity: one row per real hub key, no NULL
+# pointer, every non-ghost pointer at the newest row of its satellite,
+# every ghost pointer only where the key has no row there.
+ptr_bad(){ local e="$1" k="$1_bk" sat="$2" col="$3"   # col: hsat | sts
+  q "SELECT COUNT(*) FROM bv_${e}_cpit p WHERE NOT (
+       (p.${col}_bk = p.$k AND p.${col}_ldts =
+          (SELECT MAX(ldts) FROM $sat x WHERE x.$k = p.$k))
+    OR (p.${col}_bk = '0' AND p.${col}_ldts = '$GHOST_TS'
+        AND NOT EXISTS (SELECT 1 FROM $sat x WHERE x.$k = p.$k)))"; }
+cpit_check(){ local label="$1" e k
+  for e in customer product order; do k="${e}_bk"
+    ck "[$label] bv_${e}_cpit: exactly one row per real hub key" \
+       "$(q "SELECT (SELECT COUNT(*) FROM bv_${e}_cpit) = (SELECT COUNT(*) FROM rv_${e}_h WHERE $k NOT IN $RES)
+                AND NOT EXISTS (SELECT $k FROM rv_${e}_h WHERE $k NOT IN $RES
+                                EXCEPT SELECT $k FROM bv_${e}_cpit)")" "1"
+    ck "[$label] bv_${e}_cpit: no NULL pointer" \
+       "$(q "SELECT COUNT(*) FROM bv_${e}_cpit p WHERE $(q "SELECT group_concat('p.'||name||' IS NULL',' OR ')
+              FROM pragma_table_info('bv_${e}_cpit')")")" "0"
+    ck "[$label] bv_${e}_cpit: hsat pointers at the newest row, or the ghost" "$(ptr_bad "$e" "rv_${e}_hsat" hsat)" "0"
+    ck "[$label] bv_${e}_cpit: sts pointers at the newest row, or the ghost"  "$(ptr_bad "$e" "rv_${e}_sts"  sts)"  "0"
+  done
+  ck "[$label] bv_order_cpit: effectivity pointer at the current pairing, or the ghost" \
+     "$(q "SELECT COUNT(*) FROM bv_order_cpit p WHERE NOT (
+             (p.eff_customer_bk, p.eff_ldts) IN
+               (SELECT customer_bk, ldts FROM bv_order_customer_l_effsat e WHERE e.order_bk = p.order_bk
+                ORDER BY start_date DESC, ldts DESC LIMIT 1)
+          OR (p.eff_customer_bk = '0' AND p.eff_ldts = '$GHOST_TS'
+              AND NOT EXISTS (SELECT 1 FROM bv_order_customer_l_effsat e WHERE e.order_bk = p.order_bk)))")" "0"
+  ck "[$label] bv_order_bridge: one row per order line" \
+     "$(q "SELECT (SELECT COUNT(*) FROM bv_order_bridge) = (SELECT COUNT(*) FROM rv_order_product_l)
+              AND NOT EXISTS (SELECT order_bk, product_bk FROM rv_order_product_l
+                              EXCEPT SELECT order_bk, product_bk FROM bv_order_bridge)")" "1"
+  ck "[$label] bv_order_bridge: each line carries its order's current customer, or '0'" \
+     "$(q "SELECT COUNT(*) FROM bv_order_bridge b WHERE b.customer_bk <>
+             COALESCE((SELECT customer_bk FROM v_order_customer_current c WHERE c.order_bk = b.order_bk), '0')")" "0"; }
+# Every info-mart and audit view, with its key column(s).
+MART_KEYS="dim_customer:customer_ref dim_product:sku fact_order:order_ref
+  v_customer_hsat_current:customer_bk v_product_hsat_current:product_bk v_order_hsat_current:order_bk
+  v_customer_sts_current:customer_bk v_product_sts_current:product_bk v_order_sts_current:order_bk
+  v_order_status_history:order_ref v_status_history:business_key"
+# UPDATE / DELETE against the vault database must abort.
+ck_abort_db(){ local label="$1" sql="$2" want="$3" out
+      out="$("$SQLITE" "$DB" "$sql" 2>&1)"
+      case "$out" in *"$want"*) PASS=$((PASS+1)); printf "  \033[32mPASS\033[0m %s\n" "$label";;
+        *) FAIL=$((FAIL+1)); printf "  \033[31mFAIL\033[0m %s  (got '%s')\n" "$label" "$out";; esac; }
 
 # Run one delivery; abort the suite if a loader crashes (past that point
 # every assertion measures a half-loaded database, not the code).
@@ -104,11 +180,14 @@ sts(){ q "SELECT sts FROM v_customer_sts_current WHERE customer_bk='$1'"; }
 
 echo "== Fresh db + archive =="; rm -f "$DB" "$ARCHIVE_DB"; "$PROJ/scripts/init_db.sh" >/dev/null
 
+echo; echo "== Reserved keys: written at init, before any delivery =="
+reserved_check "init"
+
 echo; echo "== D0: FULL baseline =="
 feed d0_baseline.sql B0 '2026-02-05 08:00:00'
-ck "baseline: 2 customer keys"   "$(q 'SELECT COUNT(*) FROM rv_customer_h')" "2"
-ck "baseline: 3 product keys"    "$(q 'SELECT COUNT(*) FROM rv_product_h')" "3"
-ck "baseline: 2 order keys"      "$(q 'SELECT COUNT(*) FROM rv_order_h')" "2"
+ck "baseline: 2 customer keys"   "$(q "SELECT COUNT(*) FROM rv_customer_h WHERE customer_bk NOT IN ('0','-1','-2')")" "2"
+ck "baseline: 3 product keys"    "$(q "SELECT COUNT(*) FROM rv_product_h WHERE product_bk NOT IN ('0','-1','-2')")" "3"
+ck "baseline: 2 order keys"      "$(q "SELECT COUNT(*) FROM rv_order_h WHERE order_bk NOT IN ('0','-1','-2')")" "2"
 ck "baseline: C001 email v1"     "$(q "SELECT email FROM dim_customer WHERE customer_ref='C001'")" "alice@example.com"
 ck "baseline: 2 current order->customer pairings" \
    "$(q 'SELECT COUNT(*) FROM v_order_customer_current')" "2"
@@ -146,6 +225,10 @@ ck "tombstone: C002 gone from dim_customer" "$(q "SELECT COALESCE((SELECT email 
 ck "tombstone: O-101 placed_by now NULL"    "$(q "SELECT COALESCE((SELECT placed_by FROM fact_order WHERE order_ref='O-101'),'<none>')")" "<none>"
 ck "tombstone: C002 attribute history intact" \
    "$(q "SELECT full_name FROM rv_customer_hsat WHERE customer_bk='C002'")" "Bob Jones"
+ck "CPIT: deleted C002 keeps its row, its sts pointer names the 'D' row" \
+   "$(q "SELECT st.sts||'@'||st.ldts FROM bv_customer_cpit p
+          JOIN rv_customer_sts st ON st.customer_bk = p.sts_bk AND st.ldts = p.sts_ldts
+         WHERE p.customer_bk='C002'")" "D@2026-03-16 08:00:00"
 
 echo; echo "== D4: INCREMENTAL adds C003; recency de-dup at stage 2 =="
 feed d4_cust_recency.sql D4 '2026-04-02 08:00:00'
@@ -169,6 +252,29 @@ echo; echo "== Contrast: absence deletes under FULL, never under INCREMENTAL =="
 ck "C002 presence timeline is exactly I -> D (2 assertions)" \
    "$(q "SELECT group_concat(sts,'') FROM (SELECT sts FROM rv_customer_sts WHERE customer_bk='C002' ORDER BY ldts)")" "ID"
 
+echo; echo "== Query assistance after D5: CPIT and bridge =="
+cpit_check "after D5"
+
+echo; echo "== Raw vault: insert-only, enforced =="
+for t in $(q "SELECT name FROM sqlite_master WHERE type='table'
+              AND (name LIKE 'rv\_%' ESCAPE '\' OR name LIKE 'ref\_%' ESCAPE '\'
+                   OR name = 'bv_order_customer_l_effsat') ORDER BY name"); do
+  ck_abort_db "UPDATE on $t aborts" "UPDATE $t SET ldts=ldts;" "insert-only"
+  ck_abort_db "DELETE on $t aborts" "DELETE FROM $t;"          "insert-only"
+done
+ck "only the bv_ query-assist tables can be rewritten" \
+   "$(q "SELECT group_concat(name,' ') FROM (SELECT name FROM sqlite_master m WHERE type='table'
+          AND (name LIKE 'rv\_%' ESCAPE '\' OR name LIKE 'bv\_%' ESCAPE '\' OR name LIKE 'ref\_%' ESCAPE '\')
+          AND NOT EXISTS (SELECT 1 FROM sqlite_master t WHERE t.type='trigger' AND t.tbl_name=m.name
+                          AND t.name=m.name||'_no_update')
+          AND NOT EXISTS (SELECT 1 FROM sqlite_master t WHERE t.type='trigger' AND t.tbl_name=m.name
+                          AND t.name=m.name||'_no_delete') ORDER BY name)")" \
+   "bv_customer_cpit bv_order_bridge bv_order_cpit bv_product_cpit"
+ck_abort_db "a loader-style insert of a reserved hub key aborts" \
+   "INSERT INTO rv_customer_h VALUES ('0','2027-01-01 00:00:00','CRM.CUSTOMER');" "reserved key"
+ck_abort_db "a loader-style ghost-key satellite row aborts" \
+   "INSERT INTO rv_customer_hsat(customer_bk,ldts,rsrc,diff_str) VALUES ('0','2027-01-01 00:00:00','CRM.CUSTOMER','x');" "reserved key"
+
 echo; echo "== Archive: append-only is absolute =="
 ck "archive captured every delivered row" \
    "$(aq "SELECT (SELECT COUNT(*) FROM arch.hist_customer)+(SELECT COUNT(*) FROM arch.hist_product)
@@ -191,6 +297,7 @@ feed d3_cust_tombstone.sql   D3 '2027-01-05 08:03:00'
 feed d4_cust_recency.sql     D4 '2027-01-05 08:04:00'
 feed d5_cust_yearly_full.sql D5 '2027-01-05 08:05:00'
 ck "replay: zero new vault rows" "$(census)" "$census_0"
+reserved_check "after the full replay"
 
 echo; echo "== Driving key: OMS re-points O-101 from C002 to C001 =="
 feed d6_repoint.sql D6 '2027-02-01 08:00:00' "$HERE/fixtures"
@@ -206,6 +313,11 @@ ck "repoint: placed_by resolves to Alice Smith" \
    "$(q "SELECT placed_by FROM fact_order WHERE order_ref='O-101'")" "Alice Smith"
 ck "repoint: unchanged order attrs -> no new sat row" \
    "$(q "SELECT COUNT(*) FROM rv_order_hsat WHERE order_bk='O-101'")" "1"
+ck "repoint: CPIT effectivity pointer is C001, opened by D6" \
+   "$(q "SELECT eff_customer_bk||'@'||eff_ldts FROM bv_order_cpit WHERE order_bk='O-101'")" "C001@2027-02-01 08:00:00"
+ck "repoint: bridge carries O-101's line under C001 only" \
+   "$(q "SELECT group_concat(product_bk||'>'||customer_bk) FROM bv_order_bridge WHERE order_bk='O-101'")" "SKU-2>C001"
+cpit_check "after D6"
 
 echo; echo "== True loader idempotence: same content, NEW file_id, loaders RUN, write nothing =="
 # The earlier replay block proves the skip guard (same file_id -> loaders
@@ -220,10 +332,69 @@ ck "re-asserted current state writes zero vault rows" "$(census)" "$before_d6r"
 echo; echo "== Rebuild after D6/D6R, then the soft-rule test on the rebuilt vault =="
 rebuild_check "after D6R"
 
+echo; echo "== D7: an order with no customer, and a customer with no satellite row =="
+feed d7_null_customer.sql D7 '2027-03-01 08:00:00' "$HERE/fixtures"
+ck "null customer_ref: O-102 linked to the required-null key '-1'" \
+   "$(q "SELECT group_concat(customer_bk) FROM rv_order_customer_l WHERE order_bk='O-102'")" "-1"
+ck "null customer_ref: O-102's current pairing is '-1'" \
+   "$(q "SELECT customer_bk FROM v_order_customer_current WHERE order_bk='O-102'")" "-1"
+ck "null customer_ref: O-102 is in the mart, placed by nobody" \
+   "$(q "SELECT order_ref||'/'||COALESCE(placed_by,'<none>') FROM fact_order WHERE order_ref='O-102'")" "O-102/<none>"
+ck "null customer_ref: no '-1' row in dim_customer" \
+   "$(q "SELECT COUNT(*) FROM dim_customer WHERE customer_ref='-1'")" "0"
+ck "null customer_ref: bridge carries O-102's line under '-1'" \
+   "$(q "SELECT product_bk||'>'||customer_bk FROM bv_order_bridge WHERE order_bk='O-102'")" "SKU-1>-1"
+ck "no satellite row: C900 (a link end only) has a CPIT row on the ghost" \
+   "$(q "SELECT hsat_bk||'@'||hsat_ldts||' '||sts_bk||'@'||sts_ldts FROM bv_customer_cpit WHERE customer_bk='C900'")" \
+   "0@$GHOST_TS 0@$GHOST_TS"
+ck "no satellite row: C900 stays out of dim_customer" \
+   "$(q "SELECT COUNT(*) FROM dim_customer WHERE customer_ref='C900'")" "0"
+cpit_check "after D7"
+reserved_check "after D7"
+for vk in $MART_KEYS; do
+  ck "no reserved key in ${vk%%:*}" \
+     "$(q "SELECT COUNT(*) FROM ${vk%%:*} WHERE ${vk#*:} IN $RES")" "0"
+done
+rebuild_check "after D7"
+
 echo; echo "== Soft rule change: retroactive without any reload =="
 q "UPDATE dv_load_params SET batch_ts=batch_ts" >/dev/null   # no-op; vault untouched below
 ck "raw 'P' still in the vault"          "$(q "SELECT status FROM rv_order_hsat WHERE order_bk='O-100'")" "P"
 ck "mart derives PENDING from it today"  "$(q "SELECT status FROM fact_order WHERE order_ref='O-100'")" "PENDING"
+ck "the decode is a view (bv_order_status_bsat), not a stored table" \
+   "$(q "SELECT type FROM sqlite_master WHERE name='bv_order_status_bsat'")" "view"
+ck "the mart holds no decode of its own" \
+   "$(q "SELECT COUNT(*) FROM sqlite_master WHERE type='view' AND name IN ('dim_customer','dim_product','fact_order','v_order_status_history')
+          AND (sql LIKE '%PENDING%' OR sql LIKE '%CASE%')")" "0"
+census_r="$(census)"; files_r="$(aq 'SELECT COUNT(*) FROM arch.loaded_files')"
+q "INSERT INTO ref_order_status(code,label,ldts,rsrc) VALUES ('P','AWAITING SHIPMENT','2027-04-01 00:00:00','OPS.RULES')" >/dev/null
+ck "new reference row: O-100 reads AWAITING SHIPMENT in the mart" \
+   "$(q "SELECT status FROM fact_order WHERE order_ref='O-100'")" "AWAITING SHIPMENT"
+ck "new reference row: every historical 'P' row is relabelled" \
+   "$(q "SELECT COUNT(*) FROM v_order_status_history WHERE raw_status='P' AND status<>'AWAITING SHIPMENT'")/$(q "SELECT COUNT(*) > 0 FROM v_order_status_history WHERE raw_status='P'")" "0/1"
+ck "new reference row: other codes keep their labels" \
+   "$(q "SELECT status FROM fact_order WHERE order_ref='O-103'")" "SHIPPED"
+ck "new reference row: no reload (vault rows and deliveries unchanged)" \
+   "$(census)/$(aq 'SELECT COUNT(*) FROM arch.loaded_files')" "$census_r/$files_r"
+ck "new reference row: the old label stays in the reference history" \
+   "$(q "SELECT group_concat(label,'>') FROM (SELECT label FROM ref_order_status WHERE code='P' ORDER BY ldts)")" "PENDING>AWAITING SHIPMENT"
+
+echo; echo "== A delivery naming a reserved value as a business key is refused =="
+# Own database pair: the refused delivery stays STARTED, which must never
+# reach the main archive.
+SAVE_DB="$DB"; SAVE_ARCHIVE_DB="$ARCHIVE_DB"
+export DB="$LOGDIR/reserved.db" ARCHIVE_DB="$LOGDIR/reserved_archive.db"
+rm -f "$DB" "$ARCHIVE_DB"; "$PROJ/scripts/init_db.sh" >/dev/null 2>&1
+cat > "$LOGDIR/reserved.sql" <<'SQL'
+INSERT INTO stg_customer_l1(customer_id, full_name, email_addr, signup_date, extract_dt, op, load_mode) VALUES
+('0','Zero Person','zero@x.com','2026-01-01','2027-05-01','UPSERT','INCREMENTAL');
+SQL
+rc=0; BATCH_TS='2027-05-01 08:00:00' "$PROJ/scripts/load_feed.sh" "$LOGDIR/reserved.sql" RZ \
+  >"$LOGDIR/reserved.log" 2>&1 || rc=$?
+ck "customer_id '0' is refused before any loader runs" \
+   "$([ "$rc" -ne 0 ] && grep -q 'reserved key value' "$LOGDIR/reserved.log" && echo refused || echo "accepted (exit $rc)")" "refused"
+reserved_check "after the refused delivery"
+export DB="$SAVE_DB" ARCHIVE_DB="$SAVE_ARCHIVE_DB"
 
 echo; echo "== Load control: a file_id names CONTENT (same block in all ten suites) =="
 # Own database pair, so these deliveries never reach the main archive or

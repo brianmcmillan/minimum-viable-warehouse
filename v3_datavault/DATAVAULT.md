@@ -8,13 +8,13 @@ is the model, not the data.
 
 ```bash
 make demo   # baseline + 5 deliveries + info mart
-make test   # 130 assertions: the Focal scenarios + DV-specific behaviours
+make test   # 304 assertions: the Focal scenarios + DV-specific behaviours
 make rebuild   # regenerate the vault by replaying archive/datavault_archive.db
 ```
 
 Structure follows the DV101 Baseline conventions (source → stage L1 →
 stage L2 → raw vault → business vault → info mart; `rv_*_h` / `_hsat` /
-`_l`, `rsrc` + `ldts` on every row, insert-only throughout). The code is
+`_l`, `rsrc` + `ldts` on every row, insert-only throughout the raw vault). The code is
 original; the training package's SQL is © DataVaultAlliance and only its
 *patterns* are reproduced here.
 
@@ -68,9 +68,30 @@ Both demos enforce this identically. What differs is the *representation*:
   are unchanged. Load control is the rule all ten models share: a reused
   `file_id` whose rows differ from the archived ones (count, values or
   order) is rejected, whether the delivery is `COMPLETE` or crashed.
-- **Scope**: hubs, sats, status sats, links, one effectivity sat, info
-  mart. Ghost records, PIT/bridge, same-as links and multi-active sats are
-  omitted — the shared sample data has no scenario for them.
+- **Reserved keys are stored as natural values.** Every hub holds `'0'`
+  (ghost record, `rsrc` `BASELINE-ghostrec`), `'-1'` (required key left
+  null, `BASELINE-nullkey-required`) and `'-2'` (optional key left null,
+  `BASELINE-nullkey-optional`), all at `ldts` `1900-01-01 00:00:00`, and
+  every raw satellite one ghost row for `'0'`. The standard stores the
+  *hashes* of these values; with natural keys this demo stores `'0'`,
+  `'-1'` and `'-2'` as they are. This is the one recorded deviation in
+  how the standard's constructs are built. They are written at init (so
+  `make rebuild` reproduces them), triggers stop any loader writing one,
+  and a delivery naming a reserved value as a business key is refused.
+  The effectivity satellite has no ghost row; the order CPIT's
+  effectivity pointer names the current customer instead.
+- **Scope**: hubs, sats, status sats, links and a reference table in the
+  raw vault; reserved ghost and null keys; in the business vault one
+  effectivity sat, one computed satellite (`bv_order_status_bsat`, the
+  status decode, kept a view), and the query-assist tables — three
+  current point-in-time tables (`bv_*_cpit`) and an order bridge
+  (`bv_order_bridge`), rewritten after every delivery and the only tables
+  in the vault that ever are; then the info mart, which reads current rows
+  through the CPITs with inner joins only. Multi-active satellites, hash
+  keys and same-as links are still omitted. A same-as link joins two
+  business keys that mean one thing — the right tool for a second CRM
+  issuing its own customer numbers, not for a status code and its label,
+  which is a code lookup: a reference table plus a computed satellite.
 
 ## What the vault demonstrates that Focal (currently) cannot
 
@@ -81,8 +102,9 @@ Both demos enforce this identically. What differs is the *representation*:
    `load_rel.sh` would leave the order attached to both customers (its
    known driving-key gap).
 2. **Raw vs soft rules without a rebuild.** The vault stores OMS's raw
-   `'P'`; `fact_order` translates it on read. Change the rule and history
-   reflects it instantly. Focal translates at ingest and needs its
+   `'P'`; the computed satellite `bv_order_status_bsat` decodes it on read
+   from the latest `ref_order_status` row per code. Insert a new reference
+   row and history reflects it instantly. Focal translates at ingest and needs its
    delivery archive + `make rebuild` for the same guarantee.
 3. **Entity presence as a first-class fact.** `dim_customer` excludes
    deleted customers because the status satellite says so — Focal's
@@ -106,15 +128,20 @@ Both demos enforce this identically. What differs is the *representation*:
 
 ## Row-count comparison after the identical demo
 
-Same six deliveries, both models, derived tables only:
+Same six deliveries, both models, derived tables only. Data Vault counts
+are delivered rows + reserved rows (each hub holds three, each raw
+satellite one ghost row):
 
 | concept | Focal | Data Vault |
 |---|---|---|
-| customer keys | `customer_idfr` 3 + `customer_focal` 3 | `rv_customer_h` 3 |
-| customer attributes | `customer_desc` 16 rows (narrow: per context, incl. closing rows) | `rv_customer_hsat` 4 rows (wide, per change; deletes write none) |
-| customer presence | inside `_desc` via `row_st` | `rv_customer_sts` 5 rows |
+| customer keys | `customer_idfr` 3 + `customer_focal` 3 | `rv_customer_h` 3 + 3 reserved |
+| customer attributes | `customer_desc` 16 rows (narrow: per context, incl. closing rows) | `rv_customer_hsat` 4 rows + 1 ghost (wide, per change; deletes write none) |
+| customer presence | inside `_desc` via `row_st` | `rv_customer_sts` 5 rows + 1 ghost |
 | order↔customer | `order_customer_x` 2 | `rv_order_customer_l` 2 + effsat 2 |
-| business views | pivot + `MAX(CASE…)` per read | key-per-row joins, no pivot |
+| status decode | `meta_value_map`, applied at ingest | `ref_order_status` 4 rows + `bv_order_status_bsat` (a view) |
+| current-row lookup | — | `bv_customer_cpit` 3, `bv_product_cpit` 3, `bv_order_cpit` 2 (generated) |
+| order lines with customer | — | `bv_order_bridge` 3 (generated) |
+| business views | pivot + `MAX(CASE…)` per read | key-per-row joins through the CPITs, no pivot |
 
 Neither column is "smaller" once presence and effectivity are accounted
 for; they spend their rows on different questions.
@@ -125,14 +152,17 @@ for; they spend their rows on different questions.
 schema/01_stage.sql           stage L1 tables, load params
 schema/02_archive.sql         raw layer: loaded_files + hist_* (separate db, append-only)
 schema/02_stage2_views.sql    system columns + diff_str + recency dedup
-schema/03_raw_vault.sql       hubs, satellites, status sats, links
-schema/04_business_vault.sql  insert-only effectivity sat + LEAD views
+schema/03_raw_vault.sql       hubs, satellites, status sats, links, ref_order_status, reserved keys
+schema/04_business_vault.sql  effectivity sat + LEAD views, computed status sat (view), CPIT + bridge
 schema/05_info_mart.sql       dim_customer / dim_product / fact_order + audit views
 scripts/load_feed.sh          driver: stage → archive → apply, load control
-scripts/apply_delivery.sh     hubs → sats → links; shared by ingest and replay
+scripts/apply_delivery.sh     hubs → sats → links → refresh; shared by ingest and replay
+scripts/refresh_query_assist.sh  rewrite the CPIT and bridge tables after every delivery
 scripts/rebuild.sh            re-init the vault and replay the archive in load_seq order
 scripts/load_hubs|sats|links.sh   the three loaders (cf. Focal's keys/desc/rel)
 source/d0..d5*.sql            the six deliveries, wide restatement of Focal's
-tests/run_tests.sh            130 assertions incl. mutation-hardened idempotence + rebuild
+tests/run_tests.sh            304 assertions incl. mutation-hardened idempotence + rebuild
+tests/mutations_todo.md       five mutations for C3 to run against the suite
 tests/fixtures/d6_repoint.sql the driving-key scenario Focal cannot express
+tests/fixtures/d7_null_customer.sql  a null customer_ref, and a customer with no satellite row
 ```

@@ -233,7 +233,9 @@ SOLUTIONS = [
     dict(dir="v3_datavault", name="Data Vault 2.0", notes="DATAVAULT.md",
          build="build/datavault.db", archive="archive/datavault_archive.db",
          core_text="Hubs (`_h`), links (`_l`), satellites (`_hsat`), status "
-                   "satellites (`_sts`) and one effectivity satellite."),
+                   "satellites (`_sts`), a reference table, one effectivity "
+                   "satellite, and the generated point-in-time (`_cpit`) and "
+                   "bridge tables."),
     dict(dir="v3_focal-point", name="Focal Point", notes="FOCALPOINT.md",
          build="build/focal.db", archive="archive/focal_archive.db",
          core_text="Three generic tables per entity (`_idfr`, `_focal`, `_desc`) "
