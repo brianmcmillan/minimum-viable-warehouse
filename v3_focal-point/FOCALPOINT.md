@@ -89,7 +89,7 @@ things the framework previously could not do:
   from backup, because the raw input was never destroyed.
 - **Change a business rule retroactively.** `load_desc.sh` translates `'P'` into
   `'PENDING'` at ingest via `meta_value_map` — but the raw `'P'` now survives in
-  `source_landing_history`. Edit the rule in `schema/03_seed_metadata.sql`, run
+  the archive (`hist_order.status`). Edit the rule in `schema/03_seed_metadata.sql`, run
   `make rebuild`, and the whole history is re-derived under the new rule.
   (Edit the *seed*, not the table: `rebuild` recreates `focal.db` from schema.)
 
@@ -101,7 +101,8 @@ on the order identifiers are first seen. Replaying the archive reproduces them
 
 1. deliveries replay in `load_seq` order (ingest order). Replay `D4` before `D0`
    and `C003` gets key `1001` instead of `1003`.
-2. a delivery's rows are restored to `source_landing_stage` in `seq_nbr` order,
+2. a delivery's wide rows are restored to the `stg_*_l1` tables in `seq_nbr`
+   order, and `stage_narrow.sh` keeps that order within every key and attribute,
    because the recency-dedup tiebreak is `ORDER BY extract_ts DESC, rowid DESC`.
    When two rows carry the same `extract_ts`, physical order decides.
 3. `load_keys.sh` iterates feeds in a fixed order.
@@ -128,16 +129,21 @@ durable identifier→key registry in the archive, or deterministic (hashed) keys
 ## What changed vs. the canonical variant
 
 - `source_landing` gains `op` (UPSERT/DELETE) and `load_mode`.
-- New `source_landing_stage` (delivery lands here, then recency-deduped) and
+- New `source_landing_stage` (the narrow stage, then recency-deduped) and
   `meta_source_feed` (declared strategy).
-- New **archive database**: `source_landing_history` (append-only raw layer) and
-  `loaded_files` (load control). It lives outside `build/`, so `make clean` and
-  `init_db.sh` cannot destroy it; `make clean-archive` is the only thing that does.
+- New **archive database**: the shared wide raw layer (`hist_*`, one table per
+  source extract, append-only) and `loaded_files` (load control). It lives
+  outside `build/`, so `make clean` and `init_db.sh` cannot destroy it;
+  `make clean-archive` is the only thing that does.
 - `load_feed.sh` driver: stage, verify the delivery matches what was archived
   under that `file_id`, archive it, apply it, and only then mark it `COMPLETE`.
   A delivery that crashes mid-load stays retryable rather than being skipped as done.
 - `apply_delivery.sh`: the one path from staged rows to the warehouse, shared by
   `load_feed.sh` (ingest) and `rebuild.sh` (replay).
+- Wide deliveries: the files in `source/` are the wide ones every other model
+  loads, staged into `stg_*_l1` and archived as they are. `stage_narrow.sh` then
+  unpivots them into `source_landing_stage`, on ingest and on replay alike, so
+  the loaders still read narrow key/value rows.
 - `load_desc.sh` / `load_rel.sh` branch on mode: absence-delete only for FULL,
   tombstone-delete always, NEW/CHANGE/NOCHANGE unchanged.
 - Data layer (`02_data.sql`) and semantic views (`04_views.sql`) untouched.
@@ -146,6 +152,24 @@ Maps directly to Daana's ingestion strategies (`FULL`, `INCREMENTAL`,
 `FULL_LOG`, `TRANSACTIONAL`) and the Top of Minds principle that the load
 strategy is a property of the *source*, decided per feed — not baked into
 one global loader.
+
+## A native narrow archive is a supported option
+
+If your extracts really are narrow (an EAV export, or a change stream that
+sends one attribute at a time), you can stage them straight into
+`source_landing_stage`, archive that shape (a `source_landing_history`-style
+table keyed on file and row), and skip `stage_narrow.sh`. The loaders don't
+change. Two costs come with it:
+
+- **It makes switching harder, in both directions.** The models that take wide
+  extracts can't replay a narrow archive, and Focal can't replay theirs,
+  without a conversion step. The delivery files also stop being shared, so a
+  cross-model comparison is no longer like for like.
+- **It needs its own content-checked load-control guard.** The shared guard
+  compares the wide stage with the `hist_*` tables only. A narrow archive must
+  compare `source_landing_stage` with its own history table, every row and in
+  order, to keep the same rule: a reused `file_id` whose rows differ is
+  rejected, whether the delivery completed or crashed.
 
 ## Known gap: driving-key relationship effectivity
 

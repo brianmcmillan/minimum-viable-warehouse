@@ -125,8 +125,8 @@ type. Presence is an existence knot, so the ghost-row problem cannot
 happen here. The business key is itself an attribute, and the historized
 tie handles the re-pointed order natively. Anchor is Focal's philosophy
 at the opposite physical extreme — its loader is literally Focal's
-metadata loop retargeted at typed tables, which is why the two share
-byte-identical narrow delivery files. Anchor ships no loading doctrine of
+metadata loop retargeted at typed tables, which is why the two read the
+same narrow landing (unpivoted from the shared wide files). Anchor ships no loading doctrine of
 its own (the official tooling generates DDL and triggers, not
 pipelines), so the shared discipline fills that gap. Knots are closed
 domains: an unknown status code fails the load rather than inventing a
@@ -175,8 +175,8 @@ amount are not columns anywhere. SKU-1's price history is two samples, and
 a new metric is a row with no DDL. `RES_ALIAS` resolves whatever a provider
 calls a resource to one `res_id`. It is also the only demo with a calendar:
 planned events attach to groups of resources, so a sample can be read next
-to what was planned that day. It loads the narrow files Focal and Anchor
-share, then a calendar delivery of its own. The bill: `RES` is current
+to what was planned that day. It loads the shared wide files through the
+same narrow landing as Focal and Anchor. The bill: `RES` is current
 state, so a changed email or a re-pointed order overwrites the old value
 and only the archive remembers it, and anything that isn't a number needs
 a column first.
@@ -228,8 +228,8 @@ model doesn't force a difference.
   place as forensics. Success leaves the stage blank.
 - **`make clean` never touches the durable layer.** Destroying raw
   history takes the explicit `clean-archive` target.
-- **Mutation-tested suites** (Metrics mart 192, Activity 139, Focal 99+33,
-  DV 130, USS 129, HOOK 115, Kimball 88, Anchor 88, Inmon 80, OBT 71
+- **Mutation-tested suites** (Metrics mart 222, Activity 139, Focal 120+46,
+  DV 130, USS 129, HOOK 115, Kimball 88, Anchor 124, Inmon 80, OBT 71
   assertions). I broke the FULL-absence guard, the replay ordering, the
   dedup tiebreaks, the restatement and idempotence guards, the tie guards,
   the OBT refresh, the activity loader's event-time and immutability
@@ -241,17 +241,16 @@ model doesn't force a difference.
   driving-key re-point gap runs as amber expected-failure assertions
   that print the suggested fix — and flip the suite red the moment the
   fix lands. See [`v3_focal-point/FOCALPOINT.md`](v3_focal-point/FOCALPOINT.md), "Known gap".
-- **Byte-identical delivery files, pairwise.** DV, Kimball, Inmon, HOOK,
-  USS, Activity Schema and OBT share the wide restatement; Focal, Anchor
-  and the metrics mart share the narrow key-value originals. One logical
-  corpus, two physical shapes, ten consumers.
-- **Archives aligned by shape.** The seven wide-shape archives (Inmon,
-  Kimball, Data Vault, HOOK, USS, Activity Schema, OBT) share one layout (`loaded_files` + `hist_*`)
-  and the archive files in the repo are byte-identical. Focal, Anchor and
-  the metrics mart share the narrow `source_landing_history` layout. No archive carries
-  secondary indexes; at this data volume they add nothing. Re-running
-  `make demo` re-stamps the `loaded_at`/`archived_at` columns, so a fresh
-  archive matches its siblings in everything except those timestamps.
+- **One raw layer for all ten.** Every model loads the same six wide
+  delivery files, byte for byte, and keeps them in the same archive
+  layout (`loaded_files` + one `hist_*` table per source extract,
+  append-only). Focal Point, Anchor and the metrics mart unpivot the wide
+  rows into key/value rows in a second staging step (`stage_narrow.sh`);
+  a native narrow archive stays a supported option for them, at the cost
+  of switching to or from the others. No archive carries secondary
+  indexes; at this data volume they add nothing. Re-running `make demo`
+  re-stamps the `loaded_at`/`archived_at` columns, so a fresh archive
+  matches its siblings in everything except those timestamps.
 
 ## Requirements
 

@@ -1,40 +1,20 @@
 -- D0 BASELINE -- FULL initial load of every feed (extract 2026-02-05).
-INSERT INTO source_landing_stage(source_system,source_entity,business_key,attribute_name,value_str,value_num,value_ts,extract_ts,op,load_mode) VALUES
-('CRM','CUSTOMER','C001','customer_ref','C001',NULL,NULL,'2026-02-05','UPSERT','FULL'),
-('CRM','CUSTOMER','C001','email_addr','alice@example.com',NULL,NULL,'2026-02-05','UPSERT','FULL'),
-('CRM','CUSTOMER','C001','full_name','Alice Smith',NULL,NULL,'2026-02-05','UPSERT','FULL'),
-('CRM','CUSTOMER','C001','signup_date',NULL,NULL,'2026-01-05','2026-02-05','UPSERT','FULL'),
-('CRM','CUSTOMER','C002','customer_ref','C002',NULL,NULL,'2026-02-05','UPSERT','FULL'),
-('CRM','CUSTOMER','C002','email_addr','bob@example.com',NULL,NULL,'2026-02-05','UPSERT','FULL'),
-('CRM','CUSTOMER','C002','full_name','Bob Jones',NULL,NULL,'2026-02-05','UPSERT','FULL'),
-('CRM','CUSTOMER','C002','signup_date',NULL,NULL,'2026-01-06','2026-02-05','UPSERT','FULL'),
-('OMS','ORDER','O-100','amount',NULL,29.49,NULL,'2026-02-05','UPSERT','FULL'),
-('OMS','ORDER','O-100','currency','USD',NULL,NULL,'2026-02-05','UPSERT','FULL'),
-('OMS','ORDER','O-100','customer_ref','C001',NULL,NULL,'2026-02-05','UPSERT','FULL'),
-('OMS','ORDER','O-100','order_ref','O-100',NULL,NULL,'2026-02-05','UPSERT','FULL'),
-('OMS','ORDER','O-100','placed_at',NULL,NULL,'2026-02-01 10:00','2026-02-05','UPSERT','FULL'),
-('OMS','ORDER','O-100','status','P',NULL,NULL,'2026-02-05','UPSERT','FULL'),
-('OMS','ORDER','O-101','amount',NULL,19.5,NULL,'2026-02-05','UPSERT','FULL'),
-('OMS','ORDER','O-101','currency','USD',NULL,NULL,'2026-02-05','UPSERT','FULL'),
-('OMS','ORDER','O-101','customer_ref','C002',NULL,NULL,'2026-02-05','UPSERT','FULL'),
-('OMS','ORDER','O-101','order_ref','O-101',NULL,NULL,'2026-02-05','UPSERT','FULL'),
-('OMS','ORDER','O-101','placed_at',NULL,NULL,'2026-02-02 11:30','2026-02-05','UPSERT','FULL'),
-('OMS','ORDER','O-101','status','P',NULL,NULL,'2026-02-05','UPSERT','FULL'),
-('OMS','ORDER_LINE','O-100~SKU-1','order_ref','O-100',NULL,NULL,'2026-02-05','UPSERT','FULL'),
-('OMS','ORDER_LINE','O-100~SKU-1','sku','SKU-1',NULL,NULL,'2026-02-05','UPSERT','FULL'),
-('OMS','ORDER_LINE','O-100~SKU-2','order_ref','O-100',NULL,NULL,'2026-02-05','UPSERT','FULL'),
-('OMS','ORDER_LINE','O-100~SKU-2','sku','SKU-2',NULL,NULL,'2026-02-05','UPSERT','FULL'),
-('OMS','ORDER_LINE','O-101~SKU-2','order_ref','O-101',NULL,NULL,'2026-02-05','UPSERT','FULL'),
-('OMS','ORDER_LINE','O-101~SKU-2','sku','SKU-2',NULL,NULL,'2026-02-05','UPSERT','FULL'),
-('PIM','PRODUCT','SKU-1','currency','USD',NULL,NULL,'2026-02-05','UPSERT','FULL'),
-('PIM','PRODUCT','SKU-1','price',NULL,9.99,NULL,'2026-02-05','UPSERT','FULL'),
-('PIM','PRODUCT','SKU-1','prod_name','Widget',NULL,NULL,'2026-02-05','UPSERT','FULL'),
-('PIM','PRODUCT','SKU-1','sku','SKU-1',NULL,NULL,'2026-02-05','UPSERT','FULL'),
-('PIM','PRODUCT','SKU-2','currency','USD',NULL,NULL,'2026-02-05','UPSERT','FULL'),
-('PIM','PRODUCT','SKU-2','price',NULL,19.5,NULL,'2026-02-05','UPSERT','FULL'),
-('PIM','PRODUCT','SKU-2','prod_name','Gadget',NULL,NULL,'2026-02-05','UPSERT','FULL'),
-('PIM','PRODUCT','SKU-2','sku','SKU-2',NULL,NULL,'2026-02-05','UPSERT','FULL'),
-('PIM','PRODUCT','SKU-3','currency','EUR',NULL,NULL,'2026-02-05','UPSERT','FULL'),
-('PIM','PRODUCT','SKU-3','price',NULL,5.0,NULL,'2026-02-05','UPSERT','FULL'),
-('PIM','PRODUCT','SKU-3','prod_name','Gizmo',NULL,NULL,'2026-02-05','UPSERT','FULL'),
-('PIM','PRODUCT','SKU-3','sku','SKU-3',NULL,NULL,'2026-02-05','UPSERT','FULL');
+-- Wide restatement of the Focal demo's d0_baseline.sql: identical keys,
+-- values, extract dates and modes; the shape matches each source extract.
+INSERT INTO stg_customer_l1(customer_id, full_name, email_addr, signup_date, extract_dt, op, load_mode) VALUES
+('C001','Alice Smith','alice@example.com','2026-01-05','2026-02-05','UPSERT','FULL'),
+('C002','Bob Jones'  ,'bob@example.com'  ,'2026-01-06','2026-02-05','UPSERT','FULL');
+
+INSERT INTO stg_product_l1(sku, prod_name, price, currency, extract_dt, op, load_mode) VALUES
+('SKU-1','Widget', 9.99,'USD','2026-02-05','UPSERT','FULL'),
+('SKU-2','Gadget',19.5 ,'USD','2026-02-05','UPSERT','FULL'),
+('SKU-3','Gizmo' , 5.0 ,'EUR','2026-02-05','UPSERT','FULL');
+
+INSERT INTO stg_order_l1(order_ref, customer_ref, status, amount, currency, placed_at, extract_dt, op, load_mode) VALUES
+('O-100','C001','P',29.49,'USD','2026-02-01 10:00','2026-02-05','UPSERT','FULL'),
+('O-101','C002','P',19.5 ,'USD','2026-02-02 11:30','2026-02-05','UPSERT','FULL');
+
+INSERT INTO stg_order_line_l1(order_ref, sku, extract_dt, op, load_mode) VALUES
+('O-100','SKU-1','2026-02-05','UPSERT','FULL'),
+('O-100','SKU-2','2026-02-05','UPSERT','FULL'),
+('O-101','SKU-2','2026-02-05','UPSERT','FULL');

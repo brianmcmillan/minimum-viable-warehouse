@@ -4,6 +4,9 @@
 -- extract_ts, so the same METRIC_SAMPLE key) and adds an observation
 -- two days later in the same week. The correction OVERWRITES the
 -- sample: the mart keeps no correction history, the archive keeps both.
-INSERT INTO source_landing_stage(source_system,source_entity,business_key,attribute_name,value_str,value_num,value_ts,extract_ts,op,load_mode) VALUES
-('PIM','PRODUCT','SKU-2','price',NULL,20.5,NULL,'2027-03-01','UPSERT','INCREMENTAL'),
-('PIM','PRODUCT','SKU-2','price',NULL,22.5,NULL,'2027-03-03','UPSERT','INCREMENTAL');
+--
+-- Wide, like every delivery: each row restates SKU-2's whole record (name
+-- and currency unchanged), so only the price observations are new.
+INSERT INTO stg_product_l1(sku, prod_name, price, currency, extract_dt, op, load_mode) VALUES
+('SKU-2','Gadget',20.5,'USD','2027-03-01','UPSERT','INCREMENTAL'),
+('SKU-2','Gadget',22.5,'USD','2027-03-03','UPSERT','INCREMENTAL');

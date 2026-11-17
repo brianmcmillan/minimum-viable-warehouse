@@ -26,13 +26,12 @@ under 1,000 lines of shell and SQL:
 > [Activity Schema](../v3_activity-schema), the
 > [metrics mart](../v3_metrics-mart), and
 > [One Big Table](../v3_one-big-table)), so every difference between them is
-> the *model*, never the input. This model takes the narrow,
-> one-row-per-attribute originals shared byte-for-byte by Focal Point,
-> Anchor and the metrics mart. Its archive uses the same narrow layout
-> (`loaded_files` + `source_landing_history`, append-only triggers) as the
-> [Anchor](../v3_anchor) and [metrics mart](../v3_metrics-mart) archives.
-> **This README stands on its own;** [FOCALPOINT.md](FOCALPOINT.md) draws
-> the cross-model comparison.
+> the *model*, never the input. Its deliveries are the wide,
+> one-row-per-record files the wide-shape models share byte-for-byte,
+> archived in their layout (`loaded_files` + per-feed `hist_*` tables,
+> append-only triggers). A second staging step unpivots them into the narrow
+> key/value rows its loaders read. **This README stands on its own;**
+> [FOCALPOINT.md](FOCALPOINT.md) draws the cross-model comparison.
 
 ---
 
@@ -144,10 +143,11 @@ of views that decode the generic rows, so relabelling `CUSTOMER_EMAIL` or adding
 metadata edit, with no DDL and no data migration.
 
 ```
-                        source deliveries (key/value rows)
+                   source deliveries (wide rows, one per record)
                                     │
                      ┌──────────────▼───────────────┐
-                     │  source_landing_stage         │  raw delivery lands here
+                     │  stg_*_l1  (wide)             │  raw delivery lands here; archived as is
+                     │  → source_landing_stage       │  stage_narrow: one key/value row per attribute
                      │      → source_landing         │  recency-deduped, current per feed
                      └──────────────┬───────────────┘
       meta_* tables  ───drives───►  │  loaders (load_keys / load_desc / load_rel)
@@ -201,8 +201,9 @@ identifiers are first seen. Replaying the archive reproduces every key *identica
 three orderings are guaranteed and each has a regression test:
 
 1. deliveries replay in `load_seq` (ingest) order;
-2. a delivery's rows are restored to staging in `seq_nbr` (original physical) order, because the
-   recency-dedup tiebreak reads the staged rowid;
+2. a delivery's wide rows are restored to staging in `seq_nbr` (original physical) order, and
+   `stage_narrow.sh` keeps that order within every key and attribute, because the recency-dedup
+   tiebreak reads the staged rowid;
 3. the key loader iterates feeds in a fixed order.
 
 This is why there is **no retention policy**: replaying a *subset* of deliveries would reassign every
@@ -215,27 +216,47 @@ whole snapshot every run); `make archive-status` makes that growth visible per f
 
 ## How a delivery flows
 
-A delivery is a plain `.sql` file that inserts key/value rows into `source_landing_stage` (see any file
-in [`source/`](source/)). `scripts/load_feed.sh` drives one delivery safely, capturing the raw input
-*before* applying it:
+A delivery is a plain `.sql` file that inserts wide rows, one per record, into the `stg_*_l1` tables:
+the same files, byte for byte, that the wide-shape models load (see any file in [`source/`](source/)).
+`scripts/load_feed.sh` drives one delivery safely, capturing the raw input *before* applying it:
 
-1. **Stage** the delivery into `source_landing_stage`.
+1. **Stage** the delivery into the wide `stg_*_l1` tables.
 2. **Load control** — a `file_id` names a delivery's *content* (a batch/version id, not a filename —
-   extractors reuse filenames). compare the staged file with what the archive holds for its `file_id`:
+   extractors reuse filenames). Compare the staged file with what the archive holds for its `file_id`:
    the row count must match the manifest, and once rows are archived every row must match exactly, order
    included. Any mismatch is rejected loudly, whether the id is `COMPLETE` or a crashed `STARTED` one.
    Only then is a `COMPLETE` id skipped and a `STARTED` one retried.
-3. **Archive** the staged rows verbatim into the append-only `source_landing_history` (idempotent:
+3. **Archive** the staged wide rows verbatim into the append-only `hist_*` tables (idempotent:
    `INSERT OR IGNORE`, which does not fire the delete trigger, so retries are safe).
-4. **Apply** via `apply_delivery.sh` → recency-dedup into `source_landing`, then run the three loaders
+4. **Stage narrow** — `scripts/stage_narrow.sh` unpivots each wide row into one key/value row per
+   attribute in `source_landing_stage`: strings to `value_str`, price/amount to `value_num`, dates to
+   `value_ts`; the record's key as its own attribute row (order lines key on `order_ref~sku`); an
+   empty column as SQL `NULL`; one `_tombstone` row for a `DELETE`; in a fixed order (feed, wide row,
+   attribute). Replay runs the same step.
+5. **Apply** via `apply_delivery.sh` → recency-dedup into `source_landing`, then run the three loaders
    (`load_keys` → `load_desc` → `load_rel`), each of which branches on the effective FULL/INCREMENTAL
    mode.
-5. **Mark COMPLETE** only after every loader succeeds. A delivery that crashes half-way stays
+6. **Mark COMPLETE** only after every loader succeeds. A delivery that crashes half-way stays
    `STARTED` and is retried on the next run, never skipped as done.
 
 De-duplication happens at three levels: the **file** level (a re-sent `file_id` is skipped), the
 **row** level (a repeated attribute keeps the newest by `extract_ts`), and the **version** level (an
 unchanged fact is classified `NOCHANGE` and writes nothing).
+
+### A native narrow archive is a supported option
+
+If your extracts really are narrow (an EAV export, or a change stream that sends one attribute at a
+time), you can stage them straight into `source_landing_stage`, archive that shape (a
+`source_landing_history`-style table keyed on file and row), and skip `stage_narrow.sh`. The loaders
+don't change. Two costs come with it:
+
+- **It makes switching harder, in both directions.** The models that take wide extracts can't
+  replay a narrow archive, and Focal can't replay theirs, without a conversion step. The
+  delivery files also stop being shared, so a cross-model comparison is no longer like for like.
+- **It needs its own content-checked load-control guard.** The shared guard compares the wide
+  stage with the `hist_*` tables only. A narrow archive must compare `source_landing_stage`
+  with its own history table, every row and in order, to keep the same rule: a reused
+  `file_id` whose rows differ is rejected, whether the delivery completed or crashed.
 
 ---
 
@@ -286,15 +307,16 @@ OMS.ORDER_LINE  INCREMENTAL  1           6         6
 ├── Makefile              # the entry point for every workflow
 ├── FOCALPOINT.md         # design notes: the incremental-aware ingestion model in depth
 ├── schema/
-│   ├── 01_metadata.sql   # the metadata catalog + landing tables
+│   ├── 01_metadata.sql   # the metadata catalog + wide and narrow staging + landing
 │   ├── 02_data.sql       # the four generic table types (idfr / focal / desc / x)
 │   ├── 03_seed_metadata.sql  # seeds the model: entities, attributes, feeds, value maps
 │   ├── 04_views.sql      # semantic views — the read model
-│   └── 05_archive.sql    # the append-only raw layer (separate database)
+│   └── 05_archive.sql    # the append-only wide raw layer (separate database)
 ├── scripts/
 │   ├── lib.sh            # shared helpers; the single choke point for DB access + SQL-injection guards
 │   ├── init_db.sh        # (re)create the derived warehouse; preserve the archive
-│   ├── load_feed.sh      # ingest ONE delivery safely (stage → archive → apply → complete)
+│   ├── load_feed.sh      # ingest ONE delivery safely (stage → archive → stage narrow → apply → complete)
+│   ├── stage_narrow.sh   # unpivot the wide stage into key/value rows (ingest AND replay)
 │   ├── apply_delivery.sh # the one path from staged rows to the warehouse (ingest AND replay)
 │   ├── load_keys.sh      # surrogate keys + identifiers
 │   ├── load_desc.sh      # descriptors: bi-temporal delta with strategy-aware deletes
@@ -302,11 +324,11 @@ OMS.ORDER_LINE  INCREMENTAL  1           6         6
 │   ├── rebuild.sh        # replay the archive to regenerate the warehouse
 │   ├── archive_status.sh # report the raw layer
 │   └── query.sh          # print the business views
-├── source/               # the demo delivery files (D0–D5)
+├── source/               # the demo delivery files (D0–D5), wide; identical in every model
 ├── tests/
 │   ├── run_tests.sh      # delete-semantics suite (FULL vs INCREMENTAL, tombstones, recency)
 │   ├── test_archive.sh   # raw-layer suite (append-only, exact rebuild, retroactive rules)
-│   └── fixtures/         # extra deliveries used only by tests
+│   └── fixtures/         # extra deliveries for tests; fixtures/narrow/ holds the old narrow D0–D5
 ├── docs/er-diagrams.md   # ER diagrams for every layer (Mermaid)
 ├── build/                # generated: the derived warehouse (safe to delete)
 └── archive/              # generated: the durable raw layer (do NOT delete lightly)

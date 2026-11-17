@@ -26,8 +26,49 @@ CREATE TABLE source_landing (
 );
 CREATE INDEX ix_landing ON source_landing(source_system, source_entity, attribute_name);
 
--- Staging: a delivery file lands here first; the driver then recency-
--- dedupes it into source_landing.
+-- Wide staging: a delivery file lands here first, one table per source
+-- extract, exactly as in the seven wide-shape siblings (same DDL). This is
+-- what load control compares and what the archive captures verbatim.
+CREATE TABLE stg_customer_l1 (
+    customer_id  TEXT NOT NULL,
+    full_name    TEXT,
+    email_addr   TEXT,
+    signup_date  TEXT,
+    extract_dt   TEXT NOT NULL,
+    op           TEXT NOT NULL DEFAULT 'UPSERT',
+    load_mode    TEXT NOT NULL
+);
+CREATE TABLE stg_product_l1 (
+    sku          TEXT NOT NULL,
+    prod_name    TEXT,
+    price        REAL,
+    currency     TEXT,
+    extract_dt   TEXT NOT NULL,
+    op           TEXT NOT NULL DEFAULT 'UPSERT',
+    load_mode    TEXT NOT NULL
+);
+CREATE TABLE stg_order_l1 (
+    order_ref    TEXT NOT NULL,
+    customer_ref TEXT,
+    status       TEXT,
+    amount       REAL,
+    currency     TEXT,
+    placed_at    TEXT,
+    extract_dt   TEXT NOT NULL,
+    op           TEXT NOT NULL DEFAULT 'UPSERT',
+    load_mode    TEXT NOT NULL
+);
+CREATE TABLE stg_order_line_l1 (
+    order_ref    TEXT NOT NULL,
+    sku          TEXT NOT NULL,
+    extract_dt   TEXT NOT NULL,
+    op           TEXT NOT NULL DEFAULT 'UPSERT',
+    load_mode    TEXT NOT NULL
+);
+
+-- Narrow staging: scripts/stage_narrow.sh unpivots the wide stage into
+-- key/value rows here (one row per attribute); the driver then recency-
+-- dedupes it into source_landing. The loaders read only this shape.
 CREATE TABLE source_landing_stage (
     source_system  TEXT NOT NULL,
     source_entity  TEXT NOT NULL,

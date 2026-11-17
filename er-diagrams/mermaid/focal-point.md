@@ -266,6 +266,42 @@ erDiagram
         TEXT op
         TEXT load_mode
     }
+    stg_customer_l1 {
+        TEXT customer_id
+        TEXT full_name
+        TEXT email_addr
+        TEXT signup_date
+        TEXT extract_dt
+        TEXT op
+        TEXT load_mode
+    }
+    stg_order_l1 {
+        TEXT order_ref
+        TEXT customer_ref
+        TEXT status
+        REAL amount
+        TEXT currency
+        TEXT placed_at
+        TEXT extract_dt
+        TEXT op
+        TEXT load_mode
+    }
+    stg_order_line_l1 {
+        TEXT order_ref
+        TEXT sku
+        TEXT extract_dt
+        TEXT op
+        TEXT load_mode
+    }
+    stg_product_l1 {
+        TEXT sku
+        TEXT prod_name
+        REAL price
+        TEXT currency
+        TEXT extract_dt
+        TEXT op
+        TEXT load_mode
+    }
 ```
 
 ## 4 · Raw layer (archive)
@@ -274,6 +310,62 @@ The durable raw layer, in its own database file. Every delivery is captured here
 
 ```mermaid
 erDiagram
+    hist_customer {
+        TEXT file_id PK, FK
+        INTEGER load_seq
+        TEXT batch_ts
+        INTEGER seq_nbr PK
+        TEXT customer_id
+        TEXT full_name
+        TEXT email_addr
+        TEXT signup_date
+        TEXT extract_dt
+        TEXT op
+        TEXT load_mode
+        TEXT archived_at
+    }
+    hist_order {
+        TEXT file_id PK, FK
+        INTEGER load_seq
+        TEXT batch_ts
+        INTEGER seq_nbr PK
+        TEXT order_ref
+        TEXT customer_ref
+        TEXT status
+        REAL amount
+        TEXT currency
+        TEXT placed_at
+        TEXT extract_dt
+        TEXT op
+        TEXT load_mode
+        TEXT archived_at
+    }
+    hist_order_line {
+        TEXT file_id PK, FK
+        INTEGER load_seq
+        TEXT batch_ts
+        INTEGER seq_nbr PK
+        TEXT order_ref
+        TEXT sku
+        TEXT extract_dt
+        TEXT op
+        TEXT load_mode
+        TEXT archived_at
+    }
+    hist_product {
+        TEXT file_id PK, FK
+        INTEGER load_seq
+        TEXT batch_ts
+        INTEGER seq_nbr PK
+        TEXT sku
+        TEXT prod_name
+        REAL price
+        TEXT currency
+        TEXT extract_dt
+        TEXT op
+        TEXT load_mode
+        TEXT archived_at
+    }
     loaded_files {
         TEXT file_id PK
         INTEGER load_seq
@@ -282,22 +374,8 @@ erDiagram
         TEXT loaded_at
         INTEGER row_count
     }
-    source_landing_history {
-        TEXT file_id PK, FK
-        INTEGER load_seq
-        TEXT batch_ts
-        INTEGER seq_nbr PK
-        TEXT source_system
-        TEXT source_entity
-        TEXT business_key
-        TEXT attribute_name
-        TEXT value_str
-        REAL value_num
-        TEXT value_ts
-        TEXT extract_ts
-        TEXT op
-        TEXT load_mode
-        TEXT archived_at
-    }
-    loaded_files ||--o{ source_landing_history : "file_id"
+    loaded_files ||--o{ hist_customer : "file_id"
+    loaded_files ||--o{ hist_order : "file_id"
+    loaded_files ||--o{ hist_order_line : "file_id"
+    loaded_files ||--o{ hist_product : "file_id"
 ```

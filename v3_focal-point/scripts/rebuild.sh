@@ -15,9 +15,13 @@
 #
 #   * deliveries replay in load_seq order -- ingest order. Replay D4 before
 #     D0 and C003 becomes key 1001 instead of 1003.
-#   * a delivery's rows are restored to source_landing_stage in seq_nbr
-#     order, because the recency-dedup tiebreak in apply_delivery.sh reads
-#     the staged rowid.
+#   * a delivery's wide rows are restored to the stg_*_l1 tables in
+#     seq_nbr order, and stage_narrow.sh keeps that order within every
+#     (key, attribute), because the recency-dedup tiebreak in
+#     apply_delivery.sh reads the staged rowid.
+#
+# Replay runs the same two steps as ingest: stage_narrow.sh, then
+# apply_delivery.sh. The archive is wide; no narrow row is ever stored.
 #
 # This is what "the derived warehouse is disposable" actually means, and
 # it is only true while the archive is COMPLETE. Prune one delivery and
@@ -34,7 +38,8 @@ n_deliv="$(sql_int "$(asql_scalar "SELECT COUNT(*) FROM arch.loaded_files;")")"
   echo "FATAL: archive $ARCHIVE_DB holds no deliveries -- nothing to rebuild from." >&2
   exit 1; }
 
-n_rows="$(asql_scalar "SELECT COUNT(*) FROM arch.source_landing_history;")"
+n_rows="$(asql_scalar "SELECT (SELECT COUNT(*) FROM arch.hist_customer) + (SELECT COUNT(*) FROM arch.hist_product)
+                           + (SELECT COUNT(*) FROM arch.hist_order)    + (SELECT COUNT(*) FROM arch.hist_order_line);")"
 echo "======================================================================"
 echo "  REBUILD from $ARCHIVE_DB"
 echo "  $n_deliv delivery(ies), $n_rows archived raw row(s)"
@@ -56,16 +61,22 @@ while IFS='|' read -r fid bts; do
   # The ORDER BY assigns stage rowids 1..N in seq_nbr order (SQLite honours
   # ORDER BY for rowid assignment in INSERT..SELECT), which the dedup
   # tiebreak depends on.
-  adb "DELETE FROM source_landing_stage;
-       INSERT INTO source_landing_stage(source_system,source_entity,business_key,
-                                        attribute_name,value_str,value_num,value_ts,
-                                        extract_ts,op,load_mode)
-       SELECT source_system,source_entity,business_key,attribute_name,
-              value_str,value_num,value_ts,extract_ts,op,load_mode
-       FROM arch.source_landing_history
-       WHERE file_id='$q_fid'
-       ORDER BY seq_nbr;"
+  adb "DELETE FROM stg_customer_l1; DELETE FROM stg_product_l1;
+       DELETE FROM stg_order_l1;    DELETE FROM stg_order_line_l1;
+       INSERT INTO stg_customer_l1(customer_id,full_name,email_addr,signup_date,extract_dt,op,load_mode)
+         SELECT customer_id,full_name,email_addr,signup_date,extract_dt,op,load_mode
+         FROM arch.hist_customer WHERE file_id='$q_fid' ORDER BY seq_nbr;
+       INSERT INTO stg_product_l1(sku,prod_name,price,currency,extract_dt,op,load_mode)
+         SELECT sku,prod_name,price,currency,extract_dt,op,load_mode
+         FROM arch.hist_product WHERE file_id='$q_fid' ORDER BY seq_nbr;
+       INSERT INTO stg_order_l1(order_ref,customer_ref,status,amount,currency,placed_at,extract_dt,op,load_mode)
+         SELECT order_ref,customer_ref,status,amount,currency,placed_at,extract_dt,op,load_mode
+         FROM arch.hist_order WHERE file_id='$q_fid' ORDER BY seq_nbr;
+       INSERT INTO stg_order_line_l1(order_ref,sku,extract_dt,op,load_mode)
+         SELECT order_ref,sku,extract_dt,op,load_mode
+         FROM arch.hist_order_line WHERE file_id='$q_fid' ORDER BY seq_nbr;"
 
+  "$(dirname "$0")/stage_narrow.sh"
   BATCH_TS="$bts" "$(dirname "$0")/apply_delivery.sh"
 done
 
