@@ -90,7 +90,7 @@ derive-everything-from-the-log — get their own section below.
 | delete detected | closing row, `row_st='N'` | `'D'` row in a status-tracking satellite | deleted-marker version, `is_deleted=1`, last-known attrs carried | `DELETED` assertion in the **existence knot** — presence is data |
 | unchanged re-delivery | `NOCHANGE` — writes nothing | diff-string match — writes nothing | diff-string match — writes nothing | **restatement control** — writes nothing |
 | keys | sequence surrogates, reproduced by ordered replay | natural business keys | rowid surrogates, reproduced by ordered replay | per-anchor sequences, reproduced by ordered replay |
-| business rule (P→PENDING) | applied **at ingest** (`meta_value_map`); archive + rebuild makes it retroactive | raw `'P'` stored; translated **on read** in the mart views | raw `'P'` in the archive; decode **dimension** (Type 1) | raw code resolved to a **knot**; label read at query |
+| business rule (P→PENDING) | applied **at ingest** (`meta_value_map`); archive + rebuild makes it retroactive | raw `'P'` stored; decoded **on read** by a business-vault computed satellite (a view over a reference table) | raw `'P'` in the archive; decode **dimension** (Type 1) | raw code resolved to a **knot**; label read at query |
 | row mutation | never | never | dims expire, facts restate — the archive keeps it honest | never |
 
 ## What each demo is best at showing
@@ -108,8 +108,11 @@ Status satellites answer "is it deleted?" directly. Focal's `v_customer`
 still shows deleted customers as ghost rows — a known gap, documented and
 tested. The driving-key effectivity satellite handles an order re-pointed
 to a different customer, which Focal's relationship loader currently
-cannot. Hard rules in the vault, soft rules on read: change the status
-decode and history follows with no reload.
+cannot. Hard rules in the vault, soft rules on read: the status decode
+is a reference table and a computed satellite kept as a view, so a new
+reference row relabels history with no reload. The business vault also
+carries current point-in-time tables, an order bridge and ghost and
+null-key records, so the mart reads current rows with inner joins only.
 
 **Kimball: point-in-time answers from plain joins.** Facts freeze the
 dimension version current at load. After C002 is deleted, the star
@@ -229,7 +232,7 @@ model doesn't force a difference.
 - **`make clean` never touches the durable layer.** Destroying raw
   history takes the explicit `clean-archive` target.
 - **Mutation-tested suites** (Metrics mart 222, Activity 139, Focal 120+46,
-  DV 130, USS 129, HOOK 115, Kimball 88, Anchor 124, Inmon 80, OBT 71
+  DV 304, USS 129, HOOK 115, Kimball 88, Anchor 124, Inmon 80, OBT 71
   assertions). I broke the FULL-absence guard, the replay ordering, the
   dedup tiebreaks, the restatement and idempotence guards, the tie guards,
   the OBT refresh, the activity loader's event-time and immutability

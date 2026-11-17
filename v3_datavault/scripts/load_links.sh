@@ -13,6 +13,10 @@
 # handle.
 #
 # ORDER->PRODUCT has no driving key; pairs are additive facts.
+#
+# A null customer_ref arrives here as the reserved key '-1' (stage 2
+# maps it): the link row and the effectivity row point the order at
+# "required customer, not supplied" rather than dropping the pairing.
 # ---------------------------------------------------------------------
 source "$(dirname "$0")/lib.sh"
 echo "==> Loading links & effectivity (ldts=$BATCH_TS)"

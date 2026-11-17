@@ -12,12 +12,14 @@ It exists to make the core Data Vault building blocks **executable and testable*
 of shell and SQL, following the DV101 Baseline conventions (source → stage L1 → stage L2 → raw vault
 → business vault → info mart), with three ideas kept front and centre:
 
-- **Insert-only, hard rules only, all the way through.** Nothing in the vault is ever updated or
-  deleted. A changed attribute is a *new* satellite row; a delete is a *new* status row. History is a
-  side effect of never overwriting anything.
+- **Insert-only throughout the raw vault, hard rules only.** Nothing in the raw vault is ever updated
+  or deleted, and triggers enforce it. A changed attribute is a *new* satellite row; a delete is a
+  *new* status row. History is a side effect of never overwriting anything. The only tables that are
+  ever rewritten are the business vault's generated query-assist tables (point-in-time and bridge).
 - **Hard rules vs soft rules.** The vault stores exactly what the source sent (raw status code `'P'`);
-  the business meaning (`'P' → 'PENDING'`) is applied downstream in the info mart, on read. Change the
-  rule and all of history — past and present — reflects it instantly.
+  the business meaning (`'P' → 'PENDING'`) is a reference table plus a computed satellite in the
+  business vault, applied on read. Insert a new reference row and all of history — past and
+  present — reflects it instantly.
 - **Presence and effectivity as first-class facts.** "Is this key deleted?" is answered by a
   status-tracking satellite, not inferred. "Which customer does this order belong to now?" is answered
   by an effectivity satellite over an insert-only link that keeps every pairing it ever saw.
@@ -150,6 +152,10 @@ in their own table, versioned independently, and nothing is ever overwritten.
 | **status-tracking sat**    | `rv_*_sts`    | presence assertions (`I`/`D`), change-only                            |
 | **link**                   | `rv_*_l`      | one row per distinct relationship pair, ever — insert-only            |
 | **effectivity satellite**  | `bv_*_effsat` | which pair is *current* for a driving key; end-dates computed on read |
+| **reference table**        | `ref_*`       | a code list (order status → label), insert-only; latest row per code is in force |
+| **computed satellite**     | `bv_*_bsat`   | a business rule applied to a raw satellite; a view, so it never needs a reload |
+| **current point-in-time**  | `bv_*_cpit`   | per real key, a pointer to the current row of each satellite (or the ghost row) |
+| **bridge**                 | `bv_*_bridge` | one row per order line with the order's current customer                |
 
 Two design choices keep this small and deterministic:
 
@@ -161,6 +167,23 @@ Two design choices keep this small and deterministic:
 - **A deterministic load timestamp.** `ldts` comes from a one-row parameter table (`dv_load_params`)
   set by the driver, not `current_timestamp`, so every run of the demo is byte-for-byte reproducible.
 
+### Reserved keys: ghost and null
+
+Every hub holds three rows no source delivered, written at init with `ldts` `1900-01-01 00:00:00`:
+
+| key  | `rsrc`                      | stands for                                              |
+|------|-----------------------------|---------------------------------------------------------|
+| `0`  | `BASELINE-ghostrec`         | the ghost record a point-in-time pointer lands on       |
+| `-1` | `BASELINE-nullkey-required` | a required link end the source left null                |
+| `-2` | `BASELINE-nullkey-optional` | an optional link end the source left null               |
+
+Every raw satellite holds one ghost row for `0`, with NULL descriptive columns. An order delivered
+with no `customer_ref` is linked to customer `-1` (an order's customer is required), so the pairing is
+recorded rather than dropped. Triggers stop any loader writing a reserved row, and a delivery that
+names `0`, `-1` or `-2` as a real business key is refused. The standard stores the *hashes* of these
+values; with natural keys this demo stores them as they are. Every info-mart and audit view excludes
+all three.
+
 ```
                         source deliveries (wide rows, one shape per feed)
                                     │
@@ -171,8 +194,11 @@ Two design choices keep this small and deterministic:
                                     │  loaders (load_hubs → load_sats → load_links)
                                     ▼
         ┌────────────────────────────────────────────────┐
-        │ rv_*_h   rv_*_hsat   rv_*_sts   rv_*_l   (raw)  │  insert-only raw vault
+        │ rv_*_h   rv_*_hsat   rv_*_sts   rv_*_l          │  insert-only raw vault
+        │ ref_order_status                         (raw)  │  + reference code list
         │ bv_order_customer_l_effsat          (business)  │  driving-key effectivity
+        │ bv_order_status_bsat                (business)  │  status decode (a view)
+        │ bv_*_cpit   bv_order_bridge   (query assist)    │  rewritten after each delivery
         └──────────────┬─────────────────────────────────┘
                        ▼
         ┌────────────────────────────────────────────────┐
@@ -192,15 +218,21 @@ The most consequential design decision is *where* business meaning gets applied.
 - **Hard rules** (structural, source-faithful) happen on the way *in*: split into hub/sat/link,
   detect change, assert presence. The raw vault stores what the source actually sent. `OMS` delivers
   an order status of `'P'`/`'S'`/`'D'`/`'C'`, and `rv_order_hsat` keeps exactly that, forever.
-- **Soft rules** (interpretation) happen on the way *out*, in the info mart. `fact_order` translates
-  `'P' → 'PENDING'` in a `CASE` expression at read time.
+- **Soft rules** (interpretation) happen on the way *out*, in the business vault. The code list is
+  reference data, `ref_order_status` (insert-only; the latest row per code is the rule in force), and
+  the computed satellite `bv_order_status_bsat` is a **view** joining each raw status row to it.
+  `fact_order` reads the label from there; the info mart holds no decode of its own.
 
-Because the raw value is never overwritten, changing a soft rule is retroactive with no reload:
+Because the raw value is never overwritten and the computed satellite is a view, changing a soft rule
+is retroactive with no reload:
 
 ```sql
--- schema/05_info_mart.sql — edit the CASE, and every order past and present re-derives instantly
-CASE s.status WHEN 'P' THEN 'PENDING' WHEN 'S' THEN 'SHIPPED' ... END AS status
+-- relabel 'P'; every order past and present re-derives instantly, no reload, no recompute
+INSERT INTO ref_order_status(code, label, ldts, rsrc)
+VALUES ('P', 'AWAITING SHIPMENT', '2027-04-01 00:00:00', 'OPS.RULES');
 ```
+
+Materialising the computed satellite would break this: a rule change would then need a recompute.
 
 `v_order_status_history` prints the raw code beside the translated value so the split is visible:
 
@@ -239,6 +271,25 @@ purely additive and it gets no effectivity satellite.
 
 ---
 
+## Query assistance: point-in-time and bridge tables
+
+The business vault also holds four **generated** tables, deleted and rewritten in full at the end of
+every delivery by `scripts/refresh_query_assist.sh` — the last step of the apply path that ingest and
+`make rebuild` share. They are the only tables in the vault that are ever rewritten; no source
+delivers them and no business rule is applied in them.
+
+- **Current point-in-time** (`bv_customer_cpit`, `bv_product_cpit`, `bv_order_cpit`): one row per
+  real hub key, with a `(key, ldts)` pointer to the current row of each satellite on the hub,
+  status-tracking satellite included, and for orders the current effectivity pairing. A key with no
+  row in a satellite points at the ghost row `('0', '1900-01-01 00:00:00')`, never at NULL, so the
+  info mart reaches every current row with plain inner joins. A deleted key keeps its row; its status
+  pointer names the `'D'` row.
+- **Order bridge** (`bv_order_bridge`): one row per order line — order, product, and the order's
+  current customer (`0` when it has none). The info mart does not use it; it is there for queries that
+  walk order → line → customer in one hop.
+
+---
+
 ## How a delivery flows
 
 A delivery is a plain `.sql` file that `INSERT`s wide rows into the stage-1 tables (see any file in
@@ -256,9 +307,10 @@ A delivery is a plain `.sql` file that `INSERT`s wide rows into the stage-1 tabl
    count — all *before* any loader runs.
 4. **Stage 2** — the `v_stg_*_l2` views add `rsrc`/`ldts`/`diff_str` and recency-dedupe within the
    batch (newest by `extract_dt`, `rowid` breaks ties).
-5. **Load** — `scripts/apply_delivery.sh` runs the three loaders in fixed order: `load_hubs` (keys) → `load_sats` (descriptive
-   delta + presence) → `load_links` (pairs + driving-key effectivity). Each branches on the effective
-   `FULL`/`INCREMENTAL` mode.
+5. **Load** — `scripts/apply_delivery.sh` refuses a delivery that names a reserved key, then runs
+   the three loaders in fixed order: `load_hubs` (keys) → `load_sats` (descriptive delta + presence)
+   → `load_links` (pairs + driving-key effectivity), each branching on the effective
+   `FULL`/`INCREMENTAL` mode, and finally rewrites the point-in-time and bridge tables.
 6. **Mark COMPLETE** only after every loader succeeds, then clear the stage. A delivery that crashes
    half-way stays `STARTED`, leaves its staged rows in place as forensics, and is retried on the next
    run — never skipped as done.
@@ -275,8 +327,8 @@ Defined in `schema/05_info_mart.sql`, printed by `scripts/query.sh`:
 
 | View                            | What it gives you                                                          |
 |---------------------------------|----------------------------------------------------------------------------|
-| `dim_customer` / `dim_product`  | current descriptive row per key, gated on the status sat (`sts='I'`)       |
-| `fact_order`                    | one order row: soft-rule status translation + `placed_by` via current pairing |
+| `dim_customer` / `dim_product`  | current descriptive row per key, through the CPIT, gated on `sts='I'`      |
+| `fact_order`                    | one order row: status label from `bv_order_status_bsat` + `placed_by` via the current pairing |
 | `v_*_hsat_current`              | the newest satellite row per key                                           |
 | `v_*_sts_current`               | the latest presence assertion per key                                      |
 | `v_order_status_history`        | the full status timeline, raw code beside translated value                 |
@@ -284,7 +336,8 @@ Defined in `schema/05_info_mart.sql`, printed by `scripts/query.sh`:
 | `v_order_customer_eff_history`  | driving-key pairings with computed `end_date` / `iscurrent`                |
 
 A deleted key drops out of `dim_customer`/`dim_product`/`fact_order` because those views inner-join
-the status satellite on `sts='I'` — presence is enforced at read time, from a first-class fact.
+the status row their CPIT points at on `sts='I'` — presence is enforced at read time, from a
+first-class fact. Every view here excludes the reserved keys `0`, `-1` and `-2`.
 
 ---
 
@@ -303,7 +356,8 @@ There are **two** databases. `build/datavault.db` (the vault) is disposable. `ar
 (the raw layer) is durable: append-only, guarded by `UPDATE`/`DELETE` triggers with no unlock path,
 untouched by `make clean`, and removed only by `make clean-archive` (or by `make demo`, which starts
 from a fresh archive). `make rebuild` replays the archive through the same `apply_delivery.sh` that
-ingest uses, so a rebuilt vault reproduces every `rv_*`/`bv_*` table row for row.
+ingest uses, so a rebuilt vault reproduces every `rv_*`/`bv_*` table row for row — the reserved
+rows, the reference table and the query-assist tables included.
 
 ---
 
@@ -317,14 +371,15 @@ ingest uses, so a rebuilt vault reproduces every `rv_*`/`bv_*` table row for row
 │   ├── 01_stage.sql              # stage L1 tables, load params
 │   ├── 02_archive.sql            # raw layer: loaded_files + hist_* (separate db, append-only)
 │   ├── 02_stage2_views.sql       # stage L2 views: system columns + diff_str + recency dedup
-│   ├── 03_raw_vault.sql          # hubs, satellites, status sats, links
-│   ├── 04_business_vault.sql     # insert-only effectivity satellite + LEAD history views
+│   ├── 03_raw_vault.sql          # hubs, satellites, status sats, links, reference table, reserved keys
+│   ├── 04_business_vault.sql     # effectivity sat, computed status sat (view), CPIT + bridge tables
 │   └── 05_info_mart.sql          # dim_customer / dim_product / fact_order + audit views
 ├── scripts/
 │   ├── lib.sh                    # shared helpers; the single choke point for DB access + SQL guards
 │   ├── init_db.sh                # (re)create the vault database from schema
 │   ├── load_feed.sh              # ingest ONE delivery safely (control → stage → archive → apply → complete)
-│   ├── apply_delivery.sh         # hubs → sats → links; the one path shared by ingest and replay
+│   ├── apply_delivery.sh         # hubs → sats → links → refresh; the one path shared by ingest and replay
+│   ├── refresh_query_assist.sh   # rewrite the CPIT and bridge tables
 │   ├── rebuild.sh                # regenerate the vault from the archive
 │   ├── load_hubs.sh              # hubs: business keys, insert-only, from every feed incl. link ends
 │   ├── load_sats.sh              # satellites: whole-row descriptive delta + status tracking
@@ -333,7 +388,10 @@ ingest uses, so a rebuilt vault reproduces every `rv_*`/`bv_*` table row for row
 ├── source/                       # the demo delivery files (D0–D5)
 ├── tests/
 │   ├── run_tests.sh              # the assertion suite
-│   └── fixtures/d6_repoint.sql   # the driving-key re-point scenario
+│   ├── mutations_todo.md         # mutations a later step will run against the suite
+│   └── fixtures/
+│       ├── d6_repoint.sql        # the driving-key re-point scenario
+│       └── d7_null_customer.sql  # a null customer_ref, and a customer with no satellite row
 ├── build/                        # generated: the vault database (safe to delete)
 └── archive/                      # generated: the raw layer (durable; `make clean-archive` only)
 ```
@@ -354,8 +412,13 @@ fresh database and asserts, among other things:
   in an incremental feed; and a deleted key keeps its hub row and attribute history.
 - **Whole-row satellite grain** — one changed attribute writes one new satellite row; an unchanged
   re-delivery (matching `diff_str`) writes nothing.
-- **Hard vs soft rules** — the vault keeps the raw `'P'` while the mart derives `PENDING`, and the
-  derivation is retroactive with no reload.
+- **Hard vs soft rules** — the vault keeps the raw `'P'` while the mart reads `PENDING` from the
+  computed satellite; inserting a newer reference row relabels all history with no reload.
+- **Reserved keys and query assistance** — each hub holds exactly its three reserved rows and each
+  satellite one ghost row, before any delivery and after every replay; no reserved key reaches a mart
+  view; an order with a null customer links to `-1`; every CPIT has one row per real key with no NULL
+  pointer and every pointer at the newest row (or the ghost); the bridge follows the re-point; every
+  raw-vault table refuses `UPDATE` and `DELETE`.
 - **Driving-key effectivity** — re-pointing an order flips exactly one current pairing while the link
   table keeps both pairs.
 - **Load control and idempotence** — a duplicate `file_id` is skipped; replaying the whole sequence
@@ -363,8 +426,9 @@ fresh database and asserts, among other things:
   check that catches, e.g., an effectivity satellite that re-opens an already-current pairing).
 - **The raw layer** — every delivered row is archived; `UPDATE` and `DELETE` abort on every `hist_*`
   table; a crashed delivery's `file_id` re-sent with different content is rejected; and `make rebuild`,
-  run after the six deliveries and again after the re-point, reproduces every `rv_*`/`bv_*` table row
-  for row — with the soft-rule check then run against the rebuilt vault.
+  run after the six deliveries, after the re-point and after the null-customer fixture, reproduces
+  every `rv_*`/`bv_*` table, the reference table and the computed satellite row for row — with the
+  soft-rule check then run against the rebuilt vault.
 
 The suite prints a per-assertion `PASS`/`FAIL` and exits non-zero if any assertion fails.
 
@@ -373,6 +437,6 @@ The suite prints a per-assertion `PASS`/`FAIL` and exits non-zero if any asserti
 ## Going deeper
 
 - **[DATAVAULT.md](DATAVAULT.md)** — the design notes: how this build maps to the DV101 Baseline
-  conventions, where it deliberately deviates (natural keys instead of hashes, insert-only
-  effectivity, no ghost/PIT/bridge structures) and why, plus a table-by-table comparison against the
+  conventions, where it deliberately deviates (natural keys instead of hashes, reserved keys stored as
+  natural values, insert-only effectivity) and why, plus a table-by-table comparison against the
   sibling Focal Point warehouse over the identical six deliveries.
