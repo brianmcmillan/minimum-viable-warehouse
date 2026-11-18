@@ -1,8 +1,7 @@
 # Metrics mart: a 3NF model that is already half metadata
 
-The ER diagrams in [`../docs/metrics-mart-notes.pdf`](../docs/metrics-mart-notes.pdf)
-describe a warehouse for measurements: resources, the metrics taken on them,
-and rollups by week and by group. It is 3NF with its codes snowflaked out
+The source ER diagrams describe a warehouse for measurements: resources, the
+metrics taken on them, and rollups by week and by group. It is 3NF with its codes snowflaked out
 (`RES_TYPE`, `VALUE_TYPE`, `CAL_EVT_TYPE`).
 
 It is also closer to Focal Point than it looks. `METRIC` is a table of
