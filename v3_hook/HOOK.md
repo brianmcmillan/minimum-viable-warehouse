@@ -11,7 +11,8 @@ OBT demos, byte-identical.
 ```bash
 make demo     # fresh archive + the full delivery sequence + views
 make rebuild  # regenerate the frames by replaying the raw layer
-make test     # 129 assertions (36 core, 93 model), mutation-checked
+make test     # 134 assertions (36 core, 98 model), mutation-checked
+make mutate   # 26 mutations (18 shared, 8 model), each must turn the suite red
 ```
 
 ## The four ideas
@@ -102,5 +103,6 @@ schema/02_archive.sql   raw layer: append-only wide history + manifest
 schema/03_hook.sql      registry (concepts, key sets, frames, hook columns), frames, ref data
 schema/04_views.sql     latest rows, business views, as-of, hub on demand, hook integrity
 scripts/load_frames.sh  the generic, registry-driven delta loader
-tests/run_tests.sh      129 assertions
+tests/run_tests.sh      134 assertions
+tests/mutations/*.mut   26 mutations `make mutate` runs against the suite
 ```

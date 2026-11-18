@@ -1,0 +1,5 @@
+name: dedup-tiebreak-reversed
+tag: shared
+what: on equal load_seq and extract_dt, the FIRST row in the file wins
+file: scripts/refresh_latest.sh
+sed: s/ORDER BY load_seq DESC, extract_dt DESC, seq_nbr DESC/ORDER BY load_seq DESC, extract_dt DESC, seq_nbr ASC/

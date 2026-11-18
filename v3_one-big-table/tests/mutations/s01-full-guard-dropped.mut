@@ -1,0 +1,5 @@
+name: full-guard-dropped
+tag: shared
+what: any later delivery of a feed, not only a FULL one, counts as absence
+file: scripts/refresh_latest.sh
+sed: s/ WHERE load_mode='FULL'),/),/

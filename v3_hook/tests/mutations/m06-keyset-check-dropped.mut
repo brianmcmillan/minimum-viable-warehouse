@@ -1,0 +1,5 @@
+name: keyset-check-dropped
+tag: model
+what: v_hook_violation no longer flags a hook whose key set is not the one the registry declares
+file: schema/04_views.sql
+sed: s/^   OR substr(h\.hook, 1, instr(h\.hook, '|') - 1) <> c\.keyset$/   OR 0/

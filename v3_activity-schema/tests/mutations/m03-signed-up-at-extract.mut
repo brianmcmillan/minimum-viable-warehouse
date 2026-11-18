@@ -1,0 +1,5 @@
+name: signed-up-at-extract
+tag: model
+what: signed_up is stamped with the extract date instead of the signup date (event time)
+file: scripts/load_activities.sh
+sed: s/SELECT datetime(COALESCE(s\.signup_date, s\.extract_dt)) AS ts/SELECT datetime(s.extract_dt) AS ts/

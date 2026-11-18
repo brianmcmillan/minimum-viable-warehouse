@@ -1,0 +1,5 @@
+name: refresh-skipped
+tag: model
+what: a delivery is appended to the log but the latest tables are never refreshed
+file: scripts/load_feed.sh
+sed: s#^"\$(dirname "\$0")/refresh_latest.sh"#true#

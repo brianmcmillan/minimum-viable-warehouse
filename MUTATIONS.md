@@ -13,8 +13,8 @@ labels, prefixed with the MODEL section they print under.
 
 | Item | Value |
 | --- | --- |
-| Run at (UTC) | 2026-11-18 17:08:46 |
-| Commit | 0b9d884 on main |
+| Run at (UTC) | 2026-11-18 17:43:45 |
+| Commit | b02ec97 on plan/C3 |
 | sqlite3 | 3.54.0 |
 | Overall | every mutation killed or a known survivor |
 
@@ -22,16 +22,50 @@ labels, prefixed with the MODEL section they print under.
 
 | Model | Mutations | Shared | Model | Killed | Known survivors | Unexpected |
 | --- | --- | --- | --- | --- | --- | --- |
-| `v3_activity-schema` | not yet covered | | | | | |
+| `v3_activity-schema` | 25 | 18 | 7 | 24 | 1 | 0 |
 | `v3_anchor` | not yet covered | | | | | |
 | `v3_data-marts` | 24 | 18 | 6 | 24 | 0 | 0 |
 | `v3_datavault` | 25 | 18 | 7 | 24 | 1 | 0 |
 | `v3_focal-point` | not yet covered | | | | | |
-| `v3_hook` | not yet covered | | | | | |
+| `v3_hook` | 26 | 18 | 8 | 25 | 1 | 0 |
 | `v3_inmon-3nf` | 23 | 18 | 5 | 23 | 0 | 0 |
 | `v3_metrics-mart` | not yet covered | | | | | |
-| `v3_one-big-table` | not yet covered | | | | | |
+| `v3_one-big-table` | 20 | 17 | 3 | 20 | 0 | 0 |
 | `v3_unified-star-schema` | 26 | 18 | 8 | 26 | 0 | 0 |
+
+## `v3_activity-schema`
+
+| Mutation | Tag | What it breaks | Result | Assertions broken |
+| --- | --- | --- | --- | --- |
+| `nochange-guard-dropped` | model | every live customer upsert writes an updated_email activity, changed or not | KILLED | C03.3; C08.4; C09.1; M04 snapshot -> activities: C001 signed_up, then placed_order; M04 a changed attribute is ONE new activity: updated_email; M04 updated_email carries only the attribute it owns; M04 history survives the delete: C002's activities are all still there; M04 recency: two staged rows -> one signed_up, no spurious update; M04 reconcile: D5 wrote exactly one activity (the C003 delete); M05 OBSERVED TIME: the change is stamped with the extract it was seen in; M06 FIRST AFTER: C001 changed email after the first order, on 2026-03-02; M06 FIRST AFTER: C002 never did; M08 only differences become activities: fewer customer activities than staged customer rows + orders; M09 repoint: order_reassigned lands in C001's stream; M09 repoint: C002's placed_order is untouched (immutable); M10 a deleted customer delivered again is restored (not signed up twice); M10 D7 wrote exactly three activities; M11 activity ids follow the loader's fixed order (step, then business key), not staged order |
+| `stream-update-allowed` | model | customer_stream accepts UPDATE (immutability trigger dropped) | KILLED | C11.1; M08 UPDATE on customer_stream aborts |
+| `signed-up-at-extract` | model | signed_up is stamped with the extract date instead of the signup date (event time) | KILLED | C03.3; C05.5; M04 snapshot -> activities: C001 signed_up, then placed_order; M04 a changed attribute is ONE new activity: updated_email; M04 history survives the delete: C002's activities are all still there; M05 EVENT TIME: signed_up is stamped with signup_date, not the load; M06 LAST BEFORE: O-100 still reads the email as it was when placed; M06 FIRST EVER: days from signup to first order (C001); M09 repoint: order_reassigned lands in C001's stream; M09 repoint: C002's placed_order is untouched (immutable); M09 repoint: LAST BEFORE at purchase still Bob Jones; M09 repoint: ownership read against each activity's own moment; M10 a deleted customer delivered again is restored (not signed up twice) |
+| `at-purchase-from-current` | model | v_order_at_purchase reads the customer's latest profile, not the one LAST BEFORE the order | KILLED | M06 LAST BEFORE: O-100 still reads the email as it was when placed |
+| `repoint-writes-nothing` | model | a re-pointed order writes no order_reassigned activity | KILLED | C13.1; M09 repoint: order_reassigned lands in C001's stream; M09 repoint: it records where the order came from; M09 repoint: ownership read against each activity's own moment; M10 restoring C002 does not move O-101 back (ownership is its own activity) |
+| `activity-key-order-dropped` | model | activity ids are numbered without the business-key sort | KILLED | M11 ...and for order lines: numbered by (sku, order), not the stage's (order, sku) |
+| `customer-key-order-dropped` | model | customer-stream activity ids are numbered without the business-key sort (product stream keeps it) | SURVIVED (known) | none |
+| `full-guard-dropped` | shared | absence deletes in every delivery, not only a FULL one | KILLED | C03.2; C03.3; C03.4; C05.1; C08.4; M04 reconcile: D5 wrote exactly one activity (the C003 delete); M08 only differences become activities: fewer customer activities than staged customer rows + orders; M09 repoint: order_reassigned lands in C001's stream; M10 status P -> S is one order_updated;  v_order shows SHIPPED; M10 a tombstoned line is removed_from_order, gone from v_order_line; M10 restoring C002 does not move O-101 back (ownership is its own activity); M10 D7 wrote exactly three activities; M11 activity ids follow the loader's fixed order (step, then business key), not staged order |
+| `full-absence-ignored` | shared | a FULL delivery never deletes the subjects it leaves out | KILLED | C04.2; C08.1; C08.2; C08.3; C14.1; M04 FULL: SKU-3 discontinued, basis FULL_ABSENCE; M04 D2 wrote exactly two activities (repriced SKU-1, discontinued SKU-3); M04 reconcile: D5 wrote exactly one activity (the C003 delete); M05 FULL: absence is stamped with the snapshot's extract date |
+| `tombstone-ignored` | shared | an op='DELETE' row writes no was_deleted / discontinued / order_deleted activity | KILLED | C05.1; C05.2; C05.3; M04 history survives the delete: C002's activities are all still there; M04 reconcile: D5 wrote exactly one activity (the C003 delete) |
+| `restore-ignored` | shared | a deleted subject upserted again writes no restored / order_restored activity | KILLED | M10 a deleted customer delivered again is restored (not signed up twice); M10 restored C002 is back in v_customer; M10 D7 wrote exactly three activities |
+| `archive-update-allowed` | shared | the archive accepts UPDATE (hist_customer trigger dropped) | KILLED | C10.2; C11.1; C13.1; M09 repoint: LAST BEFORE at purchase still Bob Jones; M09 repoint: ownership read against each activity's own moment; M10 restoring C002 does not move O-101 back (ownership is its own activity); M11 tiebreak: one updated_email for C001, not two; M11 activity ids follow the loader's fixed order (step, then business key), not staged order |
+| `archive-delete-allowed` | shared | the archive accepts DELETE (hist_order trigger dropped) | KILLED | C10.3; C11.1; C12.1; C13.2; M07 live ref change is visible immediately in v_order; M07 ...while the stream still holds the raw code; M09 repoint: order_reassigned lands in C001's stream; M09 repoint: it records where the order came from; M09 repoint: C002's placed_order is untouched (immutable); M09 repoint: LAST BEFORE at purchase still Bob Jones; M09 repoint: ownership read against each activity's own moment; M10 a deleted customer delivered again is restored (not signed up twice); M10 status P -> S is one order_updated;  v_order shows SHIPPED; M10 the update does not rewrite history: placed_order still holds 'P' |
+| `archive-deduped` | shared | the archive keeps only the last row per customer, not the delivery verbatim | KILLED | ABORT load_feed.sh exited 1 at delivery D4 (d4_cust_recency.sql) |
+| `complete-never-skips` | shared | a COMPLETE delivery re-sent is applied again instead of skipped | KILLED | C07.1; M13 reuse: COMPLETE X1 re-sent with its original content is skipped |
+| `started-skips` | shared | a crashed (STARTED) delivery re-sent is skipped instead of retried | KILLED | M13 reuse: STARTED X1 re-sent with its original content retries to COMPLETE; M13 reuse: STARTED X2 re-sent with its original content retries to COMPLETE |
+| `content-check-dropped` | shared | a reused file_id with the same row count but different values is accepted | KILLED | M13 reuse: STARTED X1 re-sent with the same row count, one value changed, is REJECTED; M13 reuse:   ... archive and warehouse untouched; M13 reuse: COMPLETE X1 re-sent with the same row count, one value changed, is REJECTED |
+| `row-count-check-dropped` | shared | a reused file_id with a different row count is not refused by the manifest | KILLED | M13 reuse: STARTED X2 (nothing archived) re-sent with a different row count is REJECTED; M13 reuse:   ... archive and warehouse untouched; M13 reuse: STARTED X2 re-sent with its original content retries to COMPLETE |
+| `complete-before-load` | shared | the manifest is written COMPLETE before the loader runs | KILLED | M13 reuse: crashed delivery X1 is left STARTED; M13 reuse: delivery X2 crashed before the archive write is left STARTED |
+| `stage-kept` | shared | a successful delivery leaves its rows in the stage | KILLED | M01 [B0] stage blank after delivery; M01 [D1] stage blank after delivery; M01 [D2] stage blank after delivery; M01 [D3] stage blank after delivery; M01 [D4] stage blank after delivery; M01 [D5] stage blank after delivery; M01 [D5R] stage blank after delivery; M01 [D6] stage blank after delivery; M01 [D6R] stage blank after delivery; M10 [D7] stage blank after delivery; M11 [D8] stage blank after delivery |
+| `dedup-recency-reversed` | shared | stage dedup keeps the OLDEST extract per key | KILLED | C06.2 |
+| `dedup-tiebreak-reversed` | shared | on equal extract_dt, the FIRST row in the file wins | KILLED | M11 tiebreak: same extract_dt -> the later staged row wins |
+| `dedup-dropped` | shared | stage L2 passes every row through, duplicates included | KILLED | M04 recency: two staged rows -> one signed_up, no spurious update; M06 journeys survive deletes: all three customers, C003 with no orders; M08 only differences become activities: fewer customer activities than staged customer rows + orders; M11 tiebreak: same extract_dt -> the later staged row wins; M11 tiebreak: one updated_email for C001, not two; M11 activity ids follow the loader's fixed order (step, then business key), not staged order |
+| `replay-delivery-order-reversed` | shared | rebuild replays deliveries newest first | KILLED | C11.1; C14.1; M09 repoint: C002's placed_order is untouched (immutable); M10 a deleted customer delivered again is restored (not signed up twice); M10 D7 wrote exactly three activities; M12 clean+rebuild after re-point, lifecycle and tiebreak: streams identical |
+| `replay-row-order-reversed` | shared | rebuild restores each delivery's rows in reverse file order | KILLED | M12 clean+rebuild after re-point, lifecycle and tiebreak: streams identical |
+
+Survivors:
+
+- `customer-key-order-dropped` (`tests/mutations/m07-customer-key-order-dropped.mut`): the one README.md already admits. On this SQLite build the query plan returns customers in business-key order anyway, so C004's signed_up still gets the lower id; d8_tiebreak.sql's key-order assertion guards it on engines whose plans differ. Dropping the sort from both streams is killed (activity-key-order-dropped), because the order lines in d8 are staged in an order the plan does not happen to fix
 
 ## `v3_data-marts`
 
@@ -96,6 +130,41 @@ Survivors:
 
 - `reserved-filter-dropped` (`tests/mutations/m06-reserved-filter-dropped.mut`): defence in depth. The CPIT holds real keys only and the '-1' key has no 'I' status row, so dim_customer's inner joins already drop every reserved key; the WHERE clause is a second guard that nothing upstream lets a reserved key reach (checked by hand on 17 November 2026, confirmed by this run)
 
+## `v3_hook`
+
+| Mutation | Tag | What it breaks | Result | Assertions broken |
+| --- | --- | --- | --- | --- |
+| `churn-guard-dropped` | model | every upsert writes a frame row, changed or not | KILLED | C04.3; C08.4; C09.1; M04 reconcile: C001 unchanged content -> zero churn (still 2); M04 reconcile: D5 wrote exactly one frame row (the C003 delete); M06 frames are delta-compressed: fewer rows than the archive holds; M08 re-asserted repoint writes nothing; M10 reuse: STARTED X1 re-sent with its original content retries to COMPLETE; M10 reuse: COMPLETE X1 re-sent with its original content is skipped; M10 reuse: STARTED X2 re-sent with its original content retries to COMPLETE |
+| `delta-against-oldest` | model | the delta engine compares each subject with its OLDEST frame row, not its latest | KILLED | C08.4; C09.1; M04 reconcile: C001 unchanged content -> zero churn (still 2); M04 reconcile: C002 already deleted -> zero churn (still 2); M04 reconcile: D5 wrote exactly one frame row (the C003 delete); M06 frames are delta-compressed: fewer rows than the archive holds; M08 re-asserted repoint writes nothing; M11 restore: C002 re-sent with its pre-delete values is live again; M11 restore: frame rows INSERT > DELETE > INSERT; M11 restore: still live after rebuild |
+| `repoint-not-in-diff` | model | customer_ref leaves the order's diff, so a re-point writes no frame row | KILLED | C13.1; M08 repoint: O-101 has 2 frame rows, the new one an UPDATE; M08 repoint: latest hook points at CRM.CUST\|C001; M08 repoint: as-recorded reads each row against its own moment |
+| `dead-key-guard-dropped` | model | a FULL delivery writes another DELETE row for a subject that is already deleted | KILLED | C09.1; M04 reconcile: C002 already deleted -> zero churn (still 2); M04 reconcile: D5 wrote exactly one frame row (the C003 delete); M06 frames are delta-compressed: fewer rows than the archive holds |
+| `latest-ignores-delete` | model | v_customer reads the latest frame row without honouring DELETE | KILLED | C05.2; C08.2; C14.1 |
+| `keyset-check-dropped` | model | v_hook_violation no longer flags a hook whose key set is not the one the registry declares | KILLED | M09 a customer hook from an unregistered/wrong key set is flagged |
+| `decode-on-read-lost` | model | v_order never finds a status in ref_oms_order_status | KILLED | C02.2; C12.1; M07 SOFT RULE ON READ: frame stores raw 'P', v_order decodes PENDING; M07 live ref change is visible immediately in v_order |
+| `placed-by-delete-filter-dropped` | model | v_order's placed_by join no longer filters out a deleted customer's latest frame row | SURVIVED (known) | none |
+| `full-guard-dropped` | shared | absence deletes in every delivery, not only a FULL one | KILLED | C03.2; C03.3; C05.1; C08.4; M04 reconcile: C001 unchanged content -> zero churn (still 2); M04 reconcile: D5 wrote exactly one frame row (the C003 delete); M06 frames are delta-compressed: fewer rows than the archive holds; M11 restore: still live after rebuild |
+| `full-absence-ignored` | shared | a FULL delivery never deletes the subjects it leaves out | KILLED | C04.2; C08.1; C08.2; C08.3; C14.1; M04 FULL: SKU-3 gets a DELETE row, basis FULL_ABSENCE; M04 FULL: the DELETE row carries the business key, no attributes; M04 reconcile: D5 wrote exactly one frame row (the C003 delete) |
+| `tombstone-ignored` | shared | an op='DELETE' row writes no DELETE row | KILLED | C05.1; C05.2; C05.3; M04 tombstone: C002 has exactly one DELETE row; M04 reconcile: D5 wrote exactly one frame row (the C003 delete); M11 restore: frame rows INSERT > DELETE > INSERT |
+| `restore-ignored` | shared | a deleted subject upserted again stays deleted | KILLED | M11 restore: C002 re-sent with its pre-delete values is live again; M11 restore: frame rows INSERT > DELETE > INSERT; M11 restore: still live after rebuild |
+| `archive-update-allowed` | shared | the archive accepts UPDATE (hist_customer trigger dropped) | KILLED | C10.2; C11.1; C13.1; M08 repoint: as-recorded reads each row against its own moment |
+| `archive-delete-allowed` | shared | the archive accepts DELETE (hist_order trigger dropped) | KILLED | C10.3; C11.1; C12.1; C13.2; M07 live ref change is visible immediately in v_order; M07 ...while the frames still hold the raw code; M08 repoint: O-101 has 2 frame rows, the new one an UPDATE; M08 repoint: as-recorded reads each row against its own moment |
+| `archive-deduped` | shared | the archive keeps only the last row per customer, not the delivery verbatim | KILLED | ABORT load_feed.sh exited 1 at delivery D4 (d4_cust_recency.sql) |
+| `complete-never-skips` | shared | a COMPLETE delivery re-sent is applied again instead of skipped | KILLED | C07.1; M10 reuse: COMPLETE X1 re-sent with its original content is skipped |
+| `started-skips` | shared | a crashed (STARTED) delivery re-sent is skipped instead of retried | KILLED | M10 reuse: STARTED X1 re-sent with its original content retries to COMPLETE; M10 reuse: STARTED X2 re-sent with its original content retries to COMPLETE |
+| `content-check-dropped` | shared | a reused file_id with the same row count but different values is accepted | KILLED | M10 reuse: STARTED X1 re-sent with the same row count, one value changed, is REJECTED; M10 reuse: COMPLETE X1 re-sent with the same row count, one value changed, is REJECTED |
+| `row-count-check-dropped` | shared | a reused file_id with a different row count is not refused by the manifest | KILLED | M10 reuse: STARTED X2 (nothing archived) re-sent with a different row count is REJECTED; M10 reuse:   ... archive and warehouse untouched; M10 reuse: STARTED X2 re-sent with its original content retries to COMPLETE |
+| `complete-before-load` | shared | the manifest is written COMPLETE before the loader runs | KILLED | M10 reuse: crashed delivery X1 is left STARTED; M10 reuse: delivery X2 crashed before the archive write is left STARTED |
+| `stage-kept` | shared | a successful delivery leaves its rows in the stage | KILLED | M01 [B0] stage blank after delivery; M01 [D1] stage blank after delivery; M01 [D2] stage blank after delivery; M01 [D3] stage blank after delivery; M01 [D4] stage blank after delivery; M01 [D5] stage blank after delivery; M01 [D5R] stage blank after delivery; M01 [D6] stage blank after delivery; M01 [D6R] stage blank after delivery |
+| `dedup-recency-reversed` | shared | stage dedup keeps the OLDEST extract per key | KILLED | C06.2 |
+| `dedup-tiebreak-reversed` | shared | on equal extract_dt, the FIRST row in the file wins | KILLED | M11 tiebreak: equal extract_dt -> the last row in the file wins; M11 tiebreak: still the last row after rebuild (seq_nbr order restored) |
+| `dedup-dropped` | shared | stage L2 passes every row through, duplicates included | KILLED | ABORT load_feed.sh exited 1 at delivery D4 (d4_cust_recency.sql) |
+| `replay-delivery-order-reversed` | shared | rebuild replays deliveries newest first | KILLED | C11.1; C14.1 |
+| `replay-row-order-reversed` | shared | rebuild restores each delivery's rows in reverse file order | KILLED | M11 tiebreak: still the last row after rebuild (seq_nbr order restored) |
+
+Survivors:
+
+- `placed-by-delete-filter-dropped` (`tests/mutations/m08-placed-by-delete-filter-dropped.mut`): an equivalent mutant. A DELETE frame row carries only the hooks and keys, so full_name is NULL on it and placed_by comes out NULL with or without the filter; the filter documents intent and guards against a future DELETE row that carries a payload
+
 ## `v3_inmon-3nf`
 
 | Mutation | Tag | What it breaks | Result | Assertions broken |
@@ -123,6 +192,31 @@ Survivors:
 | `dedup-dropped` | shared | stage L2 passes every row through, duplicates included | KILLED | ABORT load_feed.sh exited 1 at delivery D4 (d4_cust_recency.sql) |
 | `replay-delivery-order-reversed` | shared | rebuild replays deliveries newest first | KILLED | C11.1; C14.1; M08 tiebreak: still the last row after rebuild (seq_nbr order restored) |
 | `replay-row-order-reversed` | shared | rebuild restores each delivery's rows in reverse file order | KILLED | M08 tiebreak: still the last row after rebuild (seq_nbr order restored) |
+
+## `v3_one-big-table`
+
+| Mutation | Tag | What it breaks | Result | Assertions broken |
+| --- | --- | --- | --- | --- |
+| `refresh-skipped` | model | a delivery is appended to the log but the latest tables are never refreshed | KILLED | C02.1; C02.2; C02.3; C03.1; C03.2; C04.1; C05.3; C06.1; C06.2; C08.2; C08.3; C11.1; C13.1; M02 baseline: C001 email v1; M02 INCREMENTAL: C002 email unchanged; M03 raw code stored, translated per-consumer in the view; M05 repoint: O-101 now belongs to C001, effortlessly; M07 wide table: O-101's line stays after C002's delete, with no customer name; M07 restore: C002 re-sent with its pre-delete values is live again; M07 restore: the wide table names C002 on O-101 again; M07 tiebreak: equal extract_dt -> the last row in the file wins |
+| `wide-drops-orphans` | model | the One Big Table inner-joins customers, so an order whose customer is deleted drops out | KILLED | M07 wide table: O-101's line stays after C002's delete, with no customer name |
+| `consumer-decode-lost` | model | v_order's CASE no longer translates 'P' | KILLED | C02.2; C12.1; M03 raw code stored, translated per-consumer in the view |
+| `full-guard-dropped` | shared | any later delivery of a feed, not only a FULL one, counts as absence | KILLED | C03.2; C03.3; M02 INCREMENTAL: C002 email unchanged; M07 restore: still live after rebuild |
+| `full-absence-ignored` | shared | a later FULL delivery that leaves a key out never makes it deleted | KILLED | C04.2; C08.1; C08.2; C08.3; C14.1 |
+| `tombstone-ignored` | shared | a key whose latest mention is a tombstone still counts as alive | KILLED | C05.2; C05.3; M07 wide table: O-101's line stays after C002's delete, with no customer name |
+| `restore-ignored` | shared | a customer tombstoned once stays deleted even when a later delivery upserts it | KILLED | M07 restore: C002 re-sent with its pre-delete values is live again; M07 restore: the wide table names C002 on O-101 again; M07 restore: still live after rebuild |
+| `archive-update-allowed` | shared | the archive accepts UPDATE (hist_customer trigger dropped) | KILLED | C10.2; C11.1; C13.1 |
+| `archive-delete-allowed` | shared | the archive accepts DELETE (hist_order trigger dropped) | KILLED | C10.3; C11.1; C12.1; C13.2 |
+| `archive-deduped` | shared | the archive keeps only the last row per customer, not the delivery verbatim | KILLED | ABORT load_feed.sh exited 1 at delivery D4 (d4_cust_recency.sql) |
+| `complete-never-skips` | shared | a COMPLETE delivery re-sent is applied again instead of skipped | KILLED | C07.1; M06 reuse: COMPLETE X1 re-sent with its original content is skipped |
+| `started-skips` | shared | a crashed (STARTED) delivery re-sent is skipped instead of retried | KILLED | M06 reuse: STARTED X1 re-sent with its original content retries to COMPLETE; M06 reuse: STARTED X2 re-sent with its original content retries to COMPLETE |
+| `content-check-dropped` | shared | a reused file_id with the same row count but different values is accepted | KILLED | M06 reuse: STARTED X1 re-sent with the same row count, one value changed, is REJECTED; M06 reuse:   ... archive and warehouse untouched; M06 reuse: COMPLETE X1 re-sent with the same row count, one value changed, is REJECTED |
+| `row-count-check-dropped` | shared | a reused file_id with a different row count is not refused by the manifest | KILLED | M06 reuse: STARTED X2 (nothing archived) re-sent with a different row count is REJECTED; M06 reuse:   ... archive and warehouse untouched; M06 reuse: STARTED X2 re-sent with its original content retries to COMPLETE |
+| `complete-before-load` | shared | the manifest is written COMPLETE before the loader runs | KILLED | M06 reuse: crashed delivery X1 is left STARTED; M06 reuse: delivery X2 crashed before the archive write is left STARTED |
+| `stage-kept` | shared | a successful delivery leaves its rows in the stage | KILLED | M01 [B0] stage blank after delivery; M01 [D1] stage blank after delivery; M01 [D2] stage blank after delivery; M01 [D3] stage blank after delivery; M01 [D4] stage blank after delivery; M01 [D5] stage blank after delivery; M01 [D5R] stage blank after delivery; M01 [D6] stage blank after delivery |
+| `dedup-recency-reversed` | shared | within one delivery, the OLDEST extract per key wins | KILLED | C06.2 |
+| `dedup-tiebreak-reversed` | shared | on equal load_seq and extract_dt, the FIRST row in the file wins | KILLED | M07 tiebreak: equal extract_dt -> the last row in the file wins; M07 tiebreak: still the last row after rebuild (one refresh over the log) |
+| `dedup-dropped` | shared | the latest-value pick passes every UPSERT mention through, duplicates included | KILLED | ABORT load_feed.sh exited 1 at delivery D1 (d1_cust_win_day60.sql) |
+| `log-order-reversed` | shared | the refresh reads the log oldest delivery first (OBT's replay order: its rebuild is one refresh) | KILLED | C03.1; C04.1; C04.3; C05.2; C05.3; C08.2; C08.3; C13.1; C14.1; M05 repoint: O-101 now belongs to C001, effortlessly; M07 wide table: O-101's line stays after C002's delete, with no customer name |
 
 ## `v3_unified-star-schema`
 

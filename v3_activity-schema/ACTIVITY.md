@@ -13,6 +13,7 @@ byte-identical.
 make demo     # fresh archive + the full delivery sequence + views
 make rebuild  # regenerate the streams by replaying the raw layer
 make test     # 153 assertions (36 core, 117 model), mutation-checked
+make mutate   # 25 mutations (18 shared, 7 model), each must turn the suite red
 ```
 
 ## The four ideas
@@ -112,4 +113,5 @@ schema/03_activity.sql       the two streams, immutability triggers, activity ca
 schema/04_views.sql          business views, LAST BEFORE / FIRST EVER / FIRST AFTER views
 scripts/load_activities.sh   snapshot -> activities: change detection + the shared delete rule
 tests/run_tests.sh           153 assertions
+tests/mutations/*.mut        25 mutations `make mutate` runs against the suite
 ```

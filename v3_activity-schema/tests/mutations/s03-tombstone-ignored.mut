@@ -1,0 +1,5 @@
+name: tombstone-ignored
+tag: shared
+what: an op='DELETE' row writes no was_deleted / discontinued / order_deleted activity
+file: scripts/load_activities.sh
+sed: s/WHERE s\.op = 'DELETE' AND \([a-z]\)\.alive = 1"/WHERE s.op = 'NEVER' AND \1.alive = 1"/

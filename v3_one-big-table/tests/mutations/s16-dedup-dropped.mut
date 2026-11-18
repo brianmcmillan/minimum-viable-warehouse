@@ -1,0 +1,5 @@
+name: dedup-dropped
+tag: shared
+what: the latest-value pick passes every UPSERT mention through, duplicates included
+file: scripts/refresh_latest.sh
+sed: s/^WHERE u\.rn=1;/WHERE u.rn>=1;/

@@ -1,0 +1,5 @@
+name: at-purchase-from-current
+tag: model
+what: v_order_at_purchase reads the customer's latest profile, not the one LAST BEFORE the order
+file: schema/04_views.sql
+sed: s/ AND a\.ts < po\.ts$//

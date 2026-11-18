@@ -1,0 +1,5 @@
+name: archive-update-allowed
+tag: shared
+what: the archive accepts UPDATE (hist_customer trigger dropped)
+file: schema/02_archive.sql
+sed: /trg_hc_nu/,/END;/d

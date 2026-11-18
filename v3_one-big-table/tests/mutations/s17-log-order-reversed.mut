@@ -1,0 +1,5 @@
+name: log-order-reversed
+tag: shared
+what: the refresh reads the log oldest delivery first (OBT's replay order: its rebuild is one refresh)
+file: scripts/refresh_latest.sh
+sed: s/ORDER BY load_seq DESC, extract_dt DESC, seq_nbr DESC/ORDER BY load_seq ASC, extract_dt DESC, seq_nbr DESC/

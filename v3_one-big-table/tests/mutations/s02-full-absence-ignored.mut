@@ -1,0 +1,5 @@
+name: full-absence-ignored
+tag: shared
+what: a later FULL delivery that leaves a key out never makes it deleted
+file: scripts/refresh_latest.sh
+sed: s/^    AND NOT EXISTS (SELECT 1 FROM fulls f WHERE f\.load_seq > m\.load_seq))$/    AND 1)/

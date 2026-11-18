@@ -63,7 +63,7 @@ network.
 ```bash
 make demo          # fresh archive + schema + the full 6-delivery sequence, then print the warehouse
 make rebuild       # delete the frames; replay the raw layer to rebuild them
-make test          # 129 assertions (36 core, 93 model): delete semantics, hooks, delta frames, as-of, exact rebuild
+make test          # 134 assertions (36 core, 98 model): delete semantics, hooks, delta frames, as-of, exact rebuild
 make clean         # delete build/ only — the archive SURVIVES
 make clean-archive # delete archive/ — destroys the raw layer, and the ability to rebuild
 ```
@@ -284,7 +284,8 @@ never close a row.
 |----------------------|--------------------------------------------------------------------------|
 | `make demo`          | fresh archive + schema + the full delivery sequence + printed warehouse  |
 | `make rebuild`       | regenerate the frames by replaying the raw layer                         |
-| `make test`          | run the test suite (129 assertions)                                       |
+| `make test`          | run the test suite (134 assertions)                                       |
+| `make mutate`        | apply each `tests/mutations/*.mut` to a scratch copy and check the suite turns red |
 | `make init`          | recreate the frame database from schema (the archive survives)           |
 | `make clean`         | delete `build/` only — **the archive survives**                          |
 | `make clean-archive` | delete `archive/` — destroys the raw layer and the ability to rebuild    |
@@ -312,8 +313,12 @@ never close a row.
 │   └── query.sh             # print the warehouse
 ├── source/                  # D0–D5, byte-identical with ../v3_datavault and ../v3_inmon-3nf
 ├── tests/
-│   ├── run_tests.sh         # 129 assertions
-│   └── fixtures/d6_repoint.sql   # O-101 re-pointed to C001 (data row identical to the siblings')
+│   ├── run_tests.sh         # 134 assertions
+│   ├── mutations/           # 26 deliberate breakages `make mutate` runs against the suite
+│   └── fixtures/
+│       ├── d6_repoint.sql   # O-101 re-pointed to C001 (data row identical to the siblings')
+│       ├── d7_restore.sql   # restore after delete, with the pre-delete values
+│       └── d8_tiebreak_wide.sql # same-extract tiebreak: the last row in the file wins, through replay
 ├── build/                   # generated: the frames (safe to delete)
 └── archive/                 # generated: the durable raw layer
 ```
@@ -326,7 +331,7 @@ never close a row.
 make test
 ```
 
-**129 assertions** (36 core, 93 model), pure shell + `sqlite3`. The output comes in two parts:
+**134 assertions** (36 core, 98 model), pure shell + `sqlite3`. The output comes in two parts:
 CORE, the fourteen sections every one of the ten suites runs in the same order with the same labels
 (`../tests/core_spec.tsv`; the nine question answers are the SQL files in `tests/answers/`), then
 MODEL, what only this model shows. Between them they cover:
@@ -345,10 +350,18 @@ MODEL, what only this model shows. Between them they cover:
   as history, and a re-sent re-point writes nothing.
 - **Rebuild** — `make clean` + replay reproduces the frames exactly.
 
-Mutation-checked: removing the FULL guard, the NOCHANGE guard, the tombstone
-branch, or the dead-key guard; reversing the dedup tiebreak or the replay
-order; dropping `customer_ref` from the order diff; or reading latest rows
-without honouring `DELETE` each turn the suite red.
+Mutation-tested: `make mutate` applies each of the 26 breakages in
+`tests/mutations/` to a scratch copy and requires the suite to go red: the
+FULL guard, NOCHANGE guard and tombstone branch; the dead-key guard (a FULL
+delivery must not write a second DELETE for a subject already deleted); the
+dedup tiebreak and the replay order; `customer_ref` in the order diff;
+reading latest rows without honouring `DELETE`; the key-set check; and the
+shared archive and load-control rules. The dedup tiebreak and the replay
+row order were claimed here before any fixture exercised them; M11's
+tiebreak fixture now does. One survivor is known and expected: dropping the
+`DELETE` filter from `v_order`'s customer join changes nothing, because a
+DELETE frame row carries no name. Results for every model are in
+`../MUTATIONS.md`.
 
 ---
 

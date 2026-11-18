@@ -1,0 +1,5 @@
+name: stream-update-allowed
+tag: model
+what: customer_stream accepts UPDATE (immutability trigger dropped)
+file: schema/03_activity.sql
+sed: /^CREATE TRIGGER trg_cs_nu/,/END;/d

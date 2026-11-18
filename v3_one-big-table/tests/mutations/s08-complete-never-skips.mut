@@ -1,0 +1,5 @@
+name: complete-never-skips
+tag: shared
+what: a COMPLETE delivery re-sent is applied again instead of skipped
+file: scripts/load_feed.sh
+sed: s/if \[ "\$prev_status" = "COMPLETE" \]/if [ "$prev_status" = "NEVER" ]/

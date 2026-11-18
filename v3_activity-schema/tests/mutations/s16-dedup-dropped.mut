@@ -1,0 +1,5 @@
+name: dedup-dropped
+tag: shared
+what: stage L2 passes every row through, duplicates included
+file: schema/01_stage.sql
+sed: s/) WHERE rn = 1;/) WHERE rn >= 1;/

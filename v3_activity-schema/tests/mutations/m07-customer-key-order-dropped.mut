@@ -1,0 +1,6 @@
+name: customer-key-order-dropped
+tag: model
+what: customer-stream activity ids are numbered without the business-key sort (product stream keeps it)
+file: scripts/load_activities.sh
+sed: s/OVER (ORDER BY x\.k, x\.activity, x\.ts)/OVER (ORDER BY CASE WHEN '$stream' = 'customer_stream' THEN NULL ELSE x.k END, x.activity, x.ts)/g
+survivor: the one README.md already admits. On this SQLite build the query plan returns customers in business-key order anyway, so C004's signed_up still gets the lower id; d8_tiebreak.sql's key-order assertion guards it on engines whose plans differ. Dropping the sort from both streams is killed (activity-key-order-dropped), because the order lines in d8 are staged in an order the plan does not happen to fix

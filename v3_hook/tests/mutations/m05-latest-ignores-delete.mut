@@ -1,0 +1,5 @@
+name: latest-ignores-delete
+tag: model
+what: v_customer reads the latest frame row without honouring DELETE
+file: schema/04_views.sql
+sed: s/^FROM v_latest__crm__customer WHERE change_type <> 'DELETE';/FROM v_latest__crm__customer;/

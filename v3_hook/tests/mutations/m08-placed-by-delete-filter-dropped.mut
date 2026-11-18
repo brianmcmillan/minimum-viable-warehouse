@@ -1,0 +1,6 @@
+name: placed-by-delete-filter-dropped
+tag: model
+what: v_order's placed_by join no longer filters out a deleted customer's latest frame row
+file: schema/04_views.sql
+sed: s/ON c\.hk_customer = o\.hk_customer AND c\.change_type <> 'DELETE'/ON c.hk_customer = o.hk_customer/
+survivor: an equivalent mutant. A DELETE frame row carries only the hooks and keys, so full_name is NULL on it and placed_by comes out NULL with or without the filter; the filter documents intent and guards against a future DELETE row that carries a payload

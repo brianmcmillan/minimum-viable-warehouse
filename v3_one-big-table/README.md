@@ -61,7 +61,7 @@ directory; nothing reaches the network.
 ```bash
 make demo          # fresh archive + schema + the full 6-delivery sequence, then print the tables
 make rebuild       # init + ONE full refresh — no replay loop, nothing incremental
-make test          # 85 assertions (36 core, 49 model): derived deletes, the storage bill, history-as-a-query
+make test          # 91 assertions (36 core, 55 model): derived deletes, the storage bill, history-as-a-query
 make clean         # delete build/ only — the archive (the real warehouse) SURVIVES
 make clean-archive # delete archive/ — destroys the log, and with it everything
 ```
@@ -304,7 +304,8 @@ exists.
 |----------------------|--------------------------------------------------------------------------------------------|
 | `make demo`          | fresh archive + schema + the full delivery sequence + printed tables                       |
 | `make rebuild`       | `init` + ONE full refresh (no replay loop needed)                                          |
-| `make test`          | run the OBT test suite (85 assertions)                                                      |
+| `make test`          | run the OBT test suite (91 assertions)                                                      |
+| `make mutate`        | apply each `tests/mutations/*.mut` to a scratch copy and check the suite turns red          |
 | `make init`          | recreate the latest tables from schema (the archive survives)                              |
 | `make clean`         | delete `build/` only — **the archive, the real warehouse, survives**; `make rebuild` restores the tables |
 | `make clean-archive` | delete `archive/` — destroys the log and therefore everything (deliberately separate from `clean`) |
@@ -332,9 +333,12 @@ once `COMPLETE`; it is the only target that discards the log implicitly.
 │   └── query.sh             # print the latest tables + the pattern's signature exhibits
 ├── source/                  # the demo delivery files (D0–D5), byte-identical with ../v3_datavault
 ├── tests/
-│   ├── run_tests.sh         # 55-assertion suite (derived deletes, the storage bill, history-as-a-query)
+│   ├── run_tests.sh         # 91-assertion suite (derived deletes, the storage bill, history-as-a-query)
+│   ├── mutations/           # 20 deliberate breakages `make mutate` runs against the suite
 │   └── fixtures/
-│       └── d6_repoint.sql   # restatement fixture: latest wins here
+│       ├── d6_repoint.sql   # restatement fixture: latest wins here
+│       ├── d7_restore.sql   # restore after delete, with the pre-delete values
+│       └── d8_tiebreak_wide.sql # same-extract tiebreak: the last row in the file wins, through rebuild
 ├── build/                   # generated: the latest tables (safe to delete)
 └── archive/                 # generated: the log — the actual warehouse (do NOT delete lightly)
 ```
@@ -347,9 +351,10 @@ once `COMPLETE`; it is the only target that discards the log implicitly.
 make test
 ```
 
-One suite, pure shell + `sqlite3`, **85 assertions** (36 core, 49 model), mutation-hardened (the
-mode-filter, ranking-order, and skipped-refresh mutations were all verified to
-fail it). It replays the shared delivery scenario against the latest tables
+One suite, pure shell + `sqlite3`, **91 assertions** (36 core, 55 model),
+mutation-tested: `make mutate` applies each of the 20 breakages in
+`tests/mutations/` to a scratch copy and requires the suite to go red
+(results for every model in `../MUTATIONS.md`). It replays the shared delivery scenario against the latest tables
 and then exercises the OBT-specific behaviours. The output comes in two parts:
 CORE, the fourteen sections every one of the ten suites runs in the same order
 with the same labels (`../tests/core_spec.tsv`; the nine question answers are

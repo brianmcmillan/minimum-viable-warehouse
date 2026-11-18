@@ -1,0 +1,5 @@
+name: dead-key-guard-dropped
+tag: model
+what: a FULL delivery writes another DELETE row for a subject that is already deleted
+file: scripts/load_frames.sh
+sed: s/^      WHERE l\.change_type <> 'DELETE'$/      WHERE 1/

@@ -1,0 +1,5 @@
+name: nochange-guard-dropped
+tag: model
+what: every live customer upsert writes an updated_email activity, changed or not
+file: scripts/load_activities.sh
+sed: s/WHERE s\.op = 'UPSERT' AND c\.alive = 1 AND s\.email_addr IS NOT c\.email_addr$/WHERE s.op = 'UPSERT' AND c.alive = 1/

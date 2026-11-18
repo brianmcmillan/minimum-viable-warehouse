@@ -1,0 +1,5 @@
+name: restore-ignored
+tag: shared
+what: a deleted subject upserted again writes no restored / order_restored activity
+file: scripts/load_activities.sh
+sed: s/WHERE s\.op = 'UPSERT' AND \([a-z]\)\.alive = 0"/WHERE s.op = 'UPSERT' AND 0"/
