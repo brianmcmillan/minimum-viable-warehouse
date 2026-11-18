@@ -1,5 +1,5 @@
 -- Q7. Who placed O-101, as at purchase?  Expected: Bob Jones
--- CANNOT: current-state model: the order's parent is updated in place on a re-point; needs a history table for the parent link
+-- RAW: current-state model: the order's parent is updated in place on a re-point; needs a history table for the parent link
 -- Needs the archive attached as `arch`. The mart keeps current state: an
 -- order's parent resource is updated in place on a re-point, so the
 -- purchase-time owner survives only in the archive (answering it from the

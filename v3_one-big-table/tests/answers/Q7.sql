@@ -1,5 +1,5 @@
 -- Q7. Who placed O-101, as at purchase?  Expected: Bob Jones
--- CANNOT: the latest tables keep the current owner only; the purchase-time owner is in the log alone
+-- RAW: the latest tables keep the current owner only; the purchase-time owner is in the log alone
 -- Needs the archive attached as `arch`. The order's first logged row, and
 -- that customer's latest logged row as of the same delivery.
 WITH o AS (SELECT customer_ref, load_seq FROM arch.hist_order

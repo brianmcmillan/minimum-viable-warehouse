@@ -1,5 +1,5 @@
 -- Q7. Who placed O-101, as at purchase?  Expected: Bob Jones
--- CANNOT: the re-point restates the fact in place and re-freezes its customer key; needs SCD2 history on the order-customer pairing
+-- RAW: the re-point restates the fact in place and re-freezes its customer key; needs SCD2 history on the order-customer pairing
 -- Needs the archive attached as `arch`. The star keeps current state for
 -- this question: a re-point restates the fact in place and re-freezes its
 -- customer key to the new owner's current version, so the purchase-time
