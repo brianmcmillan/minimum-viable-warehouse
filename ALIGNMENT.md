@@ -35,7 +35,10 @@ new place. No assertion was dropped or weakened.
 | `v3_data-marts` | run 2 | 35/36 | 65 | 1 core | 88 |
 | `v3_datavault` | run 2 | 36/36 | 283 | 0 | 304 |
 | `v3_hook` | run 2 | 36/36 | 93 | 0 | 115 |
-| the other six | runs 3 and 4 | | | | |
+| `v3_unified-star-schema` | run 3 | 36/36 | 104 | 0 | 129 |
+| `v3_activity-schema` | run 3 | 36/36 | 117 | 0 | 139 |
+| `v3_one-big-table` | run 3 | 36/36 | 49 | 0 | 71 |
+| `v3_focal-point`, `v3_anchor`, `v3_metrics-mart` | run 4 | | | | |
 
 ## How assertions moved
 
@@ -318,6 +321,219 @@ C07.1, C07.3, C07.4, C08.3, C08.4, C14.1.
 | ...and does NOT integrate: ERP.CUST\|C001 is not CRM.CUST\|C001 | M09 (same label) | |
 | `[<id>] manifest: ...`, `[<id>] stage blank after delivery` and `[<id>] hook integrity: ...`, for every delivery | M01 (same labels) | 39 assertions |
 | the 16 `reuse:` assertions | M10 (same labels) | the shared block, now byte-identical to Inmon's |
+
+Unplaced assertions: none.
+
+## v3_unified-star-schema
+
+Before: 129 assertions. After: 140 (36 core, 104 model). The 13 new ones
+are all core: C01.1, C02.2, C02.3, C03.4, C04.4, C05.4, C06.1, C07.1,
+C07.3, C07.4, C08.3, C08.4, C14.1.
+
+| Old label | New place | Note |
+|---|---|---|
+| each USS table has exactly one _key_ column: its own | M02 (same label) | evaluated after init |
+| orders has no customer_ref: the relationship lives on the bridge | M02 (same label) | evaluated after init |
+| the bridge carries every table's key | M02 (same label) | evaluated after init |
+| baseline: 2 customers, 3 products, 2 orders current | C02.1 | merged: the core assertion also counts the 3 order lines |
+| baseline: C001 email v1 | M03 (same label) | |
+| bridge: 2+3+2+3 = 10 rows across 4 stages | M02 (same label) | |
+| core keeps raw 'P'; the USS table holds PENDING (+ raw code for lineage) | M07 (same label) | |
+| TRANSITIVE KEY: an order line carries its order's customer | M02 (same label) | |
+| measures sit on their own stage only | M04 (same label) | |
+| FAN TRAP: naive join double counts O-100; the bridge does not | M04 (same label) | |
+| one query, two grains: C001 has 1 order, 29.49, 2 lines | M04 (same label) | |
+| SKU-3 never ordered but still on the star (Product stage) | M04 (same label) | |
+| lineage: every core row names its delivery | M05 (same label) | |
+| core: C001 now 2 rows, the new one an UPDATE | M05 (same label) | |
+| insert-only: C001's first core row still holds the old email | M05 (same label) | |
+| USS shows the new email | C03.1 | |
+| INCREMENTAL: C002 NOT deleted (60-day stale) | C03.2 | |
+| INCREMENTAL: C002 zero churn | C03.3 | |
+| v_order resolves placed_by through the bridge | M02 (same label) | |
+| FULL: SKU-3 core row DELETE, basis FULL_ABSENCE | M05 (same label) | |
+| FULL: SKU-3 gone from product and from the Product stage | C04.2 | |
+| FULL: SKU-1 price 8.99 | C04.1 | |
+| FULL: SKU-2 unchanged -> NOCHANGE, zero churn | C04.3 | |
+| FULL product feed leaves the other core tables untouched | M05 (same label) | |
+| tombstone: C002 latest core row is DELETE/TOMBSTONE | C05.1 | |
+| tombstone: C002 gone from v_customer (no ghost row) | C05.2 | |
+| tombstone: O-101 placed_by now NULL | C05.3 | |
+| the bridge keeps O-101's key to C002, so its amount still counts | M04 (same label) | |
+| sales by customer: C002's 19.5 survives with no name | M04 (same label) | |
+| AS-OF (from the core): as-recorded still answers Bob Jones | C05.5 (Q7) | merged: Q7 takes O-101's first recorded row instead of a hard-coded timestamp |
+| tombstone: C002 has exactly one DELETE row | M05 (same label) | |
+| recency: newest email wins (not MAX) | C06.2 | |
+| recency: one delivery -> one core row | M05 (same label) | |
+| NO CHASM TRAP: order-less C003 still appears in sales by customer | M04 (same label) | |
+| dup file skipped: core unchanged | C07.2 | merged with the next: C07.2 compares the core and the bridge |
+| dup file skipped: bridge unchanged | C07.2 | merged, as above |
+| reconcile: C003 deleted by absence (FULL) | C08.1 | |
+| reconcile: C001 unchanged content -> zero churn (still 2) | M05 (same label) | |
+| reconcile: C002 already deleted -> zero churn (still 2) | M05 (same label) | |
+| reconcile: D5 wrote exactly one core row (the C003 delete) | M05 (same label) | |
+| reconcile: v_customer shows only C001 | C08.2 (Q1) | |
+| reconcile: C003 left the Customer stage | M02 (same label) | |
+| re-asserted current state writes zero core rows | C09.1 | merged with the next: C09.1 compares the core and the bridge |
+| ...and the refreshed bridge is identical | C09.1 | merged, as above |
+| UPDATE on a core table aborts | M06 (same label) | |
+| DELETE on a core table aborts | M06 (same label) | |
+| archive captured every delivered row | C10.1 | |
+| core is delta-compressed: fewer rows than the archive holds | M06 (same label) | |
+| UPDATE on hist_customer aborts | C10.2 | |
+| DELETE on hist_order aborts | C10.3 | |
+| clean+rebuild: core AND bridge identical | C11.1 | |
+| live ref change is NOT yet visible (the USS is materialised) | M07 (same label) | evaluated in C12 |
+| refresh_uss.sh alone applies it -- no core reload | M07 (same label) | evaluated in C12 |
+| ...and the history view reads it on the fly | C12.1 (Q9) | merged and stricter: it read the distinct status; Q9 lists every order core row |
+| ...while the core still holds the raw code | M07 (same label) | evaluated in C12 |
+| repoint: core O-101 has 2 rows, the new one an UPDATE | M08 (same label) | |
+| repoint: Orders stage now keys O-101 to C001 | M08 (same label) | |
+| repoint: the order LINE followed its order (transitive key) | M08 (same label) | |
+| repoint: placed_by resolves to Alice Smith | C13.1 (Q8) | merged: Q8 lists every current owner |
+| repoint: C001 now owns both orders, all 3 lines, 48.99 | M08 (same label) | |
+| repoint: C002 has left the star entirely | M08 (same label) | |
+| repoint: the old pairing survives in the core | C13.2 | |
+| repoint: as-recorded reads each core row against its own moment | M08 (same label) | |
+| repoint: still no fan trap | M08 (same label) | |
+| re-asserted repoint writes nothing | M08 (same label) | |
+| `[<id>] manifest: ...`, `[<id>] USS refreshed for this delivery`, `[<id>] stage blank after delivery` and `[<id>] bridge: one stage row per table row`, for every delivery | M01 (same labels) | 48 assertions |
+| the 16 `reuse:` assertions | M09 (same labels) | the shared block |
+
+Unplaced assertions: none.
+
+## v3_activity-schema
+
+Before: 139 assertions. After: 153 (36 core, 117 model). The 14 new ones
+are all core: C01.1, C02.2, C02.3, C04.4, C05.4, C06.1, C07.1, C07.3,
+C07.4, C08.3, C08.4, C12.1, C13.2, C14.1.
+
+The lifecycle paths (D7), the same-extract tiebreak (D8) and the second
+rebuild run live in PART 2 (M10 to M12), after the core, in the same
+order as before. D7 restores C002, so they must come after C14.
+
+| Old label | New place | Note |
+|---|---|---|
+| only the two streams hold warehouse data | M02 (same label) | evaluated after init |
+| streams carry every Activity Schema 2.0 column | M02 (same label) | evaluated after init |
+| every other column is implementation-specific (spec: '_' prefix) | M02 (same label) | evaluated after init |
+| baseline: 2 customers, 3 products, 2 orders current | C02.1 | merged: the core assertion also counts the 3 order lines |
+| baseline: C001 email v1 | M03 (same label) | |
+| snapshot -> activities: C001 signed_up, then placed_order | M04 (same label) | |
+| EVENT TIME: signed_up is stamped with signup_date, not the load | M05 (same label) | |
+| EVENT TIME: placed_order is stamped with placed_at | M05 (same label) | |
+| placed_order carries revenue_impact and link | M04 (same label) | |
+| order lines are product activities: 3 was_ordered, linked to their order | M04 (same label) | |
+| was_ordered borrows the order's placed_at (event time) | M05 (same label) | |
+| SOFT RULE ON READ: stream stores raw 'P', v_order decodes PENDING | M07 (same label) | |
+| lineage: every activity names its delivery | M04 (same label) | |
+| a changed attribute is ONE new activity: updated_email | M04 (same label) | |
+| updated_email carries only the attribute it owns | M04 (same label) | |
+| OBSERVED TIME: the change is stamped with the extract it was seen in | M05 (same label) | |
+| unchanged name and signup_date -> NO activity (NOCHANGE) | C03.4 | |
+| INCREMENTAL: C002 NOT deleted (60-day stale) | C03.2 | |
+| INCREMENTAL: C002 zero activity | C03.3 | |
+| LAST EVER: current email is the new one | C03.1 | |
+| LAST BEFORE: O-100 still reads the email as it was when placed | M06 (same label) | |
+| FULL: SKU-3 discontinued, basis FULL_ABSENCE | M04 (same label) | |
+| FULL: absence is stamped with the snapshot's extract date | M05 (same label) | |
+| FULL: SKU-3 gone from v_product | C04.2 | |
+| FULL: SKU-1 price 8.99 via one updated_price activity | C04.1 | |
+| FULL: SKU-2 unchanged -> NOCHANGE, no catalogue activity | C04.3 | |
+| D2 wrote exactly two activities (repriced SKU-1, discontinued SKU-3) | M04 (same label) | |
+| the discontinued product's order history is untouched | M04 (same label) | |
+| tombstone: C002 was_deleted, basis TOMBSTONE | C05.1 | |
+| tombstone: C002 gone from v_customer (no ghost row) | C05.2 | |
+| tombstone: O-101 placed_by now NULL (current owner is deleted) | C05.3 | |
+| LAST BEFORE: O-101 at purchase still answers Bob Jones | C05.5 (Q7) | |
+| history survives the delete: C002's activities are all still there | M04 (same label) | |
+| recency: newest email wins (not MAX) | C06.2 | |
+| recency: two staged rows -> one signed_up, no spurious update | M04 (same label) | |
+| dup file skipped: streams unchanged | C07.2 | |
+| reconcile: C003 deleted by absence (FULL) | C08.1 | |
+| reconcile: C002 already deleted -> not deleted twice | M04 (same label) | |
+| reconcile: D5 wrote exactly one activity (the C003 delete) | M04 (same label) | |
+| reconcile: v_customer shows only C001 | C08.2 (Q1) | |
+| re-asserted current state writes zero activities | C09.1 | |
+| FIRST EVER / FIRST AFTER (x2) / journeys survive deletes / no foreign keys anywhere | M06 (same labels) | 5 assertions, evaluated after D5R as before |
+| UPDATE on customer_stream aborts | M08 (same label) | |
+| DELETE on product_stream aborts | M08 (same label) | |
+| activity_id and _seq are dense and unique per stream | M08 (same label) | |
+| archive captured every delivered row | C10.1 | |
+| only differences become activities: fewer customer activities than staged customer rows + orders | M08 (same label) | |
+| UPDATE on hist_customer aborts | C10.2 | |
+| DELETE on hist_order aborts | C10.3 | |
+| clean+rebuild: streams identical (activity_id, ts, _seq, lineage included) | C11.1 | |
+| live ref change is visible immediately in v_order | M07 (same label) | evaluated in C12; C12.1 (Q9) separately reads every order activity |
+| ...while the stream still holds the raw code | M07 (same label) | evaluated in C12 |
+| repoint: order_reassigned lands in C001's stream | M09 (same label) | |
+| repoint: it records where the order came from | M09 (same label) | |
+| repoint: C002's placed_order is untouched (immutable) | M09 (same label) | |
+| repoint: unchanged order attributes -> no order_updated | M09 (same label) | |
+| repoint: placed_by resolves to Alice Smith | C13.1 (Q8) | merged: Q8 lists every current owner |
+| repoint: LAST BEFORE at purchase still Bob Jones | M09 (same label) | |
+| repoint: ownership read against each activity's own moment | M09 (same label) | C13.2 separately asks for the earlier owner |
+| re-asserted repoint writes nothing | M09 (same label) | |
+| the seven lifecycle assertions (D7) | M10 (same labels) | live in PART 2 |
+| the four ordering assertions (D8) | M11 (same labels) | live in PART 2 |
+| clean+rebuild after re-point, lifecycle and tiebreak: streams identical | M12 (same label) | live in PART 2 |
+| `[<id>] manifest: ...`, `[<id>] stage blank after delivery` and `[<id>] every activity is in the catalog`, for every delivery | M01 (B0 to D6R) and inline in M10, M11 (D7, D8) | 47 assertions |
+| the 16 `reuse:` assertions | M13 (same labels) | the shared block |
+
+Unplaced assertions: none.
+
+## v3_one-big-table
+
+Before: 71 assertions. After: 85 (36 core, 49 model). The 15 new ones are
+all core: C01.1, C02.2, C02.3, C03.3, C03.4, C04.3, C04.4, C05.1, C05.4,
+C05.5, C06.1, C07.1, C07.4, C12.1, C14.1.
+
+**OBT keeps only the latest state.** Its history answers (Q2, Q3, Q4, Q7,
+and C03.4, C05.1, C05.4, C13.2) are queries over the archived log, which
+is the model's own way of keeping history; the answer files that need the
+archive say so in their header, and the suite runs them with it attached.
+"Writes nothing" (C03.3, C04.3, C09.1) means the latest tables are
+unchanged; that the log still grows is a model assertion (M04), as the
+plan decided for C09.
+
+**C12 Rule change** is new for OBT. The rule lives in the `CASE` of the
+`v_order` view, so changing it means redefining that view. The check does
+so on a copy of the database, with 'P' relabelled PLACED, and reads every
+order through Q9; the shipped schema is untouched.
+
+| Old label | New place | Note |
+|---|---|---|
+| baseline: 2 customers, 3 products, 2 orders | C02.1 | merged with the next into one count of customers, products, orders and lines |
+| baseline: the wide table is at order-line grain (3 rows) | C02.1 | merged, as above |
+| baseline: C001 email v1 | M02 (same label) | |
+| raw code stored, translated per-consumer in the view | M03 (same label) | |
+| latest: C001 email updated | C03.1 | |
+| INCREMENTAL: C002 NOT deleted (60-day stale) | C03.2 | |
+| INCREMENTAL: C002 email unchanged | M02 (same label) | |
+| FULL: SKU-3 deleted by absence (a later FULL outranks its last mention) | C04.2 | |
+| FULL: SKU-1 price 8.99 | C04.1 | |
+| NO NOCHANGE SUPPRESSION: unchanged SKU-2 stored again anyway (2 archive rows) | M04 (same label) | |
+| tombstone: C002 gone from the latest table | C05.2 | |
+| tombstone: O-101 placed_by now NULL | C05.3 | |
+| Bob survives ONLY in the log (no model keeps him queryable) | M04 (same label) | |
+| recency: newest email wins (not MAX) | C06.2 | |
+| dup file skipped: latest tables unchanged | C07.2 | |
+| dup file skipped: archive unchanged | C07.3 | merged and stricter: it counted customer rows; C07.3 compares every archive table and the manifest |
+| reconcile: C003 deleted by absence (FULL) | C08.1 | |
+| reconcile: only C001 remains | C08.2 (Q1) | |
+| reconcile: C002 stays deleted (tombstone still outranked by nothing) | C08.3 (Q2) | merged and stricter: Q2 requires C002 and C003, and nobody else |
+| re-asserted state: latest tables unchanged | C09.1 | |
+| ...but the archive grew by the full re-delivery (+1 wide row) | M04 (same label) | |
+| archive captured every delivered row | C10.1 | |
+| UPDATE on hist_customer aborts | C10.2 | |
+| DELETE on hist_order aborts | C10.3 | |
+| clean+rebuild: identical latest tables from the log alone | C11.1 | |
+| C001's email history recovered via LAG over the archive | C08.4 (Q3) | the same LAG query, now `answers/Q3.sql`, asked after D5 instead of after the rebuild (the log holds the same rows) |
+| repoint: O-101 now belongs to C001, effortlessly | M05 (same label) | |
+| repoint: placed_by resolves to Alice Smith | C13.1 (Q8) | merged: Q8 lists every current owner |
+| repoint: the prior pairing survives only in the log | C13.2 | |
+| `[<id>] manifest: ...` and `[<id>] stage blank after delivery`, for every delivery | M01 (same labels) | 26 assertions |
+| the 16 `reuse:` assertions | M06 (same labels) | the shared block |
 
 Unplaced assertions: none.
 
