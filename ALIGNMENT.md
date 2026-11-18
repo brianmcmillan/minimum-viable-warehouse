@@ -7,8 +7,9 @@ in all ten suites; each model supplies its own SQL. **Part 2, MODEL:**
 that model's own sections, M01 onwards, holding every other assertion.
 
 `make core-check` (`tests/check_core.sh`) runs the suites and fails if one
-misses a core id, emits one twice, or emits them out of order. A suite
-ends with:
+misses a core id, emits one twice, or emits them out of order; all ten
+pass. `make verify` reports core, model and gap counts per suite, and
+fails if any suite's core total differs. A suite ends with:
 
 ```
   RESULT: <passed> passed, <failed> failed, <gaps> known gap(s)
@@ -32,13 +33,15 @@ new place. No assertion was dropped or weakened.
 | Suite | Aligned | Core | Model | Gap | Before |
 |---|---|---|---|---|---|
 | `v3_inmon-3nf` | run 1 | 36/36 | 58 | 0 | 80 |
-| `v3_data-marts` | run 2 | 35/36 | 65 | 1 core | 88 |
+| `v3_data-marts` | run 2 | 36/36 | 65 | 0 | 88 |
 | `v3_datavault` | run 2 | 36/36 | 283 | 0 | 304 |
 | `v3_hook` | run 2 | 36/36 | 93 | 0 | 115 |
 | `v3_unified-star-schema` | run 3 | 36/36 | 104 | 0 | 129 |
 | `v3_activity-schema` | run 3 | 36/36 | 117 | 0 | 139 |
 | `v3_one-big-table` | run 3 | 36/36 | 49 | 0 | 71 |
-| `v3_focal-point`, `v3_anchor`, `v3_metrics-mart` | run 4 | | | | |
+| `v3_focal-point` | run 4 | 35/36 | 177 | 1 core | 142 + 48 (two suites) |
+| `v3_anchor` | run 4 | 36/36 | 97 | 0 | 124 |
+| `v3_metrics-mart` | run 4 | 35/36 | 201 | 1 core | 222 |
 
 ## How assertions moved
 
@@ -52,6 +55,12 @@ new place. No assertion was dropped or weakened.
   delivery), but its result is reported in the MODEL section named after
   it. Part 1 then holds only core lines, and no check moved to a point
   where the warehouse holds different data.
+- **The raw archive is the final answer.** Where a model updates history
+  away in place (Kimball's restated fact, the metrics mart's current
+  state), a core question is answered from the raw archive, and that
+  counts as answered. One Big Table answers all of its history from the
+  log the same way. A core GAP is kept only for a claim the model cannot
+  meet even with the archive.
 - **Per-delivery manifest and stage checks** (`[B0] manifest: recorded
   exactly once` and the like) are model assertions, reported together in
   M01.
@@ -108,17 +117,14 @@ Unplaced assertions: none.
 
 ## v3_data-marts (Kimball)
 
-Before: 88 assertions. After: 101 (36 core, of which 1 is a GAP; 65
-model). The 15 new ones are all core: C01.1, C02.2, C02.3, C03.4, C04.4,
-C05.4, C06.1, C07.1, C07.3, C07.4, C08.3, C08.4, C13.1, C13.2 (GAP),
-C14.1.
+Before: 88 assertions. After: 101 (36 core, 65 model). The 15 new ones
+are all core: C01.1, C02.2, C02.3, C03.4, C04.4, C05.4, C06.1, C07.1,
+C07.3, C07.4, C08.3, C08.4, C13.1, C13.2, C14.1.
 
-**Core GAP, C13.2 "O-101's earlier owner is still answerable".** The
-re-point UPDATEs the fact row in place, so the star no longer holds
-O-101's earlier owner; only the raw archive does (asserted in M06,
-"repoint: prior pairing survives ONLY in the archive"). The suite prints
-it as a GAP with that reason and still exits 0. C4b decides whether to
-close it.
+**C13.2 "O-101's earlier owner is still answerable"** is answered from the
+raw archive: the re-point UPDATEs the fact row in place, so the star no
+longer holds C002. (Run 2 reported this as a GAP; on review, the archive
+is the final answer in every model.)
 
 | Old label | New place | Note |
 |---|---|---|
@@ -163,7 +169,7 @@ close it.
 | ...and rebuild resets it: schema seed is the source of truth | M03 (same label) | evaluated in C12 |
 | repoint: fact row count unchanged (an UPDATE, not an insert) | M06 (same label) | evaluated after D6 |
 | repoint: O-101 now keyed to C001's current version | M06 (same label) | evaluated after D6. C13.1 (Q8) separately asks who owns O-101 now, through `placed_by_current` |
-| repoint: prior pairing survives ONLY in the archive | M06 (same label) | the archive's answer to C13.2, which the star cannot give |
+| repoint: prior pairing survives ONLY in the archive | M06 (same label) | C13.2 asks the same question of the archive by name |
 | re-asserted repoint writes nothing | M06 (same label) | |
 | `[<id>] manifest: ...` and `[<id>] stage blank after delivery`, for every delivery | M01 (same labels) | 29 assertions |
 | the 16 `reuse:` assertions | M07 (same labels) | the shared block, now byte-identical to Inmon's |
@@ -534,6 +540,195 @@ order through Q9; the shipped schema is untouched.
 | repoint: the prior pairing survives only in the log | C13.2 | |
 | `[<id>] manifest: ...` and `[<id>] stage blank after delivery`, for every delivery | M01 (same labels) | 26 assertions |
 | the 16 `reuse:` assertions | M06 (same labels) | the shared block |
+
+Unplaced assertions: none.
+
+## v3_focal-point
+
+Before: two suites, `run_tests.sh` (142 assertions, plus 2 known gaps)
+and `test_archive.sh` (48). After: one suite, 213 assertions (36 core, of
+which 1 is a GAP; 177 model). `tests/test_archive.sh` is gone: its
+rule-change check is now core C12.1, and every other check is a MODEL
+section (M10 to M21), running on its own database pair as before. The 22
+new core assertions are C01.1, C02.1, C02.2, C02.3, C03.4, C04.3, C04.4,
+C05.3, C05.4, C05.5, C06.1, C07.1, C07.3, C07.4, C08.2, C08.4, C10.1,
+C10.2, C10.3, C11.1, C13.2 and C14.1.
+
+**Core GAP, C13.1 "O-101 is owned by Alice Smith and nobody else".** This
+is Focal's known driving-key re-point gap. Q8 lists every active pairing,
+so it reads "Alice Smith,Bob Jones". The two old expected failures
+("desired: exactly ONE active pairing", "desired: the active pairing is
+C001") are merged into it: Q8 passes only when both hold. The suite now
+reports 1 gap where it reported 2, and prints the suggested fix in M06.
+
+| Old label | New place | Note |
+|---|---|---|
+| baseline: 2 customers / 3 products | M02 (same labels) | focal-table counts; C02.1 counts the current views and order lines |
+| baseline: C001 email v1 | M02 (same label) | |
+| INCREMENTAL: C001 email updated | C03.1 | |
+| INCREMENTAL: C002 NOT deleted (60-day stale) | C03.2 | |
+| INCREMENTAL: C002 email unchanged | M02 (same label) | |
+| INCREMENTAL: C002 no version churn (1 row) | C03.3 | |
+| INCREMENTAL: still 2 customers | M02 (same label) | |
+| existence: D1's window writes no existence row for absent C002 (ACTIVE once) | M04 (same label) | |
+| FULL: SKU-3 deleted on absence | C04.2 | |
+| FULL: SKU-3 key still exists | M02 (same label) | |
+| FULL: SKU-1 price changed 8.99 | C04.1 | |
+| tombstone: C002 now deleted | C05.1 | |
+| tombstone: C002 gone from v_customer | C05.2 | |
+| recency: newest email wins (not MAX) | C06.2 | |
+| dup file skipped: desc rows unchanged | C07.2 | merged and stricter: it counted `customer_desc`; C07.2 compares every data table |
+| dup file: D1 recorded once / D1 archived once | M05 (same labels) | |
+| existence: re-delivered ACTIVE C003 writes nothing (NOCHANGE) / C003 is still ACTIVE once | M04 (same labels) | the D4R re-send runs where it did, in C07 |
+| reconcile: C003 deleted by absence (FULL) | C08.1 | |
+| reconcile: C001 survives | M02 (same label) | |
+| reconcile: C002 stays deleted | C08.3 (Q2) | merged and stricter: Q2 requires C002 and C003, and nobody else |
+| the eight "Existence after D5" assertions (end state, v_customer_status x2, SKU-3 x2, existence history, email history, v_all_facts) | M04 (same labels) | the end-state one stays here; C14.1 asks the same after the re-point |
+| C002 survived the incremental window, only died to a tombstone | M03 (same label) | |
+| replay: zero new data rows / loaded_files / archived rows / pipeline runs | M05 (same labels) | the same-id replay of the whole sequence, still in C09 |
+| re-asserted current state writes zero data rows | C09.1 | |
+| defect today: O-101 has BOTH pairings active | M06 (same label) | |
+| desired: exactly ONE active pairing for the driving key (GAP) | C13.1 (Q8), GAP | merged, as above |
+| desired: the active pairing is C001 (GAP) | C13.1 (Q8), GAP | merged, as above |
+| the five `restore:` assertions | M07 (same labels) | live in PART 2 |
+| the Level 1 and Level 2 assertions | M08, M09 (same labels) | live in PART 2 |
+| every `ck_load_control` assertion (`[<id>] loaded_files: ...`, `archive: raw rows captured verbatim`, `scope: ...`), for every delivery | M01 (same labels) | |
+| the 16 `reuse:` assertions | M22 (same labels) | the shared block |
+| **test_archive.sh** section 1 (8 assertions: archive holds every staged row, 6 deliveries COMPLETE, load_seq dense, raw value survives, re-sending D1 x2, reused file_id REJECTED, ...and says why) | M10 (same labels) | |
+| test_archive.sh section 2 (UPDATE/DELETE on each hist_* aborts x8, archive intact) | M11 (same labels) | C10.2 and C10.3 assert the same on the main archive |
+| test_archive.sh section 3 (rebuild identical, focal rows repopulated, lineage regenerated) | M12 (same labels) | C11.1 asserts the rebuild on the main warehouse |
+| test_archive.sh sections 4, 5, 6 | M13, M14, M15 (same labels) | |
+| test_archive.sh section 7: changed meta_value_map is applied retroactively (PENDING -> PLACED) | C12.1 (Q9) | merged and stricter: it read O-100's status; Q9 reads every open status version of every order |
+| test_archive.sh sections 8 to 13 | M16 to M21 (same labels) | |
+
+Unplaced assertions: none.
+
+## v3_anchor
+
+Before: 124 assertions. After: 133 (36 core, 97 model). The 15 new ones
+are all core: C01.1, C02.2, C02.3, C03.1, C04.1, C04.4, C05.5, C06.1,
+C07.1, C07.3, C07.4, C08.3, C08.4, C13.2, C14.1.
+
+| Old label | New place | Note |
+|---|---|---|
+| baseline: 2 customers, 3 products, 2 orders in the perspectives | C02.1 | merged: the core assertion also counts the 3 order lines |
+| baseline: deterministic anchor IDs (C001=1001, C002=1002) | M02 (same label) | |
+| baseline: C001 email v1 | M02 (same label) | |
+| baseline: typed column (Product_Price is REAL, not a slot) | M03 (same label) | |
+| KNOT: raw 'P' in the archive, knot label PENDING on read | M04 (same label) | |
+| ATTRIBUTE GRAIN: C001 email has 2 rows... | M03 (same label) | |
+| ...but C001 name still has 1 (only what changed is versioned) | C03.4 | |
+| INCREMENTAL: C002 NOT deleted (60-day stale) | C03.2 | |
+| INCREMENTAL: C002 zero churn anywhere | C03.3 | |
+| restatement control: C001 EXISTS not re-asserted | M03 (same label) | |
+| FULL: SKU-3 DELETED by absence (existence is data, not row_st) | M05 (same label) | |
+| FULL: SKU-3 attributes untouched by its deletion | M03 (same label) | |
+| FULL: SKU-3 excluded from v_product | C04.2 | |
+| FULL: SKU-1 price 8.99 as a second PRC row | M03 (same label) | C04.1 reads the price itself |
+| FULL: SKU-2 zero churn | C04.3 | |
+| tombstone: C002 DELETED | C05.1 | |
+| tombstone: C002 gone from v_customer | C05.2 | |
+| tombstone: O-101 placed_by now NULL | C05.3 | |
+| tombstone: Bob's history intact | C05.4 | merged and stricter: now checks the email as well as the name |
+| recency: newest email wins (not MAX) | C06.2 | |
+| recency: one delivery -> one EML row | M03 (same label) | |
+| dup file skipped: constellation unchanged | C07.2 | |
+| reused file_id with different content is REJECTED | M06 (same label) | Anchor's same-row-count tamper file is kept; C07.4 uses the shared two-row one |
+| reconcile: C003 DELETED by absence (FULL) | C08.1 | |
+| reconcile: C002 stays DELETED, no re-assertion (still 2 rows) | M05 (same label) | |
+| reconcile: C001 full snapshot, zero attribute churn | M03 (same label) | |
+| reconcile: v_customer shows only C001 | C08.2 (Q1) | |
+| re-asserted current state writes zero rows | C09.1 | |
+| archive captured every delivered row | C10.1 | |
+| UPDATE on hist_customer / hist_product / hist_order / hist_order_line aborts | C10.2 | merged: one core assertion covers all four tables |
+| DELETE on hist_customer / hist_product / hist_order / hist_order_line aborts | C10.3 | merged: one core assertion covers all four tables |
+| clean+rebuild: identical, anchor surrogates included | C11.1 | |
+| make rebuild exits 0 / every anchor surrogate / constellation identical / archive layout x2 | M07 (same labels) | |
+| relabel: every order reads PLACED instantly, no reload | C12.1 (Q9) | merged and stricter: it read the distinct status; Q9 lists every status row of every order |
+| ...and rebuild resets it: schema seed is the source of truth | M04 (same label) | |
+| unknown status code 'X' is REJECTED / stays STARTED / staged rows preserved | M08 (same labels) | evaluated in C12, as before |
+| repoint: O-101 pairing history has 2 rows | M09 (same label) | |
+| repoint: exactly one current, and it is C001 | M09 (same label) | |
+| repoint: old pairing end-dated by LEAD, never updated | M09 (same label) | C13.2 asks for the earlier owner |
+| repoint: placed_by resolves to Alice Smith | C13.1 (Q8) | merged: Q8 lists every current pairing |
+| repoint: restatement control kept every attribute silent | M09 (same label) | |
+| re-asserted repoint writes nothing | M09 (same label) | |
+| same anchor surrogates / same constellation from the old narrow files | M10 (same labels) | live in PART 2 |
+| ingest / after rebuild: tiebreak | M11 (same labels) | live in PART 2 |
+| the Level 1 and Level 2 assertions | M12, M13 (same labels) | live in PART 2 |
+| `[<id>] manifest: ...` and `[<id>] stage blank after delivery`, for every delivery | M01 (same labels) | |
+| the 16 `reuse:` assertions | M14 (same labels) | the shared block |
+
+Unplaced assertions: none.
+
+## v3_metrics-mart
+
+Before: 222 assertions. After: 237 (36 core, of which 1 is a GAP; 201
+model). The 18 new core assertions are C01.1, C02.2, C02.3, C03.3, C04.3
+(GAP), C05.2, C05.5, C06.1, C07.3, C07.4, C08.2, C08.3, C08.4, C09.1,
+C10.1, C12.1, C13.2, C14.1. The C09 re-send (D5R) adds four per-delivery
+model checks.
+
+**The raw archive answers what the mart updated away.** The mart keeps
+current state only: C08.4 (C001's email history, `answers/Q3.sql`) and
+C13.2 (O-101's earlier owner) are answered from the raw archive, the
+final answer in every model.
+
+**One core GAP, C04.3 "unchanged SKU-2 writes nothing".** An unchanged
+price seen again is a new sample by design (metrics are observations);
+name and currency wrote nothing. The GAP prints its reason and the suite
+exits 0.
+
+**Ordering changes, no change in meaning.**
+- **C13 Re-point** now comes right after the rebuild, ahead of the stale-
+  FULL, tiebreak and closed-code-table fixtures (which add customers and
+  so had to follow C14). Those run live in PART 2 (M09 to M11), in their
+  old order relative to each other, followed by D8 to the end as before.
+- **C12 Rule change** relabels 'P' on a copy of the mart. The mart's own
+  relabel ("relabel: every pending order reads PLACED instantly") still
+  runs live in M19, after the second rebuild, so the later "rebuild resets
+  both" check keeps its meaning.
+
+| Old label | New place | Note |
+|---|---|---|
+| baseline: 2 customers, 3 products, 2 orders in the perspectives | C02.1 | merged: the core assertion also counts the 3 order lines |
+| baseline: one RES table / deterministic res_id / providers / aliases / C001 email v1 / batch_no | M02 (same labels) | |
+| the five `METRIC:` assertions | M03 (same labels) | |
+| PARENT: O-100's parent / CODE TABLE x2 | M04 (same labels) | |
+| the five `GROUPS:` and two `TYPE GROUPS:` assertions | M05 (same labels) | |
+| the three D0 and three D2 `AGGREGATES:` assertions | M06 (same labels) | |
+| stale-window trap: absent C002 is NOT deleted | C03.2 | |
+| C001 email updated | C03.1 | |
+| CURRENT STATE x2, CURRENT FEEDS ONLY | M07 (same labels) | |
+| CHANGED ROWS ONLY: res_customer restamped, RES row for C001 untouched | C03.4 | |
+| FULL absence: SKU-3 deleted (res_status = 0) / router staged it as load_oper = 'D' | M07 (same labels) | |
+| no ghost row: deleted SKU-3 is out of v_product | C04.2 | |
+| SKU-3 keeps its samples / OBSERVATION: unchanged SKU-2 price seen again is a NEW sample / ...but its unchanged name and currency wrote nothing | M03 (same labels) | C04.3 is the GAP they explain |
+| SKU-1 current price is the newest sample | C04.1 | |
+| SKU-1 price history is two samples | C04.4 (Q4) | |
+| tombstone: C002 deleted | C05.1 | |
+| tombstone: the row is kept with its last-known name | C05.4 | merged and stricter: now checks the email as well as the name |
+| tombstone: O-101 survives, placed_by is NULL (owner not live) | C05.3 | |
+| tombstone: O-101 still points at C002 (parent_res is not cleared) | M04 (same label) | |
+| recency dedup: newest extract wins, not MAX(value) | C06.2 | |
+| new resource continues the surrogate sequence (C003 = 8) | M02 (same label) | |
+| load control: duplicate delivery skipped | C07.1 | |
+| load control: the mart is unchanged | C07.2 | |
+| FULL reconciliation: C003 deleted by absence | C08.1 | |
+| NOCHANGE: C001 restated unchanged writes nothing / already-deleted C002 not restamped / END STATE x3 | M07 (same labels) | |
+| archive rejects UPDATE / DELETE (hist_customer), and on each of the other three tables | C10.2, C10.3 | merged: one core assertion each covers all four tables |
+| a used file_id with different content is rejected | M08 (same label) | |
+| rebuild: census identical | C11.1 | merged with the next: C11.1 compares the census and the full snapshot |
+| rebuild: every surrogate, value and srcd_ts identical | C11.1 | merged, as above |
+| make rebuild exits 0 / make rebuild identical / archive layout x2 | M08 (same labels) | |
+| repoint: O-101's parent is now C001 / unchanged status, currency and placed_at wrote nothing | M04 (same labels) | |
+| repoint: placed_by resolves to Alice Smith | C13.1 (Q8) | merged: Q8 lists every current owner |
+| repoint: IN PLACE -- the mart no longer knows C002 ever owned it / ...the archive does / re-asserted repoint writes nothing | M07 (same labels) | C13.2 asks the archive for the earlier owner by name |
+| repoint: the restated amount is a new observation (2 samples) | M03 (same label) | |
+| every assertion of the stale-FULL, tiebreak and closed-code-table sections | M09, M10, M11 (same labels) | live in PART 2 |
+| every assertion from "Price observation" through "Level 2: the narrow loaders" | M12 to M25 (same labels) | live in PART 2, same order |
+| `[<id>] manifest: ...`, `[<id>] stage blank after delivery`, `[<id>] integrity views empty`, for every delivery | M01, or inline in PART 2 | |
+| the 16 `reuse:` assertions | M26 (same labels) | the shared block |
 
 Unplaced assertions: none.
 

@@ -1,8 +1,9 @@
 # Mutations for C3 to implement
 
 C2e adds no mutation harness. Each mutation below is a code change that
-some assertion in `tests/run_tests.sh` or `tests/test_archive.sh` must
-catch. C3 should apply each one in a scratch copy, run both suites, and
+some assertion in `tests/run_tests.sh` (which now holds the former
+`tests/test_archive.sh` checks as model sections) must
+catch. C3 should apply each one in a scratch copy, run the suite, and
 require at least one FAIL.
 
 1. **Drop the existence filter from `v_customer`.** Remove the join on

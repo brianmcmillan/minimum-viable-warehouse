@@ -11,7 +11,7 @@ help:
 	@echo "  make demo           - fresh archive + init + the full delivery sequence + views"
 	@echo "  make rebuild        - regenerate the warehouse by replaying the raw layer"
 	@echo "  make archive-status - report on the raw layer (read-only)"
-	@echo "  make test           - run the incremental + archive test suites"
+	@echo "  make test           - run the test suite (core, then model, incl. the raw-layer checks)"
 	@echo "  make clean          - delete build/  (the ARCHIVE SURVIVES)"
 	@echo "  make clean-archive  - delete archive/ -- destroys the raw layer, and with it"
 	@echo "                        any ability to rebuild. Deliberately not part of clean."
@@ -40,7 +40,6 @@ archive-status:
 
 test:
 	@./tests/run_tests.sh
-	@./tests/test_archive.sh
 
 # Removes the DERIVED warehouse only. `make rebuild` puts it back.
 clean:

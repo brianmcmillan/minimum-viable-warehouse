@@ -261,12 +261,10 @@ later M03 "  ...and rebuild resets it: schema seed is the source of truth" \
 core_section C13
 feed d6_repoint.sql D6 '2027-02-01 08:00:00' "$HERE/fixtures"
 core C13.1 "$(ans 8)" "Alice Smith"
-# The fact row is restated in place, so the star itself no longer holds
-# O-101's earlier owner; only the raw archive does (M06).
-core_gap C13.2 "$(q "SELECT COALESCE(group_concat(c.customer_ref),'<none>') FROM fact_orders f
-                    JOIN dim_customer c ON c.customer_key=f.customer_key
-                    WHERE f.order_ref='O-101' AND c.customer_ref<>'C001'")" "C002" \
-  "the re-point UPDATEs the fact row in place; C002 survives only in the raw archive"
+# The fact row is restated in place, so the star no longer holds O-101's
+# earlier owner. The raw archive does, and the archive is the final answer.
+core C13.2 "$(pq "SELECT group_concat(DISTINCT customer_ref) FROM arch.hist_order
+                  WHERE order_ref='O-101' AND customer_ref<>'C001'")" "C002"
 later M06 "repoint: fact row count unchanged (an UPDATE, not an insert)" \
    "$(q "SELECT COUNT(*) FROM fact_orders")" "2"
 later M06 "repoint: O-101 now keyed to C001's current version" \

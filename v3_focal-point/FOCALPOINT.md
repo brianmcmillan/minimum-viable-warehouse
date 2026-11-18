@@ -9,7 +9,7 @@ machinery a 14-day / 45-day / yearly cadence actually needs.
 make demo            # baseline + 5 deliveries + views
 make rebuild         # throw the warehouse away; replay the raw layer to rebuild it
 make archive-status  # what the raw layer holds, and where it is growing
-make test            # both suites: delete semantics, and the raw layer
+make test            # 213 assertions (36 core, 177 model): delete semantics and the raw layer
 ```
 
 ## The core rule
@@ -129,7 +129,7 @@ on the order identifiers are first seen. Replaying the archive reproduces them
    When two rows carry the same `extract_ts`, physical order decides.
 3. `load_keys.sh` iterates feeds in a fixed order.
 
-Each has a regression test in `tests/test_archive.sh`.
+Each has a regression test in `tests/run_tests.sh` (the raw-layer model sections).
 
 ### Why there is no retention policy
 

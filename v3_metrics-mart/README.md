@@ -68,7 +68,7 @@ network.
 ```bash
 make demo          # fresh archive + schema + the full 6-delivery sequence, then print the mart
 make rebuild       # delete the mart; replay the raw layer to rebuild it
-make test          # 222 assertions: delete semantics, samples, aggregates, exact rebuild
+make test          # 237 assertions (36 core, 201 model): delete semantics, samples, aggregates, exact rebuild
 make clean         # delete build/ only — the archive SURVIVES
 make clean-archive # delete archive/ — destroys the raw layer, and the ability to rebuild
 ```
@@ -396,7 +396,7 @@ up").
 |----------------------|-----------------------------------------------------------------------|
 | `make demo`          | fresh archive + schema + the full delivery sequence + printed mart    |
 | `make rebuild`       | regenerate the mart by replaying the raw layer                        |
-| `make test`          | run the test suite (222 assertions)                                   |
+| `make test`          | run the test suite (237 assertions)                                   |
 | `make init`          | recreate the mart database from schema (the archive survives)         |
 | `make clean`         | delete `build/` only — **the archive survives**                       |
 | `make clean-archive` | delete `archive/` — destroys the raw layer and the ability to rebuild |
@@ -432,7 +432,7 @@ up").
 │   └── query.sh              # print the mart
 ├── source/                   # D0–D5, wide; byte-identical in all ten models
 ├── tests/
-│   ├── run_tests.sh          # 222 assertions
+│   ├── run_tests.sh          # 237 assertions
 │   └── fixtures/
 │       ├── d6_tiebreak.sql           # same-extract tiebreak (identical to Anchor's)
 │       ├── d7_repoint.sql            # O-101 re-pointed to C001 (identical to Anchor's)
@@ -451,7 +451,13 @@ up").
 make test
 ```
 
-**222 assertions**, pure shell + `sqlite3`, covering:
+**237 assertions** (36 core, 201 model), pure shell + `sqlite3`. The output comes in two parts: CORE,
+the fourteen sections every one of the ten suites runs in the same order with the same labels
+(`../tests/core_spec.tsv`; the nine question answers are the SQL files in `tests/answers/`), then
+MODEL, what only this model shows. The mart keeps current state only, so C001's earlier email
+(C08.4) and O-101's earlier owner (C13.2) are answered from the raw archive, the final answer in
+every model. One core assertion is a known GAP: C04.3, because an unchanged price seen again is a
+new sample by design. Between them the parts cover:
 
 - **Delete semantics** — the stale-window trap, FULL-absence deletes,
   tombstones, recency dedup, load control, a rejected re-use of a

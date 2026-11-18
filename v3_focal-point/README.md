@@ -51,7 +51,7 @@ That's the whole list. Everything runs against local files in the project direct
 
 ```bash
 make demo    # fresh archive + schema + a 6-delivery feed sequence, then print the results
-make test    # run both test suites (delete semantics + the raw-layer rebuild guarantees)
+make test    # run the test suite: shared core, delete semantics, existence, the raw-layer rebuild guarantees
 ```
 
 `make demo` loads six deliveries that stand in for a few weeks of real feeds, then prints the
@@ -300,7 +300,7 @@ Defined in `schema/04_views.sql`, exercised by `scripts/query.sh`:
 | `make demo`           | fresh archive + schema + the full delivery sequence + printed views                 |
 | `make rebuild`        | regenerate the warehouse by replaying the raw layer                                 |
 | `make archive-status` | report the raw layer (read-only): deliveries, rows per feed, growth                 |
-| `make test`           | run the incremental-semantics suite and the raw-layer/rebuild suite                 |
+| `make test`           | run the test suite (core, then model, incl. the raw-layer/rebuild checks)           |
 | `make init`           | recreate the derived warehouse from schema (the archive survives)                   |
 | `make clean`          | delete `build/` only — **the archive survives**; `make rebuild` restores it         |
 | `make clean-archive`  | delete `archive/` — destroys the raw layer and the ability to rebuild (deliberately separate from `clean`) |
@@ -345,9 +345,9 @@ OMS.ORDER_LINE  INCREMENTAL  1           6         6
 │   └── query.sh          # print the business views
 ├── source/               # the demo delivery files (D0–D5), wide; identical in every model
 ├── tests/
-│   ├── run_tests.sh      # delete-semantics suite (FULL vs INCREMENTAL, tombstones, recency)
-│   ├── test_archive.sh   # raw-layer suite (append-only, exact rebuild, retroactive rules)
-│   ├── mutations_todo.md # mutations a later step will run against both suites
+│   ├── run_tests.sh      # the suite: shared core, then delete semantics, existence and the raw layer
+│   ├── answers/          # Q1..Q9.sql: this model's SQL for the nine shared questions
+│   ├── mutations_todo.md # mutations a later step will run against the suite
 │   └── fixtures/         # extra deliveries for tests; fixtures/narrow/ holds the old narrow D0–D5
 ├── docs/er-diagrams.md   # ER diagrams for every layer (Mermaid)
 ├── build/                # generated: the derived warehouse (safe to delete)
@@ -362,22 +362,25 @@ OMS.ORDER_LINE  INCREMENTAL  1           6         6
 make test
 ```
 
-Two independent suites, pure shell + `sqlite3`:
+One suite, pure shell + `sqlite3`: 213 assertions (36 core, of which 1 is a known GAP; 177 model).
+The output comes in two parts: CORE, the fourteen sections every one of the ten suites runs in the
+same order with the same labels (`../tests/core_spec.tsv`; the nine question answers are the SQL files
+in `tests/answers/`), then MODEL, what only this model shows. The model part covers:
 
-- **`tests/run_tests.sh`** — delete semantics under a realistic cadence: that an incremental window
+- **Delete semantics and existence** — delete semantics under a realistic cadence: that an incremental window
   does *not* delete an absent-but-unchanged record, that a FULL snapshot *does* delete on absence, that
   tombstones delete in an incremental feed, recency de-duplication, load control (skip/retry), and full
   idempotence of a replay. Deleted entities are absent from the semantic views (the end state is
   `C001` only) while `v_*_status` lists them as `DELETED`; a re-delivered `ACTIVE` key writes no
   existence row; and `tests/fixtures/d8_restore.sql` delivers C002 again after its tombstone, reopening
   its existence and its attributes.
-- **`tests/test_archive.sh`** — the raw-layer guarantees: the archive captures every delivery verbatim,
+- **The raw layer** (formerly `tests/test_archive.sh`, now model sections M10 to M21) — the archive captures every delivery verbatim,
   append-only is absolute, rebuild reproduces the warehouse *exactly* (surrogate keys included), keys
   are derived rather than preserved, recency survives replay, a changed business rule re-derives
   from the untouched raw values, and every existence row is reproduced.
 
-Both suites pass with no external setup. The delete-semantics suite additionally reports a **known gap**
-(see below) as non-fatal amber lines rather than hiding it.
+The suite passes with no external setup. The driving-key re-point (see below) is core assertion C13.1,
+reported as a non-fatal amber **GAP** line rather than hidden.
 
 ---
 
