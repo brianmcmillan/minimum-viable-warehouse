@@ -74,7 +74,8 @@ erDiagram
 ```
 
 - **PLACED_BY** — each order is placed by exactly one customer; a customer may place many
-  orders. (`meta_relationship.type_key = 90`, resolved through `order_customer_x`.)
+  orders. (`meta_relationship.type_key = 90`, `driving_role = 'SOURCE'`: a re-point closes the old
+  pairing. Resolved through `order_customer_x`.)
 - **CONTAINS** — an order contains many products and a product appears on many orders.
   (`meta_relationship.type_key = 91`, resolved through `order_product_x`.)
 

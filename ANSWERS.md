@@ -52,7 +52,7 @@ because it is the result.
 | Q5 | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE |
 | Q6 | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE |
 | Q7 | NATIVE | RAW ¹ | NATIVE | NATIVE | NATIVE | NATIVE | RAW ¹ | NATIVE | RAW ¹ | RAW ¹ |
-| Q8 | NATIVE | NATIVE | NATIVE | DIFFERENT: `Alice Smith,Bob Jones` | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE |
+| Q8 | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE |
 | Q9 | FINDING ¹ | NATIVE | NATIVE | FINDING ¹ | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE |
 
 ## ¹ RAW and FINDING: what answers, and why
@@ -81,7 +81,6 @@ end of C4b. A cell with no decision row should be NATIVE.
 | Model | Question | Now | Decided | Reason |
 | --- | --- | --- | --- | --- |
 | kimball | Q7 | RAW | NATIVE | SCD2 order ownership (run 4) |
-| focal | Q8 | DIFFERENT | NATIVE | driving-key re-point fix (run 2) |
 | metrics | Q3 | RAW | NATIVE | RES_HIST (run 3) |
 | metrics | Q7 | RAW | NATIVE | RES_HIST (run 3) |
 | obt | Q2 | RAW | NATIVE | views over the log (run 5) |

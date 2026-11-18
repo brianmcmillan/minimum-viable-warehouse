@@ -8,7 +8,7 @@
 # answers live in tests/answers/Q<n>.sql.
 # PART 2, MODEL: what Focal shows on its own -- load control and loader
 # scope after every delivery, narrow versioning, the existence contexts,
-# the driving-key re-point gap, the wide -> narrow transform, and the
+# the driving-key re-point, the wide -> narrow transform, and the
 # raw-layer guarantees that used to live in tests/test_archive.sh.
 #   make test   (or)   ./tests/run_tests.sh
 # =====================================================================
@@ -424,24 +424,53 @@ core C12.1 "$(cat "$WORK/rule.txt")" "PENDING|O-100=PLACED,O-101=PLACED"
 rm -rf "$WORK/proj"
 
 core_section C13
-# OMS corrects O-101 from C002 to C001. Every sibling handles this; Focal's
-# load_rel.sh only knows NEW / tombstone-DEL / FULL-absence-DEL, so the new
-# pair is inserted and the old one stays active (M06 asserts the defect).
+# OMS corrects O-101 from C002 to C001. PLACED_BY declares the order as its
+# driving side (meta_relationship.driving_role), so load_rel.sh closes the
+# old pairing in the same step that opens the new one (M06).
 BATCH_TS='2027-03-01 08:00:00' "$PROJ/scripts/load_feed.sh" \
   "$HERE/fixtures/d7_repoint.sql" D7 >"$LOGDIR/d7.log" 2>&1 \
   || { echo "  ABORT: repoint fixture crashed the loader"; sed 's/^/  | /' "$LOGDIR/d7.log"; exit 1; }
 okey="$(q "SELECT order_key FROM order_idfr WHERE order_idfr='O-101'")"
-core_gap C13.1 "$(ans 8)" "Alice Smith" \
-  "known driving-key gap: load_rel.sh leaves O-101 paired with both C001 and C002 (fix in M06)"
-core C13.2 "$(q "SELECT group_concat(i.customer_idfr) FROM order_customer_x x
+core C13.1 "$(ans 8)" "Alice Smith"
+# DISTINCT: the C002 pairing now has two rows, the original open row and
+# the row that closed it at the re-point; it is one earlier owner.
+core C13.2 "$(q "SELECT group_concat(DISTINCT i.customer_idfr) FROM order_customer_x x
                  JOIN customer_idfr i ON i.customer_key = x.customer_key
                  WHERE x.order_key=$okey AND x.type_key=90 AND i.customer_idfr<>'C001'")" "C002"
-later M06 "defect today: O-101 has BOTH pairings active (one order, two customers)" \
-    "$(q "SELECT COUNT(*) FROM order_customer_x WHERE order_key=$okey AND type_key=90 AND row_st='Y'")" "2"
-# NOTE deliberately NOT asserted: v_order.placed_by. Under the defect it
-# is UNDEFINED -- the view picks one of the two active pairings with
-# LIMIT 1 and no ORDER BY, so any expected value can pass by planner
-# accident. Q8 lists every active pairing instead.
+# A pairing is in force when its LATEST version is active: pairings are
+# insert-only, so the closed C002 pair keeps its original 'Y' row.
+live_pairs(){ q "SELECT COUNT(*)||'/'||COALESCE(group_concat(i.customer_idfr),'') FROM (
+    SELECT x.customer_key, x.row_st, ROW_NUMBER() OVER (PARTITION BY x.customer_key
+             ORDER BY x.eff_tmstp DESC, x.ver_tmstp DESC) rn
+    FROM order_customer_x x WHERE x.order_key=$okey AND x.type_key=90) p
+  JOIN customer_idfr i ON i.customer_key=p.customer_key AND i.row_st='Y'
+  WHERE p.rn=1 AND p.row_st='Y'"; }
+later M06 "O-101 has exactly one active pairing, and it is C001" "$(live_pairs)" "1/C001"
+later M06 "the pairing to C002 survives as closed history, ended at the re-point" \
+   "$(q "SELECT group_concat(row_st||'@'||eff_tmstp,'>') FROM (SELECT x.row_st, x.eff_tmstp
+           FROM order_customer_x x JOIN customer_idfr i ON i.customer_key=x.customer_key
+          WHERE x.order_key=$okey AND x.type_key=90 AND i.customer_idfr='C002'
+          ORDER BY x.eff_tmstp, x.ver_tmstp)")" "Y@2026-02-05 08:00:00>N@2027-03-01 08:00:00"
+later M06 "as at purchase (Q7) still answers Bob Jones after the re-point" "$(ans 7)" "Bob Jones"
+later M06 "v_order.placed_by for O-101 is Alice Smith" \
+   "$(q "SELECT COALESCE(placed_by,'<none>') FROM v_order WHERE order_ref='O-101'")" "Alice Smith"
+# Re-send and rebuild in a scratch copy, so the main archive keeps the
+# delivery count every later section expects.
+SAVE_DB="$DB"; SAVE_ARCHIVE_DB="$ARCHIVE_DB"
+cp "$DB" "$LOGDIR/m06.db"; cp "$ARCHIVE_DB" "$LOGDIR/m06_archive.db"
+export DB="$LOGDIR/m06.db" ARCHIVE_DB="$LOGDIR/m06_archive.db"
+before_d7r="$(census)"
+BATCH_TS='2027-03-15 08:00:00' "$PROJ/scripts/load_feed.sh" "$HERE/fixtures/d7_repoint.sql" D7R \
+  >"$LOGDIR/d7r.log" 2>&1 || echo "  (re-sent re-point exited $?)"
+later M06 "re-sending the re-point writes nothing" "$(census)" "$before_d7r"
+# Relationship rows only (snap's ocx and opx lines), led by their count so
+# two empty snapshots cannot agree.
+rel_rows(){ snap | grep -E '^(ocx|opx)[|]' | { r="$(cat)"; printf '%s rows\n%s' "$(printf '%s' "$r" | grep -c .)" "$r"; }; }
+ingested_d7="$(rel_rows)"
+"$PROJ/scripts/rebuild.sh" >/dev/null 2>&1 || echo "  (rebuild exited $?)"
+later M06 "rebuild after the re-point reproduces every relationship row, keys included" \
+   "$(rel_rows)" "$ingested_d7"
+export DB="$SAVE_DB" ARCHIVE_DB="$SAVE_ARCHIVE_DB"
 
 core_section C14
 core C14.1 "$(end_state)" "C001(alice@newmail.com)"
@@ -459,23 +488,8 @@ own_section M04 "Existence contexts: deleted entities are absent, not empty rows
 replay M04
 own_section M05 "Load control: duplicates and same-id replays are skipped"
 replay M05
-own_section M06 "Known gap: driving-key re-point (fixture d7_repoint.sql)"
+own_section M06 "Driving-key re-point (fixture d7_repoint.sql)"
 replay M06
-if [ "$CORE_GAP" -gt 0 ]; then
-  echo "  ---------------------------------------------------------------"
-  echo "  SUGGESTED FIX for core GAP C13.1 (see FOCALPOINT.md 'Known gap'):"
-  echo "    1. Declare the driving side per relationship, e.g. add a"
-  echo "       driving_role column to meta_relationship ('SOURCE' for"
-  echo "       PLACED_BY: an order has one customer at a time; NULL for"
-  echo "       CONTAINS: order lines are additive pairs)."
-  echo "    2. In load_rel.sh, add a del_repoint CTE next to del_tomb:"
-  echo "       close (flag='DEL') every ACTIVE target pair whose driving"
-  echo "       key appears in src with a DIFFERENT counterpart, gated on"
-  echo "       driving_role. new_delta already inserts the new pair."
-  echo "    3. Make C13.1 a core() check, drop the M06 defect assertion,"
-  echo "       and re-run the suite's mutation checks."
-  echo "  ---------------------------------------------------------------"
-fi
 
 own_section M07 "Existence: a key delivered again after its delete is restored (d8_restore.sql)"
 # C002 was tombstoned in D3. Not asserted here: v_order.placed_by for

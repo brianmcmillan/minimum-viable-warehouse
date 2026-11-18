@@ -9,8 +9,8 @@ machinery a 14-day / 45-day / yearly cadence actually needs.
 make demo            # baseline + 5 deliveries + views
 make rebuild         # throw the warehouse away; replay the raw layer to rebuild it
 make archive-status  # what the raw layer holds, and where it is growing
-make test            # 213 assertions (36 core, 177 model): delete semantics and the raw layer
-make mutate          # 22 mutations (17 shared, 5 model), each must turn the suite red
+make test            # 218 assertions (36 core, 182 model): delete semantics and the raw layer
+make mutate          # 24 mutations (17 shared, 7 model), each must turn the suite red
 ```
 
 ## The core rule
@@ -169,6 +169,9 @@ durable identifier→key registry in the archive, or deterministic (hashed) keys
   the loaders still read narrow key/value rows.
 - `load_desc.sh` / `load_rel.sh` branch on mode: absence-delete only for FULL,
   tombstone-delete always, NEW/CHANGE/NOCHANGE unchanged.
+- Driving-key re-point: `meta_relationship.driving_role` names the side that
+  holds one active pairing at a time, and `load_rel.sh` closes the old pairing
+  when a delivery re-points it (see "Driving-key relationships" below).
 - Entity existence (`*_EXISTENCE` contexts 19/29/39): `load_desc.sh` writes
   `ACTIVE` / `DELETED` versions generically, and `v_customer`, `v_product` and
   `v_order` list only `ACTIVE` keys; `v_*_status` shows every key. Seeded as
@@ -199,23 +202,35 @@ change. Two costs come with it:
   order, to keep the same rule: a reused `file_id` whose rows differ is
   rejected, whether the delivery completed or crashed.
 
-## Known gap: driving-key relationship effectivity
+## Driving-key relationships
 
-`load_rel.sh` knows three deltas — NEW, tombstone-DEL, FULL-absence-DEL —
-but not *re-pointing*: when an incremental delivery moves an order from
-one customer to another, the new pair is inserted and the old one stays
-active. One order, two live customers — and `v_order.placed_by` becomes
-undefined (its subquery picks one of the two with `LIMIT 1`, no
-`ORDER BY`).
+Some relationships hold one active pairing at a time on one side: an order
+is placed by exactly one customer, though a customer places many orders.
+`meta_relationship.driving_role` says so. It is `SOURCE` for PLACED_BY (the
+order drives), `TARGET` for the mirror image, and NULL for CONTAINS, whose
+order lines are additive pairs.
 
-Every sibling demo handles this scenario natively (DV effectivity
-satellite, Kimball fact update, Inmon order versioning, Anchor historized
-tie, OBT latest-wins), so the gap is kept **executable** here rather than
-just documented: `tests/fixtures/d7_repoint.sql` loads the re-point, the
-suite asserts today's defective state (both pairings active) as a regular
-test, and asserts the desired state as expected failures — amber `GAP`
-lines with the suggested fix printed beneath them. If the fix lands, those
-lines flip to a red `XPASS` telling the fixer to promote them. The fix
-itself is small: a declared driving role per relationship in
-`meta_relationship`, plus a `del_repoint` CTE in `load_rel.sh` mirroring
-`del_tomb`.
+`load_rel.sh` knows four deltas: NEW, tombstone-DEL, FULL-absence-DEL and,
+for a relationship with a driving role, re-point-DEL. When a delivery
+pairs a driving key with a different counterpart, the `del_repoint` step
+closes the key's other active pairing (a new version with `row_st='N'`) in
+the same INSERT that opens the new one, so the key is never left with two.
+The step is generic: it reads the role from metadata, and nothing in the
+loader names an entity. Surrogate keys are untouched.
+
+Pairings stay insert-only, so the old pair keeps its original `'Y'` row
+beside the row that closed it. A pairing is in force when its *latest*
+version is active; `v_order.placed_by` and Q8 read it that way. Q7 ("who
+placed O-101, as at purchase?") reads the first pairing ever recorded and
+still answers Bob Jones after the re-point.
+
+`tests/fixtures/d7_repoint.sql` moves O-101 from C002 to C001 (core C13).
+M06 checks that O-101 has exactly one active pairing, C001; that the C002
+pairing survives as closed history, ended at the re-point; that a re-sent
+re-point writes nothing; and that a rebuild reproduces every relationship
+row. Two mutations, skipping the close step and removing the driving role,
+must fail it.
+
+Until C4b this was the model's one known gap: the loader had no re-point
+delta, so a re-pointed order kept both customers, and core C13.1 ran as an
+expected failure.

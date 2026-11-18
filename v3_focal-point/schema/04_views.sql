@@ -65,9 +65,19 @@ SELECT f.order_key,
        MAX(CASE WHEN d.type_key=31 THEN d.val_num  END) AS amount,
        MAX(CASE WHEN d.type_key=31 THEN d.uom      END) AS currency,
        MAX(CASE WHEN d.type_key=32 THEN d.sta_tmstp END) AS placed_at,
+       -- The order's current PLACED_BY pairing: a pair whose LATEST version
+       -- is active. Pairings are insert-only, so a re-pointed order keeps
+       -- its old pair's original 'Y' row beside the closing 'N' row; only
+       -- the latest version says whether the pair is in force.
        (SELECT c.customer_name FROM order_customer_x x
           JOIN v_customer c ON c.customer_key=x.customer_key
-         WHERE x.order_key=f.order_key AND x.type_key=90 AND x.row_st='Y' LIMIT 1) AS placed_by
+         WHERE x.order_key=f.order_key AND x.type_key=90 AND x.row_st='Y'
+           AND NOT EXISTS (SELECT 1 FROM order_customer_x y
+                           WHERE y.order_key=x.order_key AND y.customer_key=x.customer_key
+                             AND y.type_key=x.type_key
+                             AND (y.eff_tmstp > x.eff_tmstp
+                                  OR (y.eff_tmstp = x.eff_tmstp AND y.ver_tmstp > x.ver_tmstp)))
+         LIMIT 1) AS placed_by
 FROM order_focal f
 JOIN v_order_desc_current e ON e.order_key=f.order_key
                            AND e.type_key=39 AND e.val_str='ACTIVE'

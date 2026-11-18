@@ -43,9 +43,11 @@ INSERT INTO meta_attribute(type_key, attr_name, phys_column, data_type) VALUES
  (29,'PRODUCT_EXISTENCE' ,'VAL_STR','STRING'),
  (39,'ORDER_EXISTENCE'   ,'VAL_STR','STRING');
 
-INSERT INTO meta_relationship(type_key, rel_name, source_entity, target_entity, x_table) VALUES
- (90,'PLACED_BY','ORDER','CUSTOMER','order_customer_x'),
- (91,'CONTAINS' ,'ORDER','PRODUCT' ,'order_product_x');
+-- PLACED_BY is driven by the order: one customer at a time, so a
+-- re-point closes the old pairing. CONTAINS has no driving side.
+INSERT INTO meta_relationship(type_key, rel_name, source_entity, target_entity, x_table, driving_role) VALUES
+ (90,'PLACED_BY','ORDER','CUSTOMER','order_customer_x','SOURCE'),
+ (91,'CONTAINS' ,'ORDER','PRODUCT' ,'order_product_x' ,NULL);
 
 -- ---------------------------------------------------------------------
 -- CANONICAL SOURCE MAP: keyed on (source_system, source_entity, attribute)

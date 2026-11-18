@@ -3,6 +3,14 @@
 # RELATIONSHIP LOADER (strategy-aware). Same safe-delete rule as
 # descriptors: absence deletes a link only for a FULL delivery; for
 # INCREMENTAL, a removed link must arrive as an op='DELETE' tombstone row.
+#
+# RE-POINT (driving key). A relationship whose meta_relationship row
+# names a driving_role holds ONE active pairing per driving key. When a
+# delivery pairs a driving key with a different counterpart, del_repoint
+# closes (row_st 'N') the key's other active pairing in the same INSERT
+# that opens the new one, so the key is never left with two. The old
+# pairing stays as closed history. Generic: the role is metadata, read
+# per relationship; nothing here names an entity.
 # ---------------------------------------------------------------------
 source "$(dirname "$0")/lib.sh"
 echo "==> Loading relationships (bi-temporal delta, batch_ts=$BATCH_TS)"
@@ -10,13 +18,14 @@ q_bts="$(sql_quote "$BATCH_TS")"
 # Only relationships whose driving feed is present in this delivery
 # (source_landing_stage holds exactly the current delivery here).
 sql_run "SELECT r.type_key, r.rel_name, r.source_entity, r.target_entity, r.x_table,
-                        m.source_system, m.source_entity, m.source_key_attr, m.target_key_attr
+                        m.source_system, m.source_entity, m.source_key_attr, m.target_key_attr,
+                        COALESCE(r.driving_role,'')
                  FROM meta_relationship r JOIN meta_rel_map m ON r.type_key=m.type_key
                  WHERE EXISTS (
                    SELECT 1 FROM source_landing_stage s
                    WHERE s.source_system=m.source_system AND s.source_entity=m.source_entity)
                  ORDER BY r.type_key;" |
-while IFS='|' read -r tk rel se te xt ss feed sattr tattr; do
+while IFS='|' read -r tk rel se te xt ss feed sattr tattr drole; do
   tk="$(sql_int "$tk")"
   q_se="$(sql_quote "$se")"; q_te="$(sql_quote "$te")"
   q_ss="$(sql_quote "$ss")"; q_feed="$(sql_quote "$feed")"
@@ -41,6 +50,27 @@ while IFS='|' read -r tk rel se te xt ss feed sattr tattr; do
       WHERE s.sk IS NULL AND d.sk IS NULL )"
     ABS_UNION="UNION ALL SELECT * FROM del_abs"
   else ABS_CTE=""; ABS_UNION=""; fi
+
+  # Re-point: close the driving key's other active pairings. drv is the
+  # driving column of the pair (sk = source key, tk = target key).
+  case "$drole" in
+    SOURCE) drv="sk" ;;
+    TARGET) drv="tk" ;;
+    '')     drv="" ;;
+    *) echo "FATAL: meta_relationship.driving_role '$drole' for $rel is not SOURCE, TARGET or NULL" >&2
+       exit 1 ;;
+  esac
+  if [ -n "$drv" ]; then
+    REP_CTE=",del_repoint AS (
+      SELECT t.sk, t.tk, 'DEL' AS flag
+      FROM tgt t
+      WHERE t.$drv IN (SELECT $drv FROM src)
+        AND NOT EXISTS (SELECT 1 FROM src s WHERE s.sk=t.sk AND s.tk=t.tk)
+        AND NOT EXISTS (SELECT 1 FROM delpairs d WHERE d.sk=t.sk AND d.tk=t.tk) )"
+    # UNION, not UNION ALL: under a FULL delivery a re-pointed pair is
+    # also absent, so del_abs names it too; it must be closed once.
+    REP_UNION="UNION SELECT * FROM del_repoint"
+  else REP_CTE=""; REP_UNION=""; fi
 
   tmp="$(mktemp)"
   cat > "$tmp" <<SQL
@@ -81,7 +111,7 @@ new_delta AS (
 del_tomb AS (
   SELECT t.sk, t.tk, 'DEL' AS flag
   FROM tgt t JOIN delpairs d ON d.sk=t.sk AND d.tk=t.tk
-)$ABS_CTE
+)$ABS_CTE$REP_CTE
 INSERT INTO $xt($s_key, $t_key, type_key, eff_tmstp, ver_tmstp, row_st,
                 data_key, inst_key, inst_row_key, popln_tmstp)
 SELECT sk, tk, $tk, '$q_bts', '$q_bts',
@@ -91,6 +121,7 @@ FROM (
   SELECT * FROM new_delta
   UNION ALL SELECT * FROM del_tomb
   $ABS_UNION
+  $REP_UNION
 ) x;
 SQL
   inst="$(sql_int "$(log_procinst "REL:$rel:$ss.$feed:$mode" "$tmp")")"
