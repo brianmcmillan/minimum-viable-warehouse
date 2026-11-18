@@ -1,0 +1,5 @@
+name: full-guard-dropped
+tag: shared
+what: absence deletes in every delivery, not only a FULL one
+file: scripts/load_core.sh
+sed: s/if \[ "\$mode" = "FULL" \]; then/if true; then/

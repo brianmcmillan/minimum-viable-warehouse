@@ -1,0 +1,5 @@
+name: hsat-churn-guard-dropped
+tag: model
+what: every upsert writes a satellite row, changed or not
+file: scripts/load_sats.sh
+sed: s/OR t\.diff_str <> s\.diff_str)/OR 1=1)/

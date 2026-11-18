@@ -347,6 +347,7 @@ first-class fact. Every view here excludes the reserved keys `0`, `-1` and `-2`.
 |--------------|------------------------------------------------------------------------|
 | `make demo`  | fresh schema + the full delivery sequence + printed info mart          |
 | `make test`  | run the full assertion suite                                           |
+| `make mutate` | apply each `tests/mutations/*.mut` to a scratch copy and check the suite turns red |
 | `make init`  | recreate the vault database from schema (`build/datavault.db`)         |
 | `make rebuild` | re-init the vault and replay every archived delivery, in `load_seq` order |
 | `make clean` | delete `build/` — the archive survives; `make rebuild` regenerates the vault |
@@ -388,10 +389,12 @@ rows, the reference table and the query-assist tables included.
 ├── source/                       # the demo delivery files (D0–D5)
 ├── tests/
 │   ├── run_tests.sh              # the assertion suite
-│   ├── mutations_todo.md         # mutations a later step will run against the suite
+│   ├── mutations/                # 25 deliberate breakages `make mutate` runs against the suite
 │   └── fixtures/
 │       ├── d6_repoint.sql        # the driving-key re-point scenario
-│       └── d7_null_customer.sql  # a null customer_ref, and a customer with no satellite row
+│       ├── d7_null_customer.sql  # a null customer_ref, and a customer with no satellite row
+│       ├── d8_restore.sql        # restore after delete, with the pre-delete values
+│       └── d9_tiebreak_wide.sql  # same-extract tiebreak: the last row in the file wins, through replay
 ├── build/                        # generated: the vault database (safe to delete)
 └── archive/                      # generated: the raw layer (durable; `make clean-archive` only)
 ```
@@ -404,7 +407,8 @@ rows, the reference table and the query-assist tables included.
 make test
 ```
 
-One suite, pure shell + `sqlite3`, no external setup: 319 assertions (36 core, 283 model). The output
+One suite, pure shell + `sqlite3`, no external setup: 324 assertions (36 core, 288 model),
+mutation-tested by `make mutate` (25 breakages in `tests/mutations/`; results in `../MUTATIONS.md`). The output
 comes in two parts: CORE, the fourteen sections every one of the ten suites runs in the same order with
 the same labels (`../tests/core_spec.tsv`; the nine question answers are the SQL files in
 `tests/answers/`), then MODEL, what only this model shows. It replays the full delivery sequence

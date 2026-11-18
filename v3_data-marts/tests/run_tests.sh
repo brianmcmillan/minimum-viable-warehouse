@@ -366,5 +366,35 @@ own "reuse: STARTED X2 re-sent with its original content retries to COMPLETE" \
    "$(x2 "$R_ORIG")/$(x2_state)" "0/COMPLETE"
 export DB="$SAVE_DB" ARCHIVE_DB="$SAVE_ARCHIVE_DB"
 
+own_section M08 "Restore after delete, the same-extract tiebreak, and a frozen key under a re-send"
+# Own database pair: the fixtures never reach the core scenario. None of
+# these cases occurs in the shared deliveries, so without this section
+# the restore branch, the rowid tiebreak, the replay row order and the
+# restatement guard could each be broken without an assertion failing.
+export DB="$LOGDIR/m08.db" ARCHIVE_DB="$LOGDIR/m08_archive.db"
+rm -f "$DB" "$ARCHIVE_DB"; "$PROJ/scripts/init_db.sh" >/dev/null 2>&1
+m08(){ BATCH_TS="$3" "$PROJ/scripts/load_feed.sh" "$1" "$2" >/dev/null 2>&1 || echo "  (load_feed.sh $2 exited $?)"; }
+m08 "$PROJ/source/d0_baseline.sql"       B0 '2026-02-05 08:00:00'
+m08 "$PROJ/source/d3_cust_tombstone.sql" D3 '2026-03-16 08:00:00'
+m08 "$HERE/fixtures/d7_restore.sql"      D7 '2027-04-01 08:00:00'
+own "restore: C002 re-sent with its pre-delete values is live again" \
+   "$(q "SELECT customer_name||'/'||email FROM mart_customers WHERE customer_ref='C002'")" "Bob Jones/bob@example.com"
+own "restore: live, deleted marker, live again (3 versions, 1 current)" \
+   "$(q "SELECT group_concat(is_deleted,'>')||'/'||SUM(is_current) FROM (SELECT * FROM dim_customer WHERE customer_ref='C002' ORDER BY row_eff_ts)")" "0>1>0/1"
+m08 "$HERE/fixtures/d8_tiebreak_wide.sql" D8 '2027-04-02 08:00:00'
+own "tiebreak: equal extract_dt -> the last row in the file wins" \
+   "$(q "SELECT email FROM mart_customers WHERE customer_ref='C004'")" "last@x.com"
+m08 "$HERE/fixtures/d9_rename_resend.sql" D9 '2027-05-01 08:00:00'
+own "frozen key: O-100 re-sent unchanged after C001's rename keeps its key" \
+   "$(q "SELECT placed_by_at_purchase||'/'||placed_by_current FROM mart_orders WHERE order_ref='O-100'")" "Alice Smith/Alice Jones"
+"$PROJ/scripts/rebuild.sh" >/dev/null 2>&1 || echo "  (rebuild exited $?)"
+own "tiebreak: still the last row after rebuild (seq_nbr order restored)" \
+   "$(q "SELECT email FROM mart_customers WHERE customer_ref='C004'")" "last@x.com"
+own "restore: still live after rebuild" \
+   "$(q "SELECT COUNT(*) FROM mart_customers WHERE customer_ref='C002'")" "1"
+own "frozen key: still at purchase after rebuild" \
+   "$(q "SELECT placed_by_at_purchase FROM mart_orders WHERE order_ref='O-100'")" "Alice Smith"
+export DB="$SAVE_DB" ARCHIVE_DB="$SAVE_ARCHIVE_DB"
+
 rm -f "$DB" "$ARCHIVE_DB"
 summary

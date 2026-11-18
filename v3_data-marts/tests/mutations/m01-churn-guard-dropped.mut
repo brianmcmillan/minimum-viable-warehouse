@@ -1,0 +1,5 @@
+name: churn-guard-dropped
+tag: model
+what: every upsert expires the current SCD2 row, changed or not
+file: scripts/load_dims.sh
+sed: s/(s\.diff_str <> c\.diff_str OR/(1=1 OR/

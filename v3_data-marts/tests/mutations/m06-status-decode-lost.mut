@@ -1,0 +1,5 @@
+name: status-decode-lost
+tag: model
+what: facts never find their status in the decode dimension and get the -1 unknown member
+file: scripts/load_facts.sh
+sed: s/WHERE status_code = s\.status), -1)/WHERE status_code = s.status AND 0), -1)/

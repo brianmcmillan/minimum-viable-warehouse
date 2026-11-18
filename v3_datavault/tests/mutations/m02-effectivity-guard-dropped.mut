@@ -1,0 +1,5 @@
+name: effectivity-guard-dropped
+tag: model
+what: every delivered pairing opens a new effectivity row, even when already current
+file: scripts/load_links.sh
+sed: s/OR cur\.customer_bk <> s\.customer_bk)/OR 1=1)/

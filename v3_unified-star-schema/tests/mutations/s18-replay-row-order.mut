@@ -1,0 +1,5 @@
+name: replay-row-order-reversed
+tag: shared
+what: rebuild restores each delivery's rows in reverse file order
+file: scripts/rebuild.sh
+sed: s/ORDER BY seq_nbr;/ORDER BY seq_nbr DESC;/

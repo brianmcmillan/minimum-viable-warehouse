@@ -1,0 +1,5 @@
+name: full-guard-dropped
+tag: shared
+what: absence deletes in every delivery, not only a FULL one
+file: scripts/load_dims.sh
+sed: s/\[ "\$mode" = "FULL" \] && ABS=/ABS=/

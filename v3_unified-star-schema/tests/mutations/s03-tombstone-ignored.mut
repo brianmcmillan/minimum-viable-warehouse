@@ -1,0 +1,5 @@
+name: tombstone-ignored
+tag: shared
+what: an op='DELETE' row writes no DELETE row
+file: scripts/load_core.sh
+sed: s/WHERE s\.op = 'DELETE' AND l\.change_type <> 'DELETE';/WHERE s.op = 'NEVER' AND l.change_type <> 'DELETE';/

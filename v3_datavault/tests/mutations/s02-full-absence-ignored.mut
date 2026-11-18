@@ -1,0 +1,5 @@
+name: full-absence-ignored
+tag: shared
+what: a FULL delivery never deletes the keys it leaves out
+file: scripts/load_sats.sh
+sed: s/\[ "\$mode" = "FULL" \] && ABS=/[ "$mode" = "NEVER" ] \&\& ABS=/

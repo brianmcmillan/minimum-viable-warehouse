@@ -1,0 +1,5 @@
+name: refresh-decode-lost
+tag: model
+what: the USS refresh never finds a status in ref_order_status
+file: scripts/refresh_uss.sh
+sed: s/LEFT JOIN ref_order_status r ON r\.status_code = o\.status/LEFT JOIN ref_order_status r ON r.status_code = o.status AND 0/

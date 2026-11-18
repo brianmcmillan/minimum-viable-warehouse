@@ -1,0 +1,5 @@
+name: deleted-members-kept
+tag: model
+what: the refresh copies deleted customers into the USS customer table
+file: scripts/refresh_uss.sh
+sed: s/FROM v_latest__customer WHERE change_type <> 'DELETE';/FROM v_latest__customer;/

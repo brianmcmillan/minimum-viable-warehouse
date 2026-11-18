@@ -1,0 +1,5 @@
+name: bridge-transitive-key-lost
+tag: model
+what: the bridge's order-line stage no longer reaches the customer through the order
+file: scripts/refresh_uss.sh
+sed: s/SELECT 'Order line', l\._key_order_line, l\.order_ref, l\.sku, c\.customer_ref, 1/SELECT 'Order line', l._key_order_line, l.order_ref, l.sku, NULL, 1/

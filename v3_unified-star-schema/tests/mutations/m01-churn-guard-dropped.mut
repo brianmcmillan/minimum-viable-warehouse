@@ -1,0 +1,5 @@
+name: churn-guard-dropped
+tag: model
+what: every upsert writes a core row, changed or not
+file: scripts/load_core.sh
+sed: s/OR l\.diff_str <> s\.diff_str);/OR 1=1);/

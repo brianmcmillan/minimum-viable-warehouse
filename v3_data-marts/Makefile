@@ -9,12 +9,13 @@ export SQLITE
 export DB
 export ARCHIVE_DB
 
-.PHONY: help init demo rebuild test archive-status clean clean-archive
+.PHONY: help init demo rebuild test mutate archive-status clean clean-archive
 help:
 	@echo "  make demo           - fresh archive + init + the full delivery sequence + star"
 	@echo "  make rebuild        - regenerate the star by replaying the archive"
 	@echo "  make archive-status - report on the archive (read-only)"
 	@echo "  make test           - run the Kimball test suite"
+	@echo "  make mutate         - break the code on purpose (tests/mutations/), check the suite catches it"
 	@echo "  make clean          - delete build/  (the ARCHIVE SURVIVES)"
 	@echo "  make clean-archive  - delete archive/ -- destroys the raw history, and with it"
 	@echo "                        any ability to rebuild. Deliberately not part of clean."
@@ -43,6 +44,9 @@ archive-status:
 
 test:
 	@./tests/run_tests.sh
+
+mutate:
+	@../tests/run_mutations.sh $(notdir $(CURDIR))
 
 clean:
 	@rm -rf build && echo "removed build/ (archive/ untouched -- run 'make rebuild')"

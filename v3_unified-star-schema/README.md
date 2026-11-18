@@ -64,7 +64,7 @@ network.
 make demo          # fresh archive + schema + the full 6-delivery sequence, then print the warehouse
 make refresh       # re-derive the USS layer from the core (no reload)
 make rebuild       # delete core + USS; replay the raw layer to rebuild both
-make test          # 140 assertions (36 core, 104 model): delete semantics, bridge shape, traps, as-of, exact rebuild
+make test          # 145 assertions (36 core, 109 model): delete semantics, bridge shape, traps, as-of, exact rebuild
 make clean         # delete build/ only — the archive SURVIVES
 make clean-archive # delete archive/ — destroys the raw layer, and the ability to rebuild
 ```
@@ -273,7 +273,8 @@ split has to be a business rule someone writes down.
 | `make demo`          | fresh archive + schema + the full delivery sequence + printed warehouse  |
 | `make refresh`       | re-derive the USS from the core (picks up reference-data changes)        |
 | `make rebuild`       | regenerate core + USS by replaying the raw layer                         |
-| `make test`          | run the test suite (140 assertions)                                      |
+| `make test`          | run the test suite (145 assertions)                                      |
+| `make mutate`        | apply each `tests/mutations/*.mut` to a scratch copy and check the suite turns red |
 | `make init`          | recreate the database from schema (the archive survives)                 |
 | `make clean`         | delete `build/` only — **the archive survives**                          |
 | `make clean-archive` | delete `archive/` — destroys the raw layer and the ability to rebuild    |
@@ -302,8 +303,12 @@ split has to be a business rule someone writes down.
 │   └── query.sh             # print the warehouse
 ├── source/                  # D0–D5, byte-identical with ../v3_datavault, ../v3_inmon-3nf, ../v3_hook
 ├── tests/
-│   ├── run_tests.sh         # 140 assertions
-│   └── fixtures/d6_repoint.sql   # O-101 re-pointed to C001 (data row identical to the siblings')
+│   ├── run_tests.sh         # 145 assertions
+│   ├── mutations/           # 26 deliberate breakages `make mutate` runs against the suite
+│   └── fixtures/
+│       ├── d6_repoint.sql   # O-101 re-pointed to C001 (data row identical to the siblings')
+│       ├── d7_restore.sql   # restore after delete, with the pre-delete values
+│       └── d8_tiebreak_wide.sql # same-extract tiebreak: the last row in the file wins, through replay
 ├── build/                   # generated (safe to delete)
 └── archive/                 # generated: the durable raw layer
 ```
@@ -316,7 +321,7 @@ split has to be a business rule someone writes down.
 make test
 ```
 
-**140 assertions** (36 core, 104 model), pure shell + `sqlite3`. The output comes in two parts:
+**145 assertions** (36 core, 109 model), pure shell + `sqlite3`. The output comes in two parts:
 CORE, the fourteen sections every one of the ten suites runs in the same order with the same labels
 (`../tests/core_spec.tsv`; the nine question answers are the SQL files in `tests/answers/`), then
 MODEL, what only this model shows. Between them they cover:
@@ -336,11 +341,15 @@ MODEL, what only this model shows. Between them they cover:
   not a reload; `make clean` + replay reproduces the core and the bridge
   exactly.
 
-Mutation-checked: removing the FULL guard, the NOCHANGE guard, or the
-tombstone branch; reversing the dedup tiebreak or the replay order; putting
-the order amount on line rows; dropping the transitive customer key;
-dropping the Customer stage; keeping deleted members in the USS; or leaving
-`customer_ref` out of the order diff each turn the suite red.
+Mutation-tested: `make mutate` applies each of the 26 breakages in
+`tests/mutations/` (the FULL guard, NOCHANGE guard and tombstone branch;
+the dedup tiebreak and the replay order; the order amount on line rows; the
+transitive customer key; the Customer stage; deleted members in the USS;
+`customer_ref` in the order diff; and the shared archive and load-control
+rules) to a scratch copy and requires the suite to go red. The dedup
+tiebreak and the replay row order were claimed here before any fixture
+exercised them; M10's tiebreak fixture now does. Results for every model
+are in `../MUTATIONS.md`.
 
 ---
 

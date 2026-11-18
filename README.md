@@ -232,7 +232,7 @@ model doesn't force a difference.
 - **`make clean` never touches the durable layer.** Destroying raw
   history takes the explicit `clean-archive` target.
 - **Mutation-tested suites** (Metrics mart 236, Activity 153, Focal 212,
-  DV 319, USS 140, HOOK 129, Kimball 101, Anchor 133, Inmon 99, OBT 85
+  DV 324, USS 145, HOOK 129, Kimball 108, Anchor 133, Inmon 99, OBT 85
   assertions). I broke the FULL-absence guard, the replay ordering, the
   dedup tiebreaks, the restatement and idempotence guards, the tie guards,
   the OBT refresh, the activity loader's event-time and immutability
@@ -242,8 +242,8 @@ model doesn't force a difference.
   hypothesis. The breakages live as files in `v3_*/tests/mutations/`;
   `make mutate` applies each one to a scratch copy, runs the suite, and
   writes [`MUTATIONS.md`](MUTATIONS.md): every mutation, whether the suite
-  killed it, and which assertions broke. Inmon is covered so far; the other
-  nine models follow.
+  killed it, and which assertions broke. Inmon, Kimball, DV and USS are
+  covered so far; the other six models follow.
 - **One shared core in every suite.** Each suite runs the same 36 core
   assertions first, in fourteen sections with identical labels
   ([`tests/core_spec.tsv`](tests/core_spec.tsv)); each model supplies its

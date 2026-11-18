@@ -1,0 +1,5 @@
+name: tombstone-ignored
+tag: shared
+what: an op='DELETE' row closes nothing
+file: scripts/load_dims.sh
+sed: s/OR (s\.op='DELETE' AND c\.is_deleted=0)//

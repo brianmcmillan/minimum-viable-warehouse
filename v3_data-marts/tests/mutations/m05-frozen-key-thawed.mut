@@ -1,0 +1,5 @@
+name: frozen-key-thawed
+tag: model
+what: placed_by_at_purchase follows the customer's current version, not the frozen key
+file: schema/04_facts.sql
+sed: s/WHERE c\.customer_key = f\.customer_key)          AS placed_by_at_purchase/WHERE c.customer_ref = (SELECT customer_ref FROM dim_customer WHERE customer_key = f.customer_key) AND c.is_current=1) AS placed_by_at_purchase/

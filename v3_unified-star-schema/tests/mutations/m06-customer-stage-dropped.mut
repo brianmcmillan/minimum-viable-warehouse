@@ -1,0 +1,5 @@
+name: customer-stage-dropped
+tag: model
+what: the bridge loses its Customer stage, so order-less customers vanish from it
+file: scripts/refresh_uss.sh
+sed: /^INSERT INTO _bridge(stage, _key_customer)$/,/^SELECT 'Customer', _key_customer FROM customer;$/d

@@ -1,0 +1,6 @@
+name: cpit-refresh-skipped
+tag: model
+what: the three CPIT tables keep their old pointers (new keys still get a row)
+file: scripts/refresh_query_assist.sh
+sed: s/^DELETE FROM bv_\([a-z]*\)_cpit;/DELETE FROM bv_\1_cpit WHERE 0;/
+sed: s/^INSERT INTO bv_\([a-z]*\)_cpit(/INSERT OR IGNORE INTO bv_\1_cpit(/

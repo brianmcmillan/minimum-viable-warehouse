@@ -1,0 +1,6 @@
+name: reserved-filter-dropped
+tag: model
+what: dim_customer no longer excludes the reserved keys '0', '-1' and '-2'
+file: schema/05_info_mart.sql
+sed: /^CREATE VIEW dim_customer AS/,/;$/s/^WHERE p\.customer_bk NOT IN ('0','-1','-2');/;/
+survivor: defence in depth. The CPIT holds real keys only and the '-1' key has no 'I' status row, so dim_customer's inner joins already drop every reserved key; the WHERE clause is a second guard that nothing upstream lets a reserved key reach (checked by hand on 17 November 2026, confirmed by this run)

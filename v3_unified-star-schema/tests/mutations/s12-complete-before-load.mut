@@ -1,0 +1,5 @@
+name: complete-before-load
+tag: shared
+what: the manifest is written COMPLETE before the loader runs
+file: scripts/load_feed.sh
+sed: s/'\$q_bts','STARTED',\$rc/'$q_bts','COMPLETE',$rc/
