@@ -30,6 +30,13 @@ pq(){ local out rc=0
       [ "$rc" -eq 0 ] || { printf "  \033[31mSQL ERROR\033[0m %s\n    %s\n" "$out" "$1" >&2
                            printf '<SQL-ERROR>'; return 0; }
       printf '%s' "$out"; }
+# An answer that reads the archive: tests/answers/Q<n>.sql run with the
+# archive attached as `arch` (the files say so in their header).
+aans(){ local out rc=0
+        out="$("$SQLITE" -cmd "ATTACH DATABASE '$ARCHIVE_DB' AS arch" "$DB" < "$HERE/answers/Q$1.sql" 2>&1)" || rc=$?
+        [ "$rc" -eq 0 ] || { printf "  \033[31mSQL ERROR\033[0m Q%s: %s\n" "$1" "$out" >&2
+                             printf '<SQL-ERROR>'; return 0; }
+        printf '%s' "$out"; }
 # The answer to question n, from tests/answers/Q<n>.sql (read on stdin,
 # so the file's leading comment is not taken for a command-line option).
 ans(){ local out rc=0; out="$("$SQLITE" "$DB" < "$HERE/answers/Q$1.sql" 2>&1)" || rc=$?
@@ -196,7 +203,7 @@ core C05.2 "$(q "SELECT COUNT(*) FROM mart_customers WHERE customer_ref='C002'")
 core C05.3 "$(q "SELECT COALESCE(placed_by_current,'<none>') FROM mart_orders WHERE order_ref='O-101'")" "<none>"
 core C05.4 "$(q "SELECT customer_name||'/'||email FROM dim_customer WHERE customer_ref='C002' AND is_deleted=0")" \
            "Bob Jones/bob@example.com"
-core C05.5 "$(ans 7)" "Bob Jones"
+core C05.5 "$(aans 7)" "Bob Jones"
 later M04 "tombstone: last-known attrs carried onto the marker" \
    "$(q "SELECT customer_name FROM dim_customer WHERE customer_ref='C002' AND is_current=1")" "Bob Jones"
 

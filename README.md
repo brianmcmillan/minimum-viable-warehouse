@@ -66,6 +66,7 @@ incremental pipelines from quiet data loss:
 
 And all ten converge on the same end state:
 
+<!-- compare:end-state:begin -->
 ```
 inmon   : C001(alice@newmail.com)
 kimball : C001(alice@newmail.com)
@@ -78,6 +79,14 @@ activity: C001(alice@newmail.com)
 metrics : C001(alice@newmail.com)
 obt     : C001(alice@newmail.com)
 ```
+<!-- compare:end-state:end -->
+
+`make compare` regenerates this block. It builds all ten, applies the
+shared deliveries and each model's re-point fixture, and asks every model
+the nine shared questions with its own `tests/answers/Q<n>.sql`. The
+result is [`ANSWERS.md`](ANSWERS.md): questions down, models across, each
+cell SAME, DIFFERENT (with the value) or CANNOT (with the reason, and
+whether the raw archive can answer it).
 
 ## The same events, four modeling schools
 

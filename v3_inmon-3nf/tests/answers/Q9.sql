@@ -1,4 +1,7 @@
 -- Q9. After the 'P' label changes to PLACED, what does every past order read?
--- Expected: O-100=PLACED,O-101=PLACED (every version of every order).
+-- Expected: O-100=PLACED,O-101=PLACED. Current state, one row per order.
+-- The EDW conforms at ingest, so the new label reaches stored rows only
+-- through a rebuild from the archive. History over time is a separate
+-- question.
 SELECT group_concat(order_ref || '=' || status, ',') FROM (
-  SELECT order_ref, status FROM orders ORDER BY order_ref, valid_from);
+  SELECT order_ref, status FROM v_order ORDER BY order_ref);

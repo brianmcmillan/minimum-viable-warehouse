@@ -1,0 +1,11 @@
+dir	label	customer_view
+v3_inmon-3nf	inmon	v_customer
+v3_data-marts	kimball	mart_customers
+v3_datavault	vault	dim_customer
+v3_focal-point	focal	v_customer
+v3_anchor	anchor	v_customer
+v3_hook	hook	v_customer
+v3_unified-star-schema	uss	v_customer
+v3_activity-schema	activity	v_customer
+v3_metrics-mart	metrics	v_customer
+v3_one-big-table	obt	v_customer
