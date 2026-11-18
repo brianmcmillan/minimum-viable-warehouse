@@ -297,7 +297,7 @@ core C05.2 "$(q "SELECT COUNT(*) FROM v_customer WHERE customer_ref='C002'")" "0
 core C05.3 "$(q "SELECT order_ref||'/'||COALESCE(placed_by,'NULL') FROM v_order WHERE order_ref='O-101'")" "O-101/NULL"
 core C05.4 "$(q "SELECT r.res_name||'/'||c.email_addr FROM res r JOIN res_customer c USING(res_id) WHERE r.res_code='C002'")" \
            "Bob Jones/bob@example.com"
-core C05.5 "$(ans 7)" "Bob Jones"
+core C05.5 "$(aans 7)" "Bob Jones"
 later M04 "tombstone: O-101 still points at C002 (parent_res is not cleared)" \
    "$(q "SELECT parent FROM v_res WHERE res_code='O-101'")" "CUSTOMER:C002"
 

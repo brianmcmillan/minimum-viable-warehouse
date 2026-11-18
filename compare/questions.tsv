@@ -1,0 +1,10 @@
+id	question	expected
+Q1	Which customers are live now?	C001
+Q2	Which customers have been deleted?	C002,C003
+Q3	What has C001's email been, oldest first?	alice@example.com>alice@newmail.com
+Q4	What has SKU-1's price been, oldest first?	9.99>8.99
+Q5	What does O-100's status 'P' read as?	PENDING
+Q6	What is the order total, across orders and lines?	48.99
+Q7	Who placed O-101, as at purchase?	Bob Jones
+Q8	Who owns O-101 after the re-point?	Alice Smith
+Q9	What do the 'P' orders read as after the rule P -> PLACED, with no reload?	O-100=PLACED,O-101=PLACED

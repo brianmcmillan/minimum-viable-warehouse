@@ -1,4 +1,5 @@
 -- Q3. What has C001's email been, oldest first?  Expected: alice@example.com>alice@newmail.com
+-- CANNOT: the latest tables keep current values only; email history is in the log alone
 -- Needs the archive attached as `arch`. History is a query over the log:
 -- keep each value that differs from the one before it (LAG).
 SELECT group_concat(email_addr, '>') FROM (

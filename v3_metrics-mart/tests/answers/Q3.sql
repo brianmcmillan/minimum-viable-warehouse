@@ -1,4 +1,5 @@
 -- Q3. What has C001's email been, oldest first?  Expected: alice@example.com>alice@newmail.com
+-- CANNOT: current-state model: the email is updated in place; history would need a history table
 -- Needs the archive attached as `arch`. The mart keeps current state and
 -- updates the email in place; the history is answered from the raw
 -- archive, the final answer: keep each value that differs from the one
