@@ -16,7 +16,7 @@ the same narrow landing as the Focal Point and Anchor demos.
 ```bash
 make demo     # fresh archive + the full delivery sequence + views
 make rebuild  # regenerate the mart by replaying the raw layer
-make test     # 222 assertions, mutation-checked
+make test     # 237 assertions (36 core, 1 of them a known GAP; 201 model), mutation-checked
 ```
 
 ## Review of the diagrams
@@ -234,5 +234,5 @@ scripts/load_res.sh            resources, aliases, parents, subtype columns
 scripts/load_groups.sh         groups, type groups and memberships
 scripts/load_metrics.sh        METRIC_STG -> METRIC_STG2 -> METRIC_SAMPLE
 scripts/refresh_aggregates.sh  summaries, weeks, group weeks
-tests/run_tests.sh             222 assertions
+tests/run_tests.sh             237 assertions
 ```

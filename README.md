@@ -231,8 +231,8 @@ model doesn't force a difference.
   place as forensics. Success leaves the stage blank.
 - **`make clean` never touches the durable layer.** Destroying raw
   history takes the explicit `clean-archive` target.
-- **Mutation-tested suites** (Metrics mart 222, Activity 153, Focal 120+46,
-  DV 319, USS 140, HOOK 129, Kimball 101, Anchor 124, Inmon 94, OBT 85
+- **Mutation-tested suites** (Metrics mart 236, Activity 153, Focal 212,
+  DV 319, USS 140, HOOK 129, Kimball 101, Anchor 133, Inmon 94, OBT 85
   assertions). I broke the FULL-absence guard, the replay ordering, the
   dedup tiebreaks, the restatement and idempotence guards, the tie guards,
   the OBT refresh, the activity loader's event-time and immutability
@@ -240,10 +240,23 @@ model doesn't force a difference.
   prove the
   tests fail when they should. A green suite you haven't broken is a
   hypothesis.
-- **Known gaps are executable, not just documented.** Focal's
-  driving-key re-point gap runs as amber expected-failure assertions
-  that print the suggested fix — and flip the suite red the moment the
-  fix lands. See [`v3_focal-point/FOCALPOINT.md`](v3_focal-point/FOCALPOINT.md), "Known gap".
+- **One shared core in every suite.** Each suite runs the same 36 core
+  assertions first, in fourteen sections with identical labels
+  ([`tests/core_spec.tsv`](tests/core_spec.tsv)); each model supplies its
+  own SQL, and its answers to the nine shared questions are in
+  `tests/answers/`. Its own checks follow as MODEL sections. `make
+  core-check` fails if any suite misses, repeats or reorders a core
+  assertion; `make verify` reports core, model and gap counts per suite;
+  [`ALIGNMENT.md`](ALIGNMENT.md) maps every earlier assertion to its new
+  place.
+- **Known gaps are executable, not just documented.** A core assertion a
+  model cannot pass today runs as an amber GAP line with the reason, and
+  flips the suite red the moment it passes: Focal's driving-key re-point
+  (C13.1, with the suggested fix printed; see
+  [`v3_focal-point/FOCALPOINT.md`](v3_focal-point/FOCALPOINT.md), "Known gap")
+  and the metrics mart's re-observed price, which writes a new sample
+  (C04.3). History a model updates away in place is still answered: the
+  raw archive is the final answer, in every model.
 - **One raw layer for all ten.** Every model loads the same six wide
   delivery files, byte for byte, and keeps them in the same archive
   layout (`loaded_files` + one `hist_*` table per source extract,

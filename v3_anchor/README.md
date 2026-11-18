@@ -59,7 +59,7 @@ That's the whole list. Everything runs against local files in the project direct
 
 ```bash
 make demo    # fresh archive + schema + a 6-delivery feed sequence, then print the perspectives
-make test    # run the suite: 124 assertions, mutation-hardened
+make test    # run the suite: 133 assertions (36 core, 97 model), mutation-hardened
 make rebuild # throw the constellation away and replay the raw layer to rebuild it
 ```
 
@@ -307,7 +307,7 @@ scales with the attribute count.
 |-----------------------|-------------------------------------------------------------------------------------|
 | `make demo`           | fresh archive + schema + the full delivery sequence + printed perspectives          |
 | `make rebuild`        | regenerate the constellation by replaying the raw layer                             |
-| `make test`           | run the suite (124 assertions)                                                       |
+| `make test`           | run the suite (133 assertions)                                                       |
 | `make init`           | recreate the derived warehouse from schema (the archive survives)                   |
 | `make clean`          | delete `build/` only — **the archive survives**; `make rebuild` restores it         |
 | `make clean-archive`  | delete `archive/` — destroys the raw layer and the ability to rebuild (deliberately separate from `clean`) |
@@ -352,7 +352,9 @@ scales with the attribute count.
 make test
 ```
 
-One suite, pure shell + `sqlite3`, 124 assertions, mutation-hardened (each guard is verified by feeding
+One suite, pure shell + `sqlite3`, 133 assertions (36 core, 97 model; the output's CORE part is
+the fourteen sections every suite runs with the same labels, `../tests/core_spec.tsv`, with the nine
+question answers in `tests/answers/`), mutation-hardened (each guard is verified by feeding
 it the input it is supposed to reject). It covers:
 
 - **Delete semantics under a realistic cadence** — an incremental window does *not* delete an

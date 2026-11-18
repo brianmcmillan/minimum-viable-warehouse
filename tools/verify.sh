@@ -5,8 +5,10 @@
 #
 # For each v3_* directory: make clean, make demo, make test. Captures
 # each step's exit code and the PASS / FAIL / known-GAP counts printed
-# by every suite, then compares the passed counts with the numbers
-# published under "Mutation-tested suites" in README.md.
+# by every suite, plus each suite's CORE / MODEL / GAP summary lines, then
+# compares the passed counts with the numbers published under
+# "Mutation-tested suites" in README.md, and checks that every suite
+# reports the same core total.
 #
 # Changes no schema, loader or test. The only files it writes are the
 # generated build/ and archive/ databases (what make demo always
@@ -33,24 +35,23 @@ fi
 published() {
   case "$1" in
     v3_activity-schema:run_tests)     echo 153 ;;
-    v3_anchor:run_tests)              echo 124 ;;
-    v3_data-marts:run_tests)          echo 100 ;;
+    v3_anchor:run_tests)              echo 133 ;;
+    v3_data-marts:run_tests)          echo 101 ;;
     v3_datavault:run_tests)           echo 319 ;;
-    v3_focal-point:run_tests)         echo 142 ;;
-    v3_focal-point:test_archive)      echo 48  ;;
+    v3_focal-point:run_tests)         echo 212 ;;
     v3_hook:run_tests)                echo 129 ;;
     v3_inmon-3nf:run_tests)           echo 94  ;;
-    v3_metrics-mart:run_tests)        echo 222 ;;
+    v3_metrics-mart:run_tests)        echo 236 ;;
     v3_one-big-table:run_tests)       echo 85  ;;
     v3_unified-star-schema:run_tests) echo 140 ;;
     *) echo "" ;;
   esac
 }
 
-# Suites in the order `make test` runs them.
+# Suites in the order `make test` runs them (one per model since the
+# core alignment folded Focal's test_archive.sh into its run_tests.sh).
 suites_of() {
   case "$1" in
-    v3_focal-point) echo "run_tests test_archive" ;;
     *) echo "run_tests" ;;
   esac
 }
@@ -59,7 +60,8 @@ num() { printf ' %s' "$1" | sed -E "s/.*[^0-9]([0-9]+) $2.*/\1/"; }
 
 rm -rf "$LOGDIR"; mkdir -p "$LOGDIR"
 ROWS="$LOGDIR/rows.md"; FAILS="$LOGDIR/fails.md"; NOTES="$LOGDIR/notes.md"
-: > "$ROWS"; : > "$FAILS"; : > "$NOTES"
+CORE_TOTALS="$LOGDIR/core_totals"
+: > "$ROWS"; : > "$FAILS"; : > "$NOTES"; : > "$CORE_TOTALS"
 overall=0
 
 for dir in v3_*/; do
@@ -78,11 +80,24 @@ for dir in v3_*/; do
   grep -E 'RESULT: [0-9]+ passed|[0-9]+ passed, [0-9]+ failed before the abort' \
     "$LOGDIR/$d.test.log" > "$LOGDIR/$d.summary" || true
 
+  # The three lines every aligned suite ends with:
+  #   CORE : <passed>/<total> passed    MODEL: <passed> passed    GAP  : <n>
+  sed -nE 's/^ *CORE : ([0-9]+)\/([0-9]+) passed.*/\1 \2/p' "$LOGDIR/$d.test.log" > "$LOGDIR/$d.core"
+  sed -nE 's/^ *MODEL: ([0-9]+) passed.*/\1/p'               "$LOGDIR/$d.test.log" > "$LOGDIR/$d.model"
+
   set -- $(suites_of "$d"); i=0
   while [ $# -gt 0 ]; do
     s="$1"; shift; i=$((i+1))
     line="$(sed -n "${i}p" "$LOGDIR/$d.summary")"
     pub="$(published "$d:$s")"
+    core_line="$(sed -n "${i}p" "$LOGDIR/$d.core")"
+    if [ -n "$core_line" ]; then
+      read -r cp ct <<< "$core_line"; core="$cp/$ct"; echo "$ct" >> "$CORE_TOTALS"
+    else
+      core="none"
+      echo "- \`$d\` $s printed no CORE line" >> "$NOTES"
+    fi
+    model="$(sed -n "${i}p" "$LOGDIR/$d.model")"; model="${model:-none}"
     if [ -z "$line" ]; then
       p="?"; f="?"; g="?"; match="no summary"
       echo "- \`$d\` $s printed no summary line; see verify-logs/$d.test.log" >> "$NOTES"
@@ -96,7 +111,7 @@ for dir in v3_*/; do
       else match="**no**"; fi
       [ "$f" = "0" ] || overall=1
     fi
-    echo "| \`$d\` | $s | $p | $f | $g | $demo_rc | $test_rc | ${pub:-none} | $match | $((t1-t0))s |" >> "$ROWS"
+    echo "| \`$d\` | $s | $p | $f | $core | $model | $g | $demo_rc | $test_rc | ${pub:-none} | $match | $((t1-t0))s |" >> "$ROWS"
   done
 
   # Cross-check: PASS lines printed vs passed totals reported.
@@ -124,6 +139,13 @@ for dir in v3_*/; do
   [ "$demo_rc$test_rc" = "00" ] && echo "ok" || echo "FAILED (demo $demo_rc, test $test_rc)"
 done
 
+# Every suite must report the same core total (tests/core_spec.tsv).
+core_total="$(sort -u "$CORE_TOTALS" | paste -sd, -)"
+case "$core_total" in
+  ''|*,*) overall=1
+          echo "- core totals differ between suites (or none was printed): ${core_total:-none}" >> "$NOTES" ;;
+esac
+
 dirty="$(git status --porcelain 2>/dev/null | grep -vE '^\?\? (VERIFY\.md|verify-logs/)' | wc -l | tr -d ' ')"
 
 {
@@ -139,14 +161,15 @@ dirty="$(git status --porcelain 2>/dev/null | grep -vE '^\?\? (VERIFY\.md|verify
   echo "| sqlite3 | $SQLITE_VER |"
   echo "| bash | ${BASH_VERSION} |"
   echo "| Overall | $([ "$overall" = 0 ] && echo 'all demos and suites passed' || echo '**failures, see below**') |"
+  echo "| Core assertions per suite | ${core_total:-none} (tests/core_spec.tsv) |"
   echo "| Tree changed by the run | $([ "$dirty" = 0 ] && echo no || echo "**yes, $dirty path(s)**") |"
   echo
   echo "## Results"
   echo
-  echo "Gaps are expected failures (Focal's known re-point gap). \"Published\" is the count in README.md under \"Mutation-tested suites\"."
+  echo "Core is the shared core contract (core assertions passed / total); Model is the model's own assertions passed. Gaps are expected failures: a core GAP marks a core assertion the model cannot pass today (C4b closes them). \"Published\" is the count in README.md under \"Mutation-tested suites\"."
   echo
-  echo "| Directory | Suite | Passed | Failed | Gaps | Demo exit | Test exit | Published | Match | Time |"
-  echo "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
+  echo "| Directory | Suite | Passed | Failed | Core | Model | Gaps | Demo exit | Test exit | Published | Match | Time |"
+  echo "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
   cat "$ROWS"
   echo
   echo "## Notes"

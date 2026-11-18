@@ -416,10 +416,10 @@ fail it). It replays the shared delivery scenario against the star and then
 exercises the Kimball-specific behaviours. The output comes in two parts: CORE,
 the fourteen sections every one of the ten suites runs in the same order with
 the same labels (`../tests/core_spec.tsv`; the nine question answers are the
-SQL files in `tests/answers/`), then MODEL, what only this model shows. One
-core assertion is a known GAP: after the re-point the star no longer holds
-O-101's earlier owner, because the fact row is updated in place (the raw
-archive still does).
+SQL files in `tests/answers/`), then MODEL, what only this model shows. After
+the re-point the star no longer holds O-101's earlier owner, because the fact
+row is updated in place; core C13.2 answers it from the raw archive, which is
+the final answer in every model.
 
 - **Delete semantics under a realistic cadence** — an incremental window does
   *not* delete an absent-but-unchanged record; a FULL snapshot *does* delete
