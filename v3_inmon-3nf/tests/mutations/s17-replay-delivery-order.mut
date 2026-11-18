@@ -1,0 +1,5 @@
+name: replay-delivery-order-reversed
+tag: shared
+what: rebuild replays deliveries newest first
+file: scripts/rebuild.sh
+sed: s/ORDER BY load_seq;/ORDER BY load_seq DESC;/

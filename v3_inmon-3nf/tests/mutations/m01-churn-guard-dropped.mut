@@ -1,0 +1,5 @@
+name: churn-guard-dropped
+tag: model
+what: every upsert closes the current row, changed or not
+file: scripts/load_edw.sh
+sed: s/(s\.diff_str <> c\.diff_str OR/(1=1 OR/

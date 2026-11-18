@@ -1,0 +1,5 @@
+name: range-join-strict
+tag: model
+what: the point-in-time range join drops its inclusive lower bound
+file: schema/03_edw.sql
+sed: s/AND o\.valid_from >= c\.valid_from/AND o.valid_from > c.valid_from/

@@ -1,0 +1,5 @@
+name: stage-kept
+tag: shared
+what: a successful delivery leaves its rows in the stage
+file: scripts/load_feed.sh
+sed: /SET status='COMPLETE' WHERE/{n;s/^sql_run /true /;}

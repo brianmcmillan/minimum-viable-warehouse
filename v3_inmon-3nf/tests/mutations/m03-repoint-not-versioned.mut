@@ -1,0 +1,5 @@
+name: repoint-not-versioned
+tag: model
+what: customer_ref leaves the order's diff, so a re-point writes no new version
+file: schema/01_stage.sql
+sed: s/COALESCE(TRIM(customer_bk),'') *|| '|' ||//

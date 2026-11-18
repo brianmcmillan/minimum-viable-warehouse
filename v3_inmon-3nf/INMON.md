@@ -8,7 +8,8 @@ Kimball, HOOK, USS, Activity Schema and OBT demos, byte-identical.
 ```bash
 make demo     # fresh archive + the full delivery sequence + views
 make rebuild  # regenerate the EDW by replaying the raw layer
-make test     # 94 assertions (36 core, 58 model), mutation-hardened
+make test     # 99 assertions (36 core, 63 model), mutation-hardened
+make mutate   # 23 mutations (18 shared, 5 model), each must turn the suite red
 ```
 
 ## What "classic" means here
@@ -68,7 +69,9 @@ scripts/apply_delivery.sh  one shared path for ingest AND replay
 scripts/load_edw.sh    the single merge loader: close -> insert -> markers
 scripts/rebuild.sh     ordered replay of the archive
 source/d0..d5*.sql     byte-identical copies of the v3_datavault deliveries
-tests/run_tests.sh     94 assertions; FULL-guard, churn-guard and
-                       replay-order mutations all verified to fail it
+tests/run_tests.sh     99 assertions
+tests/mutations/*.mut  23 mutations `make mutate` runs against the suite
 tests/fixtures/d6_repoint.sql  the restatement fixture (an order VERSION here)
+tests/fixtures/d7_restore.sql  restore after delete, with unchanged values
+tests/fixtures/d8_tiebreak_wide.sql  same-extract tiebreak, through replay
 ```

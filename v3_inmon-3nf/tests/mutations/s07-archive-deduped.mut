@@ -1,0 +1,5 @@
+name: archive-deduped
+tag: shared
+what: the archive keeps only the last row per customer, not the delivery verbatim
+file: scripts/load_feed.sh
+sed: s/^  FROM stg_customer_l1 s;/  FROM stg_customer_l1 s WHERE s.rowid IN (SELECT MAX(rowid) FROM stg_customer_l1 GROUP BY customer_id);/

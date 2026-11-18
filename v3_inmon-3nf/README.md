@@ -64,7 +64,7 @@ directory; nothing reaches the network.
 ```bash
 make demo          # fresh archive + schema + the full 6-delivery sequence, then print the EDW
 make rebuild       # delete the EDW; replay the raw layer to rebuild it
-make test          # 94 assertions (36 core, 58 model): delete semantics, time-variance, range-join PIT, exact rebuild
+make test          # 99 assertions (36 core, 63 model): delete semantics, time-variance, range-join PIT, exact rebuild
 make clean         # delete build/ only — the archive SURVIVES
 make clean-archive # delete archive/ — destroys the raw layer, and the ability to rebuild
 ```
@@ -333,7 +333,8 @@ models.
 |----------------------|-----------------------------------------------------------------------------------------|
 | `make demo`          | fresh archive + schema + the full delivery sequence + printed EDW                       |
 | `make rebuild`       | regenerate the EDW by replaying the raw layer                                            |
-| `make test`          | run the EDW test suite (94 assertions)                                                   |
+| `make test`          | run the EDW test suite (99 assertions)                                                   |
+| `make mutate`        | apply each `tests/mutations/*.mut` to a scratch copy and check the suite turns red        |
 | `make init`          | recreate the EDW from schema (the archive survives)                                      |
 | `make clean`         | delete `build/` only — **the archive survives**; `make rebuild` restores the EDW        |
 | `make clean-archive` | delete `archive/` — destroys the raw layer and the ability to rebuild (deliberately separate from `clean`) |
@@ -363,9 +364,12 @@ once `COMPLETE`; it is the only target that discards the archive implicitly.
 │   └── query.sh             # print the EDW + its signature queries
 ├── source/                  # the demo delivery files (D0–D5), byte-identical with ../v3_datavault
 ├── tests/
-│   ├── run_tests.sh         # 64-assertion suite (delete semantics, time-variance, range-join PIT, exact rebuild)
+│   ├── run_tests.sh         # 99-assertion suite (delete semantics, time-variance, range-join PIT, exact rebuild)
+│   ├── mutations/           # 23 deliberate breakages `make mutate` runs against the suite
 │   └── fixtures/
-│       └── d6_repoint.sql   # restatement fixture: the re-point that becomes an order VERSION here
+│       ├── d6_repoint.sql   # restatement fixture: the re-point that becomes an order VERSION here
+│       ├── d7_restore.sql   # restore after delete, with the pre-delete values
+│       └── d8_tiebreak_wide.sql # same-extract tiebreak: the last row in the file wins, through replay
 ├── build/                   # generated: the EDW (safe to delete)
 └── archive/                 # generated: the durable raw layer (do NOT delete lightly)
 ```
@@ -378,9 +382,10 @@ once `COMPLETE`; it is the only target that discards the archive implicitly.
 make test
 ```
 
-One suite, pure shell + `sqlite3`, **94 assertions** (36 core, 58 model), mutation-hardened (the
-FULL-guard, replay-order, and churn-guard mutations were all verified to fail
-it). It replays the shared delivery scenario against the EDW and then
+One suite, pure shell + `sqlite3`, **99 assertions** (36 core, 63 model),
+mutation-tested: `make mutate` applies each of the 23 breakages in
+`tests/mutations/` to a scratch copy and requires the suite to go red
+(results for every model in `../MUTATIONS.md`). It replays the shared delivery scenario against the EDW and then
 exercises the Inmon-specific behaviours. The output comes in two parts: CORE,
 the fourteen sections every one of the ten suites runs in the same order with
 the same labels (`../tests/core_spec.tsv`; the nine question answers are the
@@ -391,6 +396,12 @@ SQL files in `tests/answers/`), then MODEL, what only this model shows.
   on absence (as an `is_deleted` marker carrying last-known attributes);
   tombstones delete in an incremental feed; recency de-duplication; and load
   control (skip a re-sent `file_id`, retry a crashed one).
+- **Restore and tiebreak fixtures** — a deleted customer re-sent with its
+  pre-delete values is live again (only the loader's deleted-row branch can
+  reopen it, since the change compare sees no change), and two rows with the
+  same `extract_dt` resolve to the last one in the file, on ingest and after
+  rebuild. Mutation testing found that nothing in the shared scenario
+  exercised either path.
 - **Time-variance** — version counts, exactly one current row per key,
   validity windows closed at the batch timestamp, and the D6 re-point
   versioning the order while the prior pairing stays queryable.

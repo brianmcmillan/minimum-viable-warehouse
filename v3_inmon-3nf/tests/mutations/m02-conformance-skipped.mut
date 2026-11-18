@@ -1,0 +1,5 @@
+name: conformance-skipped
+tag: model
+what: the status lookup never matches, so the EDW stores UNKNOWN(<code>)
+file: scripts/load_edw.sh
+sed: s/WHERE r\.status_code = s\.status)/WHERE r.status_code = s.status AND 0)/

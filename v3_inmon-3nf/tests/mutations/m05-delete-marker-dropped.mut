@@ -1,0 +1,5 @@
+name: delete-marker-dropped
+tag: model
+what: a delete closes the current row but writes no is_deleted marker version
+file: scripts/load_edw.sh
+sed: s/WHERE c\.valid_to='\$q_bts' AND c\.is_deleted=0/WHERE 0/
