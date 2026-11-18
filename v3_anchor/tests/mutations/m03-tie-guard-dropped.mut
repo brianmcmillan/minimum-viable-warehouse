@@ -1,0 +1,5 @@
+name: tie-guard-dropped
+tag: model
+what: the historized tie appends only for a first pairing, so a re-point writes nothing
+file: scripts/load_ties.sh
+sed: s/      WHERE c\.sid IS NULL OR c\.tid <> s\.tid;"/      WHERE c.sid IS NULL;"/

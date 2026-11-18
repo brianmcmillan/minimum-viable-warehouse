@@ -59,7 +59,7 @@ That's the whole list. Everything runs against local files in the project direct
 
 ```bash
 make demo    # fresh archive + schema + a 6-delivery feed sequence, then print the perspectives
-make test    # run the suite: 133 assertions (36 core, 97 model), mutation-hardened
+make test    # run the suite: 136 assertions (36 core, 100 model), mutation-hardened
 make rebuild # throw the constellation away and replay the raw layer to rebuild it
 ```
 
@@ -307,7 +307,8 @@ scales with the attribute count.
 |-----------------------|-------------------------------------------------------------------------------------|
 | `make demo`           | fresh archive + schema + the full delivery sequence + printed perspectives          |
 | `make rebuild`        | regenerate the constellation by replaying the raw layer                             |
-| `make test`           | run the suite (133 assertions)                                                       |
+| `make test`           | run the suite (136 assertions)                                                       |
+| `make mutate`         | apply each `tests/mutations/*.mut` to a scratch copy and check the suite turns red   |
 | `make init`           | recreate the derived warehouse from schema (the archive survives)                   |
 | `make clean`          | delete `build/` only — **the archive survives**; `make rebuild` restores it         |
 | `make clean-archive`  | delete `archive/` — destroys the raw layer and the ability to rebuild (deliberately separate from `clean`) |
@@ -339,7 +340,8 @@ scales with the attribute count.
 ├── source/                # the demo delivery files (D0–D5), wide; identical in every model
 ├── tests/
 │   ├── run_tests.sh       # the full suite: delete semantics, restatement control, rebuild, ties
-│   └── fixtures/          # test deliveries (d6_tiebreak narrow + wide, d7_repoint); narrow/ = old D0–D5
+│   ├── mutations/         # 23 deliberate breakages `make mutate` runs against the suite
+│   └── fixtures/          # test deliveries (d6_tiebreak narrow + wide, d7_repoint, d8_restore); narrow/ = old D0–D5
 ├── build/                 # generated: the derived constellation (safe to delete)
 └── archive/               # generated: the durable raw layer (do NOT delete lightly)
 ```
@@ -352,10 +354,11 @@ scales with the attribute count.
 make test
 ```
 
-One suite, pure shell + `sqlite3`, 133 assertions (36 core, 97 model; the output's CORE part is
+One suite, pure shell + `sqlite3`, 136 assertions (36 core, 100 model; the output's CORE part is
 the fourteen sections every suite runs with the same labels, `../tests/core_spec.tsv`, with the nine
-question answers in `tests/answers/`), mutation-hardened (each guard is verified by feeding
-it the input it is supposed to reject). It covers:
+question answers in `tests/answers/`), mutation-tested: `make mutate` applies each of the 23
+breakages in `tests/mutations/` to a scratch copy and requires the suite to go red (results for
+every model in `../MUTATIONS.md`). It covers:
 
 - **Delete semantics under a realistic cadence** — an incremental window does *not* delete an
   absent-but-unchanged record; a FULL snapshot *does* delete on absence; tombstones delete in an

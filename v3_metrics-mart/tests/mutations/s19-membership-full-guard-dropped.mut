@@ -1,0 +1,5 @@
+name: membership-full-guard-dropped
+tag: shared
+what: an absent order line is removed from its group in every delivery, not only a FULL one
+file: scripts/load_groups.sh
+sed: s/WHERE mf\.mode='FULL' AND g\.res_grp_id=res_resgrp\.res_grp_id)/WHERE g.res_grp_id=res_resgrp.res_grp_id)/

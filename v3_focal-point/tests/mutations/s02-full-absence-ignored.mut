@@ -1,0 +1,5 @@
+name: full-absence-ignored
+tag: shared
+what: a FULL delivery never deletes the keys it leaves out (attributes or existence)
+file: scripts/load_desc.sh
+sed: s/if \[ "\$mode" = "FULL" \]; then/if false; then/

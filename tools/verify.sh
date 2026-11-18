@@ -35,7 +35,7 @@ fi
 published() {
   case "$1" in
     v3_activity-schema:run_tests)     echo 153 ;;
-    v3_anchor:run_tests)              echo 133 ;;
+    v3_anchor:run_tests)              echo 136 ;;
     v3_data-marts:run_tests)          echo 108 ;;
     v3_datavault:run_tests)           echo 324 ;;
     v3_focal-point:run_tests)         echo 212 ;;

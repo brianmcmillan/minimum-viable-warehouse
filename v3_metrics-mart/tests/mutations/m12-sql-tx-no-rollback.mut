@@ -1,0 +1,5 @@
+name: sql-tx-no-rollback
+tag: model
+what: a load step that fails is treated as a success, so what it wrote stays and the load carries on
+file: scripts/lib.sh
+sed: s/^  if db "\$1"; then$/  if db "$1" || true; then/

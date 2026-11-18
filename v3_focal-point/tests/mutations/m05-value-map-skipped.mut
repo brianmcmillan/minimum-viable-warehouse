@@ -1,0 +1,5 @@
+name: value-map-skipped
+tag: model
+what: the descriptor loader never applies meta_value_map, so the raw code is stored
+file: scripts/load_desc.sh
+sed: s/    e_valstr="CASE \$e_valstr\$whens ELSE \$e_valstr END"/    e_valstr="$e_valstr"/

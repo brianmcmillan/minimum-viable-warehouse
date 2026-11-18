@@ -1,0 +1,5 @@
+name: correction-ignored
+tag: model
+what: a corrected sample (same key, new value) leaves the old value in place
+file: scripts/load_metrics.sh
+sed: s/^WHERE metric_sample\.value IS NOT excluded\.value;/WHERE 0;/

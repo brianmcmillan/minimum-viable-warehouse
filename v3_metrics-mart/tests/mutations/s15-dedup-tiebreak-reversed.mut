@@ -1,0 +1,5 @@
+name: dedup-tiebreak-reversed
+tag: shared
+what: on equal extract_ts, the FIRST narrow row wins
+file: scripts/apply_delivery.sh
+sed: s/ORDER BY extract_ts DESC, rowid DESC) rn/ORDER BY extract_ts DESC, rowid ASC) rn/

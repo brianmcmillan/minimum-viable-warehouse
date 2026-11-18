@@ -228,22 +228,24 @@ model doesn't force a difference.
   refresh over the log).
 - **Load control.** A delivery is marked `COMPLETE` only after every
   loader succeeds. A crash leaves it retryable, with the staged rows in
-  place as forensics. Success leaves the stage blank.
+  place as forensics. Success leaves the stage blank, except in Focal
+  Point, which keeps the last delivery staged until the next one arrives
+  (its per-delivery checks read it).
 - **`make clean` never touches the durable layer.** Destroying raw
   history takes the explicit `clean-archive` target.
 - **Mutation-tested suites** (Metrics mart 236, Activity 153, Focal 212,
-  DV 324, USS 145, HOOK 134, Kimball 108, Anchor 133, Inmon 99, OBT 91
+  DV 324, USS 145, HOOK 134, Kimball 108, Anchor 136, Inmon 99, OBT 91
   assertions). I broke the FULL-absence guard, the replay ordering, the
   dedup tiebreaks, the restatement and idempotence guards, the tie guards,
   the OBT refresh, the activity loader's event-time and immutability
-  guarantees, and the metrics mart's calendar inheritance on purpose, to
-  prove the
-  tests fail when they should. A green suite you haven't broken is a
+  guarantees, and the metrics mart's samples, type rules and calendar
+  weeks on purpose, to prove the tests fail when they should. A green suite you haven't broken is a
   hypothesis. The breakages live as files in `v3_*/tests/mutations/`;
   `make mutate` applies each one to a scratch copy, runs the suite, and
   writes [`MUTATIONS.md`](MUTATIONS.md): every mutation, whether the suite
-  killed it, and which assertions broke. Seven models are covered so far;
-  Anchor, Focal Point and the metrics mart follow.
+  killed it, and which assertions broke, for all ten models. A mutation
+  the suite cannot catch is listed there as a known survivor, with the
+  reason.
 - **One shared core in every suite.** Each suite runs the same 36 core
   assertions first, in fourteen sections with identical labels
   ([`tests/core_spec.tsv`](tests/core_spec.tsv)); each model supplies its

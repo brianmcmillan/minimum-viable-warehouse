@@ -1,0 +1,5 @@
+name: nochange-guard-dropped
+tag: model
+what: every delivered attribute is classified CHANGE, so unchanged values write new versions
+file: scripts/load_desc.sh
+sed: s/WHEN s\.val_str IS t\.val_str AND s\.val_num IS t\.val_num$/WHEN 0 AND s.val_num IS t.val_num/

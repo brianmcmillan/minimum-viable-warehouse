@@ -1,0 +1,5 @@
+name: auto-create-removed
+tag: model
+what: a parent of an auto-creating type that has not been delivered is never created
+file: scripts/load_res.sh
+sed: s/^      WHERE load_oper='U' AND parent_res_alias IS NOT NULL) p/      WHERE 0) p/

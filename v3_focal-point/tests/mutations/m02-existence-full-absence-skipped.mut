@@ -1,0 +1,5 @@
+name: existence-full-absence-skipped
+tag: model
+what: the existence loop writes no DELETED on FULL absence; attributes still close (mutations_todo.md 2)
+file: scripts/load_desc.sh
+sed: s/^    AND t\.ek NOT IN (SELECT ek FROM upkeys) AND t\.ek NOT IN (SELECT ek FROM delkeys)"$/    AND 0"/

@@ -1,0 +1,5 @@
+name: tombstone-ignored
+tag: shared
+what: op='DELETE' rows name no keys, so a tombstone closes nothing and writes no DELETED
+file: scripts/load_desc.sh
+sed: s/AND sl\.op='DELETE'$/AND sl.op='NEVER'/

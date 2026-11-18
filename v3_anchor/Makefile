@@ -7,11 +7,12 @@ export SQLITE
 export DB
 export ARCHIVE_DB
 
-.PHONY: help init demo rebuild test clean clean-archive
+.PHONY: help init demo rebuild test mutate clean clean-archive
 help:
 	@echo "  make demo          - fresh archive + init + the full delivery sequence + views"
 	@echo "  make rebuild       - regenerate the constellation by replaying the raw layer"
 	@echo "  make test          - run the Anchor test suite"
+	@echo "  make mutate        - break the code on purpose (tests/mutations/), check the suite catches it"
 	@echo "  make clean         - delete build/  (the ARCHIVE SURVIVES)"
 	@echo "  make clean-archive - delete archive/ -- destroys the raw layer, and with it"
 	@echo "                       any ability to rebuild. Deliberately not part of clean."
@@ -35,6 +36,9 @@ rebuild:
 
 test:
 	@./tests/run_tests.sh
+
+mutate:
+	@../tests/run_mutations.sh $(notdir $(CURDIR))
 
 clean:
 	@rm -rf build && echo "removed build/ (archive/ untouched -- run 'make rebuild')"

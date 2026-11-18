@@ -1,0 +1,5 @@
+name: current-feeds-filter-dropped
+tag: model
+what: the loaders act on every feed's last landing, not only the feeds this delivery carried
+file: scripts/lib.sh
+sed: s/^       WHERE EXISTS (SELECT 1 FROM source_landing_stage s$/       WHERE 1 OR EXISTS (SELECT 1 FROM source_landing_stage s/

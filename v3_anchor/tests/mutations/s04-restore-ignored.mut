@@ -1,0 +1,5 @@
+name: restore-ignored
+tag: shared
+what: EXISTS is asserted only for keys with no existence row at all, never for a key whose existence is DELETED
+file: scripts/load_attributes.sh
+sed: s/AND t\.rn=1),2)=2;/AND t.rn=1),3)=3;/
