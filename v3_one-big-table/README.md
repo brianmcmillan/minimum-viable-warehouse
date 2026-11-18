@@ -61,7 +61,7 @@ directory; nothing reaches the network.
 ```bash
 make demo          # fresh archive + schema + the full 6-delivery sequence, then print the tables
 make rebuild       # init + ONE full refresh — no replay loop, nothing incremental
-make test          # 71 assertions: derived deletes, the storage bill, history-as-a-query
+make test          # 85 assertions (36 core, 49 model): derived deletes, the storage bill, history-as-a-query
 make clean         # delete build/ only — the archive (the real warehouse) SURVIVES
 make clean-archive # delete archive/ — destroys the log, and with it everything
 ```
@@ -304,7 +304,7 @@ exists.
 |----------------------|--------------------------------------------------------------------------------------------|
 | `make demo`          | fresh archive + schema + the full delivery sequence + printed tables                       |
 | `make rebuild`       | `init` + ONE full refresh (no replay loop needed)                                          |
-| `make test`          | run the OBT test suite (71 assertions)                                                      |
+| `make test`          | run the OBT test suite (85 assertions)                                                      |
 | `make init`          | recreate the latest tables from schema (the archive survives)                              |
 | `make clean`         | delete `build/` only — **the archive, the real warehouse, survives**; `make rebuild` restores the tables |
 | `make clean-archive` | delete `archive/` — destroys the log and therefore everything (deliberately separate from `clean`) |
@@ -347,10 +347,16 @@ once `COMPLETE`; it is the only target that discards the log implicitly.
 make test
 ```
 
-One suite, pure shell + `sqlite3`, **71 assertions**, mutation-hardened (the
+One suite, pure shell + `sqlite3`, **85 assertions** (36 core, 49 model), mutation-hardened (the
 mode-filter, ranking-order, and skipped-refresh mutations were all verified to
 fail it). It replays the shared delivery scenario against the latest tables
-and then exercises the OBT-specific behaviours:
+and then exercises the OBT-specific behaviours. The output comes in two parts:
+CORE, the fourteen sections every one of the ten suites runs in the same order
+with the same labels (`../tests/core_spec.tsv`; the nine question answers are
+the SQL files in `tests/answers/`), then MODEL, what only this model shows.
+OBT keeps only the latest state, so its history answers (Q2, Q3, Q4, Q7) are
+queries over the archived log, and its rule-change check redefines the CASE in
+`v_order` on a copy of the database.
 
 - **Delete semantics *derived* from the log** — an incremental window does
   *not* delete an absent-but-unchanged record; a later FULL snapshot *does*

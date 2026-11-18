@@ -64,7 +64,7 @@ network.
 make demo          # fresh archive + schema + the full 6-delivery sequence, then print the warehouse
 make refresh       # re-derive the USS layer from the core (no reload)
 make rebuild       # delete core + USS; replay the raw layer to rebuild both
-make test          # 129 assertions: delete semantics, bridge shape, traps, as-of, exact rebuild
+make test          # 140 assertions (36 core, 104 model): delete semantics, bridge shape, traps, as-of, exact rebuild
 make clean         # delete build/ only — the archive SURVIVES
 make clean-archive # delete archive/ — destroys the raw layer, and the ability to rebuild
 ```
@@ -273,7 +273,7 @@ split has to be a business rule someone writes down.
 | `make demo`          | fresh archive + schema + the full delivery sequence + printed warehouse  |
 | `make refresh`       | re-derive the USS from the core (picks up reference-data changes)        |
 | `make rebuild`       | regenerate core + USS by replaying the raw layer                         |
-| `make test`          | run the test suite (129 assertions)                                      |
+| `make test`          | run the test suite (140 assertions)                                      |
 | `make init`          | recreate the database from schema (the archive survives)                 |
 | `make clean`         | delete `build/` only — **the archive survives**                          |
 | `make clean-archive` | delete `archive/` — destroys the raw layer and the ability to rebuild    |
@@ -302,7 +302,7 @@ split has to be a business rule someone writes down.
 │   └── query.sh             # print the warehouse
 ├── source/                  # D0–D5, byte-identical with ../v3_datavault, ../v3_inmon-3nf, ../v3_hook
 ├── tests/
-│   ├── run_tests.sh         # 129 assertions
+│   ├── run_tests.sh         # 140 assertions
 │   └── fixtures/d6_repoint.sql   # O-101 re-pointed to C001 (data row identical to the siblings')
 ├── build/                   # generated (safe to delete)
 └── archive/                 # generated: the durable raw layer
@@ -316,7 +316,10 @@ split has to be a business rule someone writes down.
 make test
 ```
 
-**129 assertions**, pure shell + `sqlite3`, covering:
+**140 assertions** (36 core, 104 model), pure shell + `sqlite3`. The output comes in two parts:
+CORE, the fourteen sections every one of the ten suites runs in the same order with the same labels
+(`../tests/core_spec.tsv`; the nine question answers are the SQL files in `tests/answers/`), then
+MODEL, what only this model shows. Between them they cover:
 
 - **Delete semantics** — the stale-window trap, FULL-absence deletes,
   tombstones, recency dedup, load control, and zero-churn idempotence (the
