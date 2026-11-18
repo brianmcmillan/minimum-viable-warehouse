@@ -2,7 +2,7 @@
 -- METRICS MART :: STAGING + 3NF CORE
 -- ---------------------------------------------------------------------
 -- Table and column names follow the ER diagrams in
--- ../../er-diagrams/. Declared types are the diagram's;
+-- ../../er-diagrams/mermaid/metrics-mart.md. Declared types are the diagram's;
 -- SQLite maps them to its own affinities.
 --
 -- Built:      staging, resource, metric, provider, group, aggregation

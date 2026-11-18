@@ -1,6 +1,6 @@
 # Metrics mart: a 3NF model that is already half metadata
 
-The ER diagrams in [`../er-diagrams/`](../er-diagrams/)
+The ER diagrams in [`../er-diagrams/mermaid/metrics-mart.md`](../er-diagrams/mermaid/metrics-mart.md)
 describe a warehouse for measurements: resources, the metrics taken on them,
 and rollups by week and by group. It is 3NF with its codes snowflaked out
 (`RES_TYPE`, `VALUE_TYPE`, `CAL_EVT_TYPE`).

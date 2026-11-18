@@ -3,7 +3,7 @@
 A small, fully working metrics mart built from nothing but **`sqlite3`,
 `bash`, and `make`**. No Python, no dbt, no server, no packages to install.
 The core tables follow the ER diagrams in
-[`../er-diagrams/`](../er-diagrams/): an
+[`../er-diagrams/mermaid/metrics-mart.md`](../er-diagrams/mermaid/metrics-mart.md): an
 Inmon-style 3NF model with its codes snowflaked out to their own tables.
 Clone it, run `make demo`, and you have a mart where every thing is a
 resource, every number is a metric sample, deletes are handled safely under
