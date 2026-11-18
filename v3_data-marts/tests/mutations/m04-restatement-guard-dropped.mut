@@ -1,0 +1,5 @@
+name: restatement-guard-dropped
+tag: model
+what: every re-sent order is restated, changed or not (its key re-frozen to the current version)
+file: scripts/load_facts.sh
+sed: s/AND ( s\.amount    IS NOT f\.amount/AND ( 1=1 OR s.amount IS NOT f.amount/

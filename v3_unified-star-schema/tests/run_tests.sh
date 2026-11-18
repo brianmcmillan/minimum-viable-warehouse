@@ -445,5 +445,30 @@ own "reuse: STARTED X2 re-sent with its original content retries to COMPLETE" \
    "$(x2 "$R_ORIG")/$(x2_state)" "0/COMPLETE"
 export DB="$SAVE_DB" ARCHIVE_DB="$SAVE_ARCHIVE_DB"
 
+own_section M10 "Restore after delete, and the same-extract tiebreak through replay"
+# Own database pair: the fixtures never reach the core scenario. Neither
+# case occurs in the shared deliveries, so without this section the
+# delta engine's restore path, the rowid tiebreak and the replay row
+# order could all be broken without a single assertion failing.
+export DB="$LOGDIR/m10.db" ARCHIVE_DB="$LOGDIR/m10_archive.db"
+rm -f "$DB" "$ARCHIVE_DB"; "$PROJ/scripts/init_db.sh" >/dev/null 2>&1
+m10(){ BATCH_TS="$3" "$PROJ/scripts/load_feed.sh" "$1" "$2" >/dev/null 2>&1 || echo "  (load_feed.sh $2 exited $?)"; }
+m10 "$PROJ/source/d0_baseline.sql"       B0 '2026-02-05 08:00:00'
+m10 "$PROJ/source/d3_cust_tombstone.sql" D3 '2026-03-16 08:00:00'
+m10 "$HERE/fixtures/d7_restore.sql"      D7 '2027-04-01 08:00:00'
+own "restore: C002 re-sent with its pre-delete values is live again" \
+   "$(q "SELECT customer_name||'/'||email FROM customer WHERE customer_ref='C002'")" "Bob Jones/bob@example.com"
+own "restore: core rows INSERT > DELETE > INSERT, and C002 back on the Customer stage" \
+   "$(q "SELECT group_concat(change_type,'>') FROM (SELECT change_type FROM core_customer WHERE customer_id='C002' ORDER BY load_ts)")/$(q "SELECT COUNT(*) FROM _bridge WHERE stage='Customer' AND _key_customer='C002'")" "INSERT>DELETE>INSERT/1"
+m10 "$HERE/fixtures/d8_tiebreak_wide.sql" D8 '2027-04-02 08:00:00'
+own "tiebreak: equal extract_dt -> the last row in the file wins" \
+   "$(q "SELECT email FROM customer WHERE customer_ref='C004'")" "last@x.com"
+"$PROJ/scripts/rebuild.sh" >/dev/null 2>&1 || echo "  (rebuild exited $?)"
+own "tiebreak: still the last row after rebuild (seq_nbr order restored)" \
+   "$(q "SELECT email FROM customer WHERE customer_ref='C004'")" "last@x.com"
+own "restore: still live after rebuild" \
+   "$(q "SELECT COUNT(*) FROM customer WHERE customer_ref='C002'")" "1"
+export DB="$SAVE_DB" ARCHIVE_DB="$SAVE_ARCHIVE_DB"
+
 rm -f "$DB" "$ARCHIVE_DB"
 summary

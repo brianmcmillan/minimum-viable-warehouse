@@ -1,0 +1,5 @@
+name: res-key-order-reversed
+tag: model
+what: new resources are numbered in reverse business-key order
+file: scripts/load_res.sh
+sed: s/+ ROW_NUMBER() OVER (ORDER BY s\.res_type, s\.res_code),/+ ROW_NUMBER() OVER (ORDER BY s.res_type, s.res_code DESC),/

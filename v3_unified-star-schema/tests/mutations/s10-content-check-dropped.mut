@@ -1,0 +1,5 @@
+name: content-check-dropped
+tag: shared
+what: a reused file_id with the same row count but different values is accepted
+file: scripts/load_feed.sh
+sed: s/\[ "\$drift" -eq 0 \] ||/true ||/

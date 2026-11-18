@@ -1,0 +1,6 @@
+name: measure-on-every-stage
+tag: model
+what: the order amount is also carried on the order-line stage (the fan trap)
+file: scripts/refresh_uss.sh
+sed: s/^INSERT INTO _bridge(stage, _key_order_line, _key_orders, _key_product, _key_customer, line_count)$/INSERT INTO _bridge(stage, _key_order_line, _key_orders, _key_product, _key_customer, line_count, order_amount)/
+sed: s/^SELECT 'Order line', l\._key_order_line, l\.order_ref, l\.sku, c\.customer_ref, 1$/SELECT 'Order line', l._key_order_line, l.order_ref, l.sku, c.customer_ref, 1, c.amount/

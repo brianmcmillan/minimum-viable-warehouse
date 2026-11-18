@@ -13,7 +13,8 @@ OBT demos, byte-identical.
 make demo     # fresh archive + the full delivery sequence + views
 make refresh  # re-derive the USS from the core
 make rebuild  # regenerate core + USS by replaying the raw layer
-make test     # 140 assertions (36 core, 104 model), mutation-checked
+make test     # 145 assertions (36 core, 109 model), mutation-checked
+make mutate   # 26 mutations (18 shared, 8 model), each must turn the suite red
 ```
 
 ## The ideas
@@ -99,5 +100,6 @@ schema/03_core.sql      core_table registry, insert-only core, latest views, ref
 schema/04_uss.sql       USS tables, _bridge, business / trap / history views
 scripts/load_core.sh    the generic, registry-driven core loader
 scripts/refresh_uss.sh  full re-derive of the USS tables and the bridge
-tests/run_tests.sh      140 assertions
+tests/run_tests.sh      145 assertions
+tests/mutations/*.mut   26 mutations `make mutate` runs against the suite
 ```

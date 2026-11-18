@@ -1,0 +1,5 @@
+name: archive-delete-allowed
+tag: shared
+what: the archive accepts DELETE (hist_order trigger dropped)
+file: schema/02_archive.sql
+sed: /trg_ho_nd/,/END;/d

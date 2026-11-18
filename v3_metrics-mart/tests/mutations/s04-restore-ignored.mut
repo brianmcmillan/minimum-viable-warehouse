@@ -1,0 +1,5 @@
+name: restore-ignored
+tag: shared
+what: a deleted resource delivered again stays res_status 0
+file: scripts/load_res.sh
+sed: s/^  AND res\.res_status=0;$/  AND 0;/

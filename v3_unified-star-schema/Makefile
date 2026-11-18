@@ -7,12 +7,13 @@ export SQLITE
 export DB
 export ARCHIVE_DB
 
-.PHONY: help init demo refresh rebuild test clean clean-archive
+.PHONY: help init demo refresh rebuild test mutate clean clean-archive
 help:
 	@echo "  make demo          - fresh archive + init + the full delivery sequence + views"
 	@echo "  make rebuild       - regenerate core + USS by replaying the raw layer"
 	@echo "  make refresh       - re-derive the USS layer from the core (no reload)"
 	@echo "  make test          - run the USS test suite"
+	@echo "  make mutate        - break the code on purpose (tests/mutations/), check the suite catches it"
 	@echo "  make clean         - delete build/  (the ARCHIVE SURVIVES)"
 	@echo "  make clean-archive - delete archive/ -- destroys the raw layer"
 init:
@@ -39,6 +40,9 @@ rebuild:
 
 test:
 	@./tests/run_tests.sh
+
+mutate:
+	@../tests/run_mutations.sh $(notdir $(CURDIR))
 
 clean:
 	@rm -rf build && echo "removed build/ (archive/ untouched -- run 'make rebuild')"

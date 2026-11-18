@@ -1,0 +1,5 @@
+name: tombstone-ignored
+tag: shared
+what: the router never routes a tombstone as load_oper 'D'
+file: scripts/route_stage.sh
+sed: s/CASE WHEN del_ts IS NOT NULL AND (ups_ts IS NULL OR del_ts >= ups_ts)/CASE WHEN 0/

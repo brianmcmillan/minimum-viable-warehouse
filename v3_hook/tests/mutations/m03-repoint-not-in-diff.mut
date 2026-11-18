@@ -1,0 +1,5 @@
+name: repoint-not-in-diff
+tag: model
+what: customer_ref leaves the order's diff, so a re-point writes no frame row
+file: schema/01_stage.sql
+sed: s/COALESCE(customer_ref,'') *|| '|' ||//

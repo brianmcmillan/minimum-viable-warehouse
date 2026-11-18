@@ -1,0 +1,5 @@
+name: repoint-not-restated
+tag: model
+what: a changed customer_ref no longer counts as a fact restatement
+file: scripts/load_facts.sh
+sed: s/OR s\.customer_bk <> (SELECT customer_ref FROM dim_customer/OR 0 <> (SELECT 0 FROM dim_customer/

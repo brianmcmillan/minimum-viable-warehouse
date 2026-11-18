@@ -1,0 +1,5 @@
+name: restore-ignored
+tag: shared
+what: a deleted subject upserted again stays deleted
+file: scripts/load_frames.sh
+sed: s/WHERE s\.op = 'UPSERT'$/WHERE s.op = 'UPSERT' AND (l.change_type IS NULL OR l.change_type <> 'DELETE')/

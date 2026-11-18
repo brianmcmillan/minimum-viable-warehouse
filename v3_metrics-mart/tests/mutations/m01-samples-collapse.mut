@@ -1,0 +1,5 @@
+name: samples-collapse
+tag: model
+what: the metric dedup ignores the time, so two prices observed at two times collapse to one sample
+file: scripts/route_stage.sh
+sed: s/PARTITION BY source_system, source_entity, business_key, attribute_name, extract_ts$/PARTITION BY source_system, source_entity, business_key, attribute_name/

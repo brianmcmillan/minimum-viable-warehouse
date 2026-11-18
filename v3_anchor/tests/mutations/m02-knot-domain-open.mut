@@ -1,0 +1,5 @@
+name: knot-domain-open
+tag: model
+what: a value with no knot member no longer fails the load
+file: scripts/load_attributes.sh
+sed: s/\[ "\$bad" -eq 0 \] ||/true ||/

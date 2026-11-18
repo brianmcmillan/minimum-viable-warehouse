@@ -1,0 +1,5 @@
+name: anchor-key-order-reversed
+tag: model
+what: anchor surrogates are allocated in reverse business-key order
+file: scripts/load_anchors.sh
+sed: s/+ ROW_NUMBER() OVER (ORDER BY s\.bk),/+ ROW_NUMBER() OVER (ORDER BY s.bk DESC),/

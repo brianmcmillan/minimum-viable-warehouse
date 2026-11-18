@@ -1,0 +1,5 @@
+name: tombstone-ignored
+tag: shared
+what: a key whose latest mention is a tombstone still counts as alive
+file: scripts/refresh_latest.sh
+sed: s/^  WHERE m\.rn=1 AND m\.op<>'DELETE'$/  WHERE m.rn=1/

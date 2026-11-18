@@ -1,0 +1,5 @@
+name: membership-tombstone-ignored
+tag: shared
+what: a membership tombstone removes nothing
+file: scripts/load_groups.sh
+sed: s/^              WHERE c\.op='DELETE'$/              WHERE c.op='NEVER'/

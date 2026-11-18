@@ -1,0 +1,5 @@
+name: restore-ignored
+tag: shared
+what: 'I' is written only for keys with no status yet, never for a key whose status is 'D'
+file: scripts/load_sats.sh
+sed: s/,'D') = 'D';/,'N') = 'N';/

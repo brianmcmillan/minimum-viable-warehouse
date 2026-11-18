@@ -1,0 +1,6 @@
+name: key-order-reversed
+tag: model
+what: surrogate keys are allocated in reverse business-key order
+file: scripts/load_keys.sh
+sed: s/+ ROW_NUMBER() OVER (ORDER BY s\.idfr),/+ ROW_NUMBER() OVER (ORDER BY s.idfr DESC),/
+survivor: an equivalent mutant. Keys are allocated by the same rule on ingest and on replay, so reversing the order still reproduces every key through rebuild (M12, M20); no assertion depends on which number a key gets, only that it is the same each time

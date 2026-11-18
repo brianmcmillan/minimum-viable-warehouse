@@ -1,0 +1,5 @@
+name: consumer-decode-lost
+tag: model
+what: v_order's CASE no longer translates 'P'
+file: schema/01_stage.sql
+sed: s/CASE o\.status WHEN 'P' THEN 'PENDING'  WHEN/CASE o.status WHEN 'never' THEN 'PENDING'  WHEN/

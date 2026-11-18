@@ -1,0 +1,5 @@
+name: full-absence-ignored
+tag: shared
+what: a FULL delivery never deletes the subjects it leaves out
+file: scripts/load_frames.sh
+sed: s/if \[ "\$mode" = "FULL" \]; then/if false; then/

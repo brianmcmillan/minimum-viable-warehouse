@@ -1,0 +1,5 @@
+name: dedup-tiebreak-reversed
+tag: shared
+what: on equal extract_dt, the FIRST row in the file wins
+file: schema/02_stage2_views.sql
+sed: s/ORDER BY extract_dt DESC, rowid DESC/ORDER BY extract_dt DESC, rowid ASC/

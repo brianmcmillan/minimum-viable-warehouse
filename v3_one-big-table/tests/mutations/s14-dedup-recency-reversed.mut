@@ -1,0 +1,5 @@
+name: dedup-recency-reversed
+tag: shared
+what: within one delivery, the OLDEST extract per key wins
+file: scripts/refresh_latest.sh
+sed: s/ORDER BY load_seq DESC, extract_dt DESC, seq_nbr DESC/ORDER BY load_seq DESC, extract_dt ASC, seq_nbr DESC/

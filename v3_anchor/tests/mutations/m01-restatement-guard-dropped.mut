@@ -1,0 +1,5 @@
+name: restatement-guard-dropped
+tag: model
+what: every delivered value of a historized attribute appends a new version, changed or not
+file: scripts/load_attributes.sh
+sed: s/      WHERE t\.id IS NULL OR t\.cur IS NOT \$VAL;"/      WHERE 1;"/

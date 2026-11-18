@@ -397,6 +397,7 @@ up").
 | `make demo`          | fresh archive + schema + the full delivery sequence + printed mart    |
 | `make rebuild`       | regenerate the mart by replaying the raw layer                        |
 | `make test`          | run the test suite (237 assertions)                                   |
+| `make mutate`        | apply each `tests/mutations/*.mut` to a scratch copy and check the suite turns red |
 | `make init`          | recreate the mart database from schema (the archive survives)         |
 | `make clean`         | delete `build/` only — **the archive survives**                       |
 | `make clean-archive` | delete `archive/` — destroys the raw layer and the ability to rebuild |
@@ -433,6 +434,7 @@ up").
 ├── source/                   # D0–D5, wide; byte-identical in all ten models
 ├── tests/
 │   ├── run_tests.sh          # 237 assertions
+│   ├── mutations/            # 34 deliberate breakages `make mutate` runs against the suite
 │   └── fixtures/
 │       ├── d6_tiebreak.sql           # same-extract tiebreak (identical to Anchor's)
 │       ├── d7_repoint.sql            # O-101 re-pointed to C001 (identical to Anchor's)
@@ -490,7 +492,9 @@ new sample by design. Between them the parts cover:
   loaders; and the old narrow D0–D5 (`tests/fixtures/narrow`) building the
   same mart, surrogate for surrogate, as the wide files.
 
-See [METRICSMART.md](METRICSMART.md) for the mutation checks.
+`make mutate` applies each of the 34 breakages in `tests/mutations/` to a scratch copy and
+requires the suite to go red; results for every model are in `../MUTATIONS.md`, and
+[METRICSMART.md](METRICSMART.md) lists what they break.
 
 ---
 

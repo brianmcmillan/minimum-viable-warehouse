@@ -1,0 +1,5 @@
+name: row-count-check-dropped
+tag: shared
+what: a reused file_id with a different row count is not refused by the manifest
+file: scripts/load_feed.sh
+sed: s/\[ "\$prev_rc" = "\$rc" \] ||/true ||/

@@ -1,0 +1,5 @@
+name: activity-key-order-dropped
+tag: model
+what: activity ids are numbered without the business-key sort
+file: scripts/load_activities.sh
+sed: s/OVER (ORDER BY x\.k, x\.activity, x\.ts)/OVER (ORDER BY x.activity, x.ts)/g

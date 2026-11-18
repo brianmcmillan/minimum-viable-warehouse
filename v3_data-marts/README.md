@@ -65,7 +65,7 @@ directory; nothing reaches the network.
 make demo           # fresh archive + schema + the full 6-delivery sequence, then print the star
 make rebuild        # delete the star; replay the archive to rebuild it — surrogate keys included
 make archive-status # what the durable archive holds, and where it is growing
-make test           # 101 assertions (36 core, 65 model): delete semantics, SCD2, frozen keys, exact rebuild
+make test           # 108 assertions (36 core, 72 model): delete semantics, SCD2, frozen keys, exact rebuild
 ```
 
 `make demo` loads six deliveries standing in for a few weeks of real feeds,
@@ -344,7 +344,8 @@ across models.
 | `make demo`           | fresh archive + schema + the full delivery sequence + printed star                         |
 | `make rebuild`        | regenerate the star by replaying the archive                                               |
 | `make archive-status` | report on the archive (read-only): deliveries, rows per feed, growth                       |
-| `make test`           | run the Kimball test suite (101 assertions)                                                |
+| `make test`           | run the Kimball test suite (108 assertions)                                                |
+| `make mutate`         | apply each `tests/mutations/*.mut` to a scratch copy and check the suite turns red          |
 | `make init`           | recreate the star from schema (the archive survives)                                       |
 | `make clean`          | delete `build/` only — **the archive survives**; `make rebuild` restores the star          |
 | `make clean-archive`  | delete `archive/` — destroys the raw history and the ability to rebuild (deliberately separate from `clean`) |
@@ -410,9 +411,10 @@ OMS.ORDER       1           2         2
 make test
 ```
 
-One suite, pure shell + `sqlite3`, **101 assertions** (36 core, 65 model), mutation-hardened (the
-FULL-guard, replay-order, and SCD2 churn-guard mutations were all verified to
-fail it). It replays the shared delivery scenario against the star and then
+One suite, pure shell + `sqlite3`, **108 assertions** (36 core, 72 model),
+mutation-tested: `make mutate` applies each of the 24 breakages in
+`tests/mutations/` to a scratch copy and requires the suite to go red
+(results for every model in `../MUTATIONS.md`). It replays the shared delivery scenario against the star and then
 exercises the Kimball-specific behaviours. The output comes in two parts: CORE,
 the fourteen sections every one of the ten suites runs in the same order with
 the same labels (`../tests/core_spec.tsv`; the nine question answers are the

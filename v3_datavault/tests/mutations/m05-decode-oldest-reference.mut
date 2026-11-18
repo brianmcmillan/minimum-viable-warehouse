@@ -1,0 +1,5 @@
+name: decode-oldest-reference
+tag: model
+what: bv_order_status_bsat decodes from the oldest reference row per code, not the newest
+file: schema/04_business_vault.sql
+sed: s/ROW_NUMBER() OVER (PARTITION BY code ORDER BY ldts DESC) rn/ROW_NUMBER() OVER (PARTITION BY code ORDER BY ldts ASC) rn/

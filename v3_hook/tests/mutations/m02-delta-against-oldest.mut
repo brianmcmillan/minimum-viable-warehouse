@@ -1,0 +1,5 @@
+name: delta-against-oldest
+tag: model
+what: the delta engine compares each subject with its OLDEST frame row, not its latest
+file: scripts/load_frames.sh
+sed: s/(PARTITION BY \$fkey ORDER BY load_ts DESC) AS rn/(PARTITION BY $fkey ORDER BY load_ts ASC) AS rn/

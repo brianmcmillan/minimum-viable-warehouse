@@ -350,5 +350,33 @@ own "reuse: STARTED X2 re-sent with its original content retries to COMPLETE" \
    "$(x2 "$R_ORIG")/$(x2_state)" "0/COMPLETE"
 export DB="$SAVE_DB" ARCHIVE_DB="$SAVE_ARCHIVE_DB"
 
+own_section M07 "Restore after delete, the same-extract tiebreak, and the wide table after a delete"
+# Own database pair: the fixtures never reach the core scenario. None of
+# these cases occurs in the shared deliveries, so without this section
+# the refresh could keep a restored key deleted, resolve a same-extract
+# tie the wrong way, or drop an order whose customer is gone from the
+# One Big Table without a single assertion failing.
+export DB="$LOGDIR/m07.db" ARCHIVE_DB="$LOGDIR/m07_archive.db"
+rm -f "$DB" "$ARCHIVE_DB"; "$PROJ/scripts/init_db.sh" >/dev/null 2>&1
+m07(){ BATCH_TS="$3" "$PROJ/scripts/load_feed.sh" "$1" "$2" >/dev/null 2>&1 || echo "  (load_feed.sh $2 exited $?)"; }
+m07 "$PROJ/source/d0_baseline.sql"       B0 '2026-02-05 08:00:00'
+m07 "$PROJ/source/d3_cust_tombstone.sql" D3 '2026-03-16 08:00:00'
+own "wide table: O-101's line stays after C002's delete, with no customer name" \
+   "$(q "SELECT group_concat(order_ref||'/'||sku||'/'||COALESCE(customer_name,'<none>'),' ') FROM obt_order_wide WHERE order_ref='O-101'")" "O-101/SKU-2/<none>"
+m07 "$HERE/fixtures/d7_restore.sql"      D7 '2027-04-01 08:00:00'
+own "restore: C002 re-sent with its pre-delete values is live again" \
+   "$(q "SELECT customer_name||'/'||email FROM v_customer WHERE customer_ref='C002'")" "Bob Jones/bob@example.com"
+own "restore: the wide table names C002 on O-101 again" \
+   "$(q "SELECT customer_name FROM obt_order_wide WHERE order_ref='O-101'")" "Bob Jones"
+m07 "$HERE/fixtures/d8_tiebreak_wide.sql" D8 '2027-04-02 08:00:00'
+own "tiebreak: equal extract_dt -> the last row in the file wins" \
+   "$(q "SELECT email FROM v_customer WHERE customer_ref='C004'")" "last@x.com"
+"$PROJ/scripts/rebuild.sh" >/dev/null 2>&1 || echo "  (rebuild exited $?)"
+own "tiebreak: still the last row after rebuild (one refresh over the log)" \
+   "$(q "SELECT email FROM v_customer WHERE customer_ref='C004'")" "last@x.com"
+own "restore: still live after rebuild" \
+   "$(q "SELECT COUNT(*) FROM v_customer WHERE customer_ref='C002'")" "1"
+export DB="$SAVE_DB" ARCHIVE_DB="$SAVE_ARCHIVE_DB"
+
 rm -f "$DB" "$ARCHIVE_DB"
 summary

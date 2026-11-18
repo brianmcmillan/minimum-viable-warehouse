@@ -17,6 +17,7 @@ the same narrow landing as the Focal Point and Anchor demos.
 make demo     # fresh archive + the full delivery sequence + views
 make rebuild  # regenerate the mart by replaying the raw layer
 make test     # 237 assertions (36 core, 1 of them a known GAP; 201 model), mutation-checked
+make mutate   # 34 mutations (21 shared, 13 model), each must turn the suite red
 ```
 
 ## Review of the diagrams
@@ -177,8 +178,10 @@ table, stays and sets the week boundaries for the weekly rollups.
 
 ## Mutation checks
 
-Each change below was made to a copy of the scripts and the suite was run
-against it. All of them turn the suite red.
+Each change below is a file in `tests/mutations/` (or is still to become
+one; see the note after the list). `make mutate` applies each file to a
+scratch copy and runs the suite; all of them turn it red. Results are in
+`../MUTATIONS.md`.
 
 - **Delete rule:** dropping the FULL guard on resources; ignoring
   tombstones; dropping the FULL guard on memberships; removing the
@@ -200,6 +203,10 @@ against it. All of them turn the suite red.
 - **Aggregates:** starting the week on Sunday.
 The current-feeds mutation survived the first version of the suite. The
 stale-snapshot assertions were added to catch it.
+
+Two checks in this list are not mutation files yet: the changed-rows-only
+guards on the subtype tables and on `METRIC_WEEKLY`. Everything else in
+the list, and the archive and load-control rules every model shares, is.
 
 ## A native narrow archive is a supported option
 
@@ -235,4 +242,5 @@ scripts/load_groups.sh         groups, type groups and memberships
 scripts/load_metrics.sh        METRIC_STG -> METRIC_STG2 -> METRIC_SAMPLE
 scripts/refresh_aggregates.sh  summaries, weeks, group weeks
 tests/run_tests.sh             237 assertions
+tests/mutations/*.mut          34 mutations `make mutate` runs against the suite
 ```

@@ -1,0 +1,5 @@
+name: existence-filter-dropped
+tag: model
+what: the customer perspective no longer requires the latest EST to be EXISTS
+file: schema/04_views.sql
+sed: s/^JOIN lCU_EST x ON x\.CU_ID = a\.CU_ID AND x\.EST_ID = 1/JOIN lCU_EST x ON x.CU_ID = a.CU_ID/

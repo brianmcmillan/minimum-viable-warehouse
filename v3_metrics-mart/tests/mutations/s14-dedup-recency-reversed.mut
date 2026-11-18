@@ -1,0 +1,5 @@
+name: dedup-recency-reversed
+tag: shared
+what: landing dedup keeps the OLDEST extract per key and attribute
+file: scripts/apply_delivery.sh
+sed: s/ORDER BY extract_ts DESC, rowid DESC) rn/ORDER BY extract_ts ASC, rowid DESC) rn/

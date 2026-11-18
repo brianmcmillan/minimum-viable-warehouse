@@ -1,0 +1,5 @@
+name: existence-filter-dropped
+tag: model
+what: v_customer no longer requires CUSTOMER_EXISTENCE = 'ACTIVE' (mutations_todo.md 1)
+file: schema/04_views.sql
+sed: s/                              AND e\.type_key=19 AND e\.val_str='ACTIVE'/                              AND e.type_key=19/

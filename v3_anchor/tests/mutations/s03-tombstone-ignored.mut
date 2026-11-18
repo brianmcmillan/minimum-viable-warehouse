@@ -1,0 +1,5 @@
+name: tombstone-ignored
+tag: shared
+what: an op='DELETE' row asserts no DELETED existence
+file: scripts/load_attributes.sh
+sed: s/AND op='DELETE') s$/AND op='NEVER') s/

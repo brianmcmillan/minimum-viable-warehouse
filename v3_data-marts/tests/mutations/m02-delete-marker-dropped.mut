@@ -1,0 +1,5 @@
+name: delete-marker-dropped
+tag: model
+what: a delete expires the current dimension row but writes no deleted-marker version
+file: scripts/load_dims.sh
+sed: s/WHERE c\.row_exp_ts='\$q_bts' AND c\.is_deleted=0/WHERE 0/

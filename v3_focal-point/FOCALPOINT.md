@@ -10,6 +10,7 @@ make demo            # baseline + 5 deliveries + views
 make rebuild         # throw the warehouse away; replay the raw layer to rebuild it
 make archive-status  # what the raw layer holds, and where it is growing
 make test            # 213 assertions (36 core, 177 model): delete semantics and the raw layer
+make mutate          # 22 mutations (17 shared, 5 model), each must turn the suite red
 ```
 
 ## The core rule

@@ -1,0 +1,5 @@
+name: restore-ignored
+tag: shared
+what: ACTIVE is written only for keys with no existence row at all, not for a key whose existence is DELETED (mutations_todo.md 3)
+file: scripts/load_desc.sh
+sed: s/WHERE (t\.ek IS NULL OR t\.val_str<>'ACTIVE') AND/WHERE (t.ek IS NULL) AND/

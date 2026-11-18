@@ -1,0 +1,5 @@
+name: dedup-recency-reversed
+tag: shared
+what: stage dedup keeps the OLDEST extract per key
+file: schema/02_stage2_views.sql
+sed: s/ORDER BY extract_dt DESC, rowid DESC/ORDER BY extract_dt ASC, rowid DESC/

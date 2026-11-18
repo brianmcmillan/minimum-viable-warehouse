@@ -1,0 +1,5 @@
+name: null-customer-optional-key
+tag: model
+what: a null customer_ref links to the optional-null key '-2' instead of the required-null key '-1'
+file: schema/02_stage2_views.sql
+sed: s/COALESCE(NULLIF(TRIM(customer_ref),''), '-1') AS customer_bk/COALESCE(NULLIF(TRIM(customer_ref),''), '-2') AS customer_bk/

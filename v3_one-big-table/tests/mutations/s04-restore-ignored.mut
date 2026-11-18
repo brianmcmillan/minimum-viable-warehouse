@@ -1,0 +1,6 @@
+name: restore-ignored
+tag: shared
+what: a customer tombstoned once stays deleted even when a later delivery upserts it
+file: scripts/refresh_latest.sh
+sed: s/^  SELECT m\.customer_id FROM ranked m$/  SELECT m.customer_id FROM ranked m WHERE NOT EXISTS (SELECT 1 FROM arch.hist_customer d WHERE d.customer_id = m.customer_id AND d.op = 'DELETE') AND m.customer_id IN (SELECT customer_id FROM ranked/
+sed: /^  SELECT m\.customer_id FROM ranked m WHERE NOT EXISTS/{n;s/^  WHERE m\.rn=1 AND m\.op<>'DELETE'$/  ) AND m.rn=1 AND m.op<>'DELETE'/;}

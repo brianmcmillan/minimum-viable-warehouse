@@ -1,0 +1,5 @@
+name: decode-on-read-lost
+tag: model
+what: v_order never finds a status in ref_oms_order_status
+file: schema/04_views.sql
+sed: s/^LEFT JOIN ref_oms_order_status r ON r\.status_code = o\.status$/LEFT JOIN ref_oms_order_status r ON r.status_code = o.status AND 0/

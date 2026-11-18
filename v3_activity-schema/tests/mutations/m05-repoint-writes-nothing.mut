@@ -1,0 +1,5 @@
+name: repoint-writes-nothing
+tag: model
+what: a re-pointed order writes no order_reassigned activity
+file: scripts/load_activities.sh
+sed: s/WHERE s\.op = 'UPSERT' AND o\.alive = 1 AND s\.customer_ref IS NOT o\.customer_ref"/WHERE s.op = 'UPSERT' AND o.alive = 1 AND 0"/

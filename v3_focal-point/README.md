@@ -301,6 +301,7 @@ Defined in `schema/04_views.sql`, exercised by `scripts/query.sh`:
 | `make rebuild`        | regenerate the warehouse by replaying the raw layer                                 |
 | `make archive-status` | report the raw layer (read-only): deliveries, rows per feed, growth                 |
 | `make test`           | run the test suite (core, then model, incl. the raw-layer/rebuild checks)           |
+| `make mutate`         | apply each `tests/mutations/*.mut` to a scratch copy and check the suite turns red  |
 | `make init`           | recreate the derived warehouse from schema (the archive survives)                   |
 | `make clean`          | delete `build/` only — **the archive survives**; `make rebuild` restores it         |
 | `make clean-archive`  | delete `archive/` — destroys the raw layer and the ability to rebuild (deliberately separate from `clean`) |
@@ -347,7 +348,7 @@ OMS.ORDER_LINE  INCREMENTAL  1           6         6
 ├── tests/
 │   ├── run_tests.sh      # the suite: shared core, then delete semantics, existence and the raw layer
 │   ├── answers/          # Q1..Q9.sql: this model's SQL for the nine shared questions
-│   ├── mutations_todo.md # mutations a later step will run against the suite
+│   ├── mutations/        # 22 deliberate breakages `make mutate` runs against the suite
 │   └── fixtures/         # extra deliveries for tests; fixtures/narrow/ holds the old narrow D0–D5
 ├── docs/er-diagrams.md   # ER diagrams for every layer (Mermaid)
 ├── build/                # generated: the derived warehouse (safe to delete)
@@ -362,7 +363,8 @@ OMS.ORDER_LINE  INCREMENTAL  1           6         6
 make test
 ```
 
-One suite, pure shell + `sqlite3`: 213 assertions (36 core, of which 1 is a known GAP; 177 model).
+One suite, pure shell + `sqlite3`: 213 assertions (36 core, of which 1 is a known GAP; 177 model),
+mutation-tested by `make mutate` (22 breakages in `tests/mutations/`; results in `../MUTATIONS.md`).
 The output comes in two parts: CORE, the fourteen sections every one of the ten suites runs in the
 same order with the same labels (`../tests/core_spec.tsv`; the nine question answers are the SQL files
 in `tests/answers/`), then MODEL, what only this model shows. The model part covers:

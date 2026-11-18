@@ -1,0 +1,5 @@
+name: aggregates-not-refreshed
+tag: model
+what: daily, weekly and group-weekly aggregates are never refreshed after a delivery
+file: scripts/apply_delivery.sh
+sed: s#^"\$(dirname "\$0")/refresh_aggregates.sh"#true#

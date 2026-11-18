@@ -1,0 +1,5 @@
+name: res-change-guard-dropped
+tag: model
+what: every delivered resource is updated in place and restamped, changed or not
+file: scripts/load_res.sh
+sed: s/^  AND (res\.res_name IS NOT s\.res_name OR res\.res_short_name IS NOT s\.res_short_name$/  AND (1=1 OR res.res_short_name IS NOT s.res_short_name/

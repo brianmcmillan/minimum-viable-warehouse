@@ -1,0 +1,5 @@
+name: started-skips
+tag: shared
+what: a crashed (STARTED) delivery re-sent is skipped instead of retried
+file: scripts/load_feed.sh
+sed: s/if \[ "\$prev_status" = "COMPLETE" \]/if [ -n "$prev_status" ]/

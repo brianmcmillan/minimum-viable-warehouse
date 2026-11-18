@@ -35,15 +35,15 @@ fi
 published() {
   case "$1" in
     v3_activity-schema:run_tests)     echo 153 ;;
-    v3_anchor:run_tests)              echo 133 ;;
-    v3_data-marts:run_tests)          echo 101 ;;
-    v3_datavault:run_tests)           echo 319 ;;
+    v3_anchor:run_tests)              echo 136 ;;
+    v3_data-marts:run_tests)          echo 108 ;;
+    v3_datavault:run_tests)           echo 324 ;;
     v3_focal-point:run_tests)         echo 212 ;;
-    v3_hook:run_tests)                echo 129 ;;
+    v3_hook:run_tests)                echo 134 ;;
     v3_inmon-3nf:run_tests)           echo 99  ;;
     v3_metrics-mart:run_tests)        echo 236 ;;
-    v3_one-big-table:run_tests)       echo 85  ;;
-    v3_unified-star-schema:run_tests) echo 140 ;;
+    v3_one-big-table:run_tests)       echo 91  ;;
+    v3_unified-star-schema:run_tests) echo 145 ;;
     *) echo "" ;;
   esac
 }

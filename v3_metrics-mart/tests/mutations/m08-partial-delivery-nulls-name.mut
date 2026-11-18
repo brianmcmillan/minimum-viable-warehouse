@@ -1,0 +1,5 @@
+name: partial-delivery-nulls-name
+tag: model
+what: a delivery without res_name overwrites the stored name with the code
+file: scripts/route_stage.sh
+sed: s/       COALESCE(o\.res_name, r\.res_name, o\.res_code),/       COALESCE(o.res_name, o.res_code),/

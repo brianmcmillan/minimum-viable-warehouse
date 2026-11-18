@@ -1,0 +1,5 @@
+name: full-absence-ignored
+tag: shared
+what: a FULL delivery never deletes the resources it leaves out
+file: scripts/route_stage.sh
+sed: s/^WHERE d\.mode='FULL' AND r\.res_status=1$/WHERE d.mode='NEVER' AND r.res_status=1/

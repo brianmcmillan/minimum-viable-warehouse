@@ -1,0 +1,5 @@
+name: wide-drops-orphans
+tag: model
+what: the One Big Table inner-joins customers, so an order whose customer is deleted drops out
+file: scripts/refresh_latest.sh
+sed: s/^LEFT JOIN obt_customer c ON c\.customer_ref = o\.customer_ref$/JOIN obt_customer c ON c.customer_ref = o.customer_ref/

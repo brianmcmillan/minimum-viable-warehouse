@@ -1,0 +1,6 @@
+name: bridge-refresh-skipped
+tag: model
+what: the order bridge is never rewritten
+file: scripts/refresh_query_assist.sh
+sed: /^DELETE FROM bv_order_bridge;/d
+sed: /^INSERT INTO bv_order_bridge/,/^LEFT JOIN v_order_customer_current c ON c\.order_bk = l\.order_bk;/d

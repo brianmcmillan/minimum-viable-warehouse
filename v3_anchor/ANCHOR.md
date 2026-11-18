@@ -11,7 +11,8 @@ exactly opposite physical routes.
 ```bash
 make demo     # fresh archive + the full delivery sequence + perspectives
 make rebuild  # throw the constellation away; replay the raw layer
-make test     # 133 assertions (36 core, 97 model), mutation-hardened
+make test     # 136 assertions (36 core, 100 model), mutation-hardened
+make mutate   # 23 mutations (18 shared, 5 model), each must turn the suite red
 ```
 
 ## Anchor vs Focal: the same idea, inverted
@@ -113,8 +114,9 @@ scripts/load_attributes.sh metadata-driven per-attribute loop + existence
 scripts/load_ties.sh       historized / static ties
 scripts/rebuild.sh         ordered replay of the archive
 source/d0..d5*.sql         the wide deliveries, byte-identical in every model
-tests/run_tests.sh         133 assertions; FULL-guard, restatement-control,
-                           tie-guard and replay-order mutations all verified
+tests/run_tests.sh         136 assertions
+tests/mutations/*.mut      23 mutations `make mutate` runs against the suite
 tests/fixtures/            d6_tiebreak narrow+wide (dedup), d7_repoint (driving role),
+                           d8_restore (restore after delete),
                            narrow/ (the old narrow D0..D5, the equivalence reference)
 ```

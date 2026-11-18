@@ -1,0 +1,5 @@
+name: foreign-keys-off
+tag: model
+what: every connection runs with foreign keys off
+file: scripts/lib.sh
+sed: s/PRAGMA foreign_keys=ON/PRAGMA foreign_keys=OFF/

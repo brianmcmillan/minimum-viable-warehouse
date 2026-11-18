@@ -1,0 +1,5 @@
+name: full-absence-ignored
+tag: shared
+what: a FULL delivery never asserts DELETED for the keys it leaves out
+file: scripts/load_attributes.sh
+sed: s/\[ "\$mode" = "FULL" \] && ABS=/[ "$mode" = "NEVER" ] \&\& ABS=/

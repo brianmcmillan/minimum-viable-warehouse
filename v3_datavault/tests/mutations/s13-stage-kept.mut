@@ -1,0 +1,5 @@
+name: stage-kept
+tag: shared
+what: a successful delivery leaves its rows in the stage
+file: scripts/load_feed.sh
+sed: /SET status='COMPLETE' WHERE/,$s/^sql_run "DELETE FROM stg_customer_l1/true "DELETE FROM stg_customer_l1/

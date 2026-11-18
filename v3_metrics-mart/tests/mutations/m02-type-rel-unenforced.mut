@@ -1,0 +1,5 @@
+name: type-rel-unenforced
+tag: model
+what: a parent of a type RES_TYPE_REL does not allow no longer fails the load
+file: scripts/load_res.sh
+sed: s/^FROM v_res_type_rel_violation;$/FROM v_res_type_rel_violation WHERE 0;/

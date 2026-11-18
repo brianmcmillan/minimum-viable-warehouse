@@ -1,0 +1,5 @@
+name: dedup-dropped
+tag: shared
+what: landing passes every narrow row through, duplicates included
+file: scripts/apply_delivery.sh
+sed: s/WHERE source_system='\$q_ss' AND source_entity='\$q_se') WHERE rn=1;"/WHERE source_system='$q_ss' AND source_entity='$q_se') WHERE rn>=1;"/

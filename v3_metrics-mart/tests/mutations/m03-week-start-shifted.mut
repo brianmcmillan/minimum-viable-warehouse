@@ -1,0 +1,5 @@
+name: week-start-shifted
+tag: model
+what: weekly aggregates start on the day before the Monday CALNDR gives (replaces the calendar-inheritance mutation, gone with the calendar events)
+file: scripts/refresh_aggregates.sh
+sed: s/(c\.day_of_week - 1)/(c.day_of_week)/g

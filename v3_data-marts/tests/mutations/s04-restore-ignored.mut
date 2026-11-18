@@ -1,0 +1,5 @@
+name: restore-ignored
+tag: shared
+what: a deleted key upserted again stays deleted
+file: scripts/load_dims.sh
+sed: s/ OR c\.is_deleted=1))/))/

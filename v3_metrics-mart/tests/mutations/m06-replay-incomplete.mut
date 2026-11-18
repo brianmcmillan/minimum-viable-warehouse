@@ -1,0 +1,5 @@
+name: replay-incomplete
+tag: model
+what: rebuild also replays deliveries that never reached COMPLETE
+file: scripts/rebuild.sh
+sed: s/WHERE status='COMPLETE' ORDER BY load_seq;"/WHERE 1 ORDER BY load_seq;"/

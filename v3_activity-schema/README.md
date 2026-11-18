@@ -290,6 +290,7 @@ suite asserts the rebuilt streams are identical, down to each activity's
 | `make demo`          | fresh archive + schema + the full delivery sequence + printed warehouse  |
 | `make rebuild`       | regenerate the streams by replaying the raw layer                        |
 | `make test`          | run the test suite (153 assertions)                                      |
+| `make mutate`        | apply each `tests/mutations/*.mut` to a scratch copy and check the suite turns red |
 | `make init`          | recreate the activity database from schema (the archive survives)        |
 | `make clean`         | delete `build/` only — **the archive survives**                          |
 | `make clean-archive` | delete `archive/` — destroys the raw layer and the ability to rebuild    |
@@ -318,6 +319,7 @@ suite asserts the rebuilt streams are identical, down to each activity's
 ├── source/                  # D0–D5, byte-identical with the other wide-shape demos
 ├── tests/
 │   ├── run_tests.sh         # 153 assertions
+│   ├── mutations/           # 25 deliberate breakages `make mutate` runs against the suite
 │   └── fixtures/
 │       ├── d6_repoint.sql   # O-101 re-pointed to C001 (data row identical to the siblings')
 │       ├── d7_lifecycle.sql # restore, order status change, line tombstone
@@ -358,14 +360,20 @@ MODEL, what only this model shows. Between them they cover:
 - **Rebuild** — `make clean` + replay reproduces both streams exactly, twice:
   after the shared scenario and again after every fixture.
 
-Mutation-checked: removing the FULL guard, the NOCHANGE guard, the tombstone
-branch, the restore path or an immutability trigger; reversing the dedup
-tiebreak, the replay order or the replay row order; stamping `signed_up`
-with the extract date instead of the event; reading "at purchase" from
-current state; and writing no activity for a re-point each turn the suite
-red. Dropping the business-key sort from activity numbering survives on the
-SQLite build it was checked against, because the engine's plan happens to
-return the same order; the fixture assertion guards it on other engines.
+Mutation-tested: `make mutate` applies each of the 25 breakages in
+`tests/mutations/` to a scratch copy and requires the suite to go red:
+removing the FULL guard, the NOCHANGE guard, the tombstone branch, the
+restore path or an immutability trigger; reversing the dedup tiebreak, the
+replay order or the replay row order; stamping `signed_up` with the extract
+date instead of the event; reading "at purchase" from current state;
+writing no activity for a re-point; and the shared archive and load-control
+rules. Dropping the business-key sort from activity numbering is killed by
+`d8_tiebreak.sql`'s order lines, which are staged in an order that disagrees
+with business-key order. Dropping it from the customer stream alone is the
+one known survivor: on the SQLite build it was checked against, the
+engine's plan happens to return customers in key order anyway, and the
+fixture's customer assertion guards it on other engines. Results for every
+model are in `../MUTATIONS.md`.
 
 ---
 
