@@ -17,11 +17,12 @@ echo "======================================================================"
 show "RES" "SELECT res_id, res_type, res_code, res_name, status, parent FROM v_res ORDER BY res_id;"
 
 echo; echo "======================================================================"
-echo "  METRICS: a metric is a row; a sample is an observation"
+echo "  METRICS: a metric is a row; a sample is a value first seen or changed"
 echo "======================================================================"
 show "METRIC" "SELECT metric_id, metric_code, value_type, unit_of_measure FROM metric ORDER BY metric_id;"
 show "METRIC_SAMPLE (history lives here, including deleted resources)" \
-  "SELECT * FROM v_metric_sample ORDER BY res_type, res_code, metric_code, sample_utc_ts;"
+  "SELECT res_type, res_code, metric_code, provider_name, first_seen_utc_ts, last_seen_utc_ts, value
+   FROM v_metric_sample ORDER BY res_type, res_code, metric_code, sample_utc_ts;"
 
 echo; echo "======================================================================"
 echo "  AGGREGATIONS: derived after every delivery"

@@ -104,9 +104,12 @@ SELECT r.res_id, r.res_type, r.res_code, r.res_name,
        p.res_type || ':' || p.res_code AS parent, r.srcd_ts
 FROM res r LEFT JOIN res p ON p.res_id = r.parent_res;
 
+-- Every sample. A sample is a value first seen or changed: first seen is
+-- sample_utc_ts, last seen is the latest time the same value came again.
 CREATE VIEW v_metric_sample AS
 SELECT r.res_type, r.res_code, m.metric_code, p.provider_name,
-       s.sample_utc_ts, s.value
+       s.sample_utc_ts, s.value,
+       s.sample_utc_ts AS first_seen_utc_ts, s.last_seen_utc_ts
 FROM metric_sample s
 JOIN res r      ON r.res_id = s.res_id
 JOIN metric m   ON m.metric_id = s.metric_id

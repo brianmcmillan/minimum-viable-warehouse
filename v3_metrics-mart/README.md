@@ -18,8 +18,9 @@ their groups). The other says **what was measured on them, and when**.
   orders alike, told apart by `res_type`. A resource has a name, a status and
   one parent.
 - **A metric is a row, not a column.** `METRIC` lists what can be measured.
-  `METRIC_SAMPLE` holds one observation per resource, metric, provider and
-  moment. Price and amount are not columns anywhere.
+  `METRIC_SAMPLE` holds a value when it is first seen or changes, per
+  resource, metric and provider, with when it was first and last seen.
+  Price and amount are not columns anywhere.
 - **Identity goes through an alias.** A provider names a resource however it
   likes. `RES_ALIAS` turns that name into a `res_id`, and every metric and
   every parent reference is resolved through it.
@@ -70,7 +71,7 @@ network.
 ```bash
 make demo          # fresh archive + schema + the full 6-delivery sequence, then print the mart
 make rebuild       # delete the mart; replay the raw layer to rebuild it
-make test          # 242 assertions (36 core, 206 model): delete semantics, samples, history, aggregates, exact rebuild
+make test          # 261 assertions (36 core, 225 model): delete semantics, samples, history, aggregates, exact rebuild
 make clean         # delete build/ only — the archive SURVIVES
 make clean-archive # delete archive/ — destroys the raw layer, and the ability to rebuild
 ```
@@ -96,20 +97,20 @@ And one table holds every number:
 
 ```
 ### METRIC_SAMPLE (history lives here, including deleted resources)
-res_type  res_code  metric_code  provider_name  sample_utc_ts        value
---------  --------  -----------  -------------  -------------------  -----
-ORDER     O-100     amount       OMS            2026-02-05 00:00:00  29.49
-ORDER     O-101     amount       OMS            2026-02-05 00:00:00  19.5
-PRODUCT   SKU-1     price        PIM            2026-02-05 00:00:00  9.99
-PRODUCT   SKU-1     price        PIM            2026-03-02 00:00:00  8.99
-PRODUCT   SKU-2     price        PIM            2026-02-05 00:00:00  19.5
-PRODUCT   SKU-2     price        PIM            2026-03-02 00:00:00  19.5
-PRODUCT   SKU-3     price        PIM            2026-02-05 00:00:00  5.0
+res_type  res_code  metric_code  provider_name  first_seen_utc_ts    last_seen_utc_ts     value
+--------  --------  -----------  -------------  -------------------  -------------------  -----
+ORDER     O-100     amount       OMS            2026-02-05 00:00:00  2026-02-05 00:00:00  29.49
+ORDER     O-101     amount       OMS            2026-02-05 00:00:00  2026-02-05 00:00:00  19.5
+PRODUCT   SKU-1     price        PIM            2026-02-05 00:00:00  2026-02-05 00:00:00  9.99
+PRODUCT   SKU-1     price        PIM            2026-03-02 00:00:00  2026-03-02 00:00:00  8.99
+PRODUCT   SKU-2     price        PIM            2026-02-05 00:00:00  2026-03-02 00:00:00  19.5
+PRODUCT   SKU-3     price        PIM            2026-02-05 00:00:00  2026-02-05 00:00:00  5.0
 ```
 
-SKU-1's price history is two samples. SKU-2's unchanged price is also two
-samples, because PIM observed it twice. SKU-3 was discontinued and keeps its
-sample. The business views read the newest sample as the current value:
+SKU-1's price history is two samples, one per value. SKU-2's price was seen
+twice and never changed, so it is one sample: first seen in D0, last seen in
+D2. SKU-3 was discontinued and keeps its sample. The business views read the
+newest sample as the current value:
 
 ```
 ### Products
@@ -145,12 +146,12 @@ known and hands the loaders a plain `load_oper = 'D'`.
 | event | metrics mart (this demo) |
 |---|---|
 | descriptor change | `UPDATE` in place on `RES` or its subtype table, changed rows only; `RES_HIST` closes the open version and inserts a new one |
-| numeric change | a new `METRIC_SAMPLE` row at the observation time |
+| numeric change | a new `METRIC_SAMPLE` row, first seen at the observation time |
 | delete detected | `res_status = 0`; the row and its samples stay |
-| unchanged re-delivery | descriptors write nothing; a numeric value observed again is a new sample |
+| unchanged re-delivery | descriptors write nothing; a numeric value seen again writes no sample and moves only that sample's `last_seen_utc_ts` forward |
 | re-pointed relationship | `parent_res` overwritten in place; `RES_HIST` keeps the old parent as a closed version |
 | business rule (`P → PENDING`) | raw `'P'` in `RES_ORDER`; decoded **on read** by joining `ORDER_STATUS` |
-| row mutation | yes: `RES` and its subtypes update in place; samples overwrite only on a correction |
+| row mutation | yes: `RES` and its subtypes update in place; a sample changes only its last seen, or its value on a correction |
 
 ### The demo delivery sequence
 
@@ -179,7 +180,7 @@ customers, products and orders. The mapping is a few rows of metadata.
 | `source_entity` (CUSTOMER, PRODUCT, ORDER) | `RES_TYPE` |
 | `business_key` (`C001`) | `RES.res_code`, and a `RES_ALIAS` row that resolves to it |
 | `full_name`, `prod_name` | `RES.res_name` |
-| `price`, `amount` (numeric) | `METRIC` rows; each delivered value is a `METRIC_SAMPLE` |
+| `price`, `amount` (numeric) | `METRIC` rows; a delivered value first seen or changed is a `METRIC_SAMPLE` |
 | an order's `customer_ref` | `RES.parent_res`, allowed by a `RES_TYPE_REL` row |
 | an order line (`O-100~SKU-1`) | a `RES_RESGRP` row: product SKU-1 is a member of group `/ORDER/O-100` |
 | `email_addr`, `signup_date`, `currency`, `status`, `placed_at` | subtype tables `RES_CUSTOMER`, `RES_PRODUCT`, `RES_ORDER` (not in the diagrams) |
@@ -285,8 +286,11 @@ used by both ingest and replay.
 4. **Groups** (`load_groups.sh`). Create groups from their paths, keep the
    type groups current and reconcile memberships.
 5. **Metrics** (`load_metrics.sh`). Resolve `METRIC_STG` into `METRIC_STG2`
-   and upsert `METRIC_SAMPLE`. A sample dated outside `CALNDR` fails the
-   load.
+   and write `METRIC_SAMPLE`: a staged value becomes a sample only if it
+   differs from the sample in force before it (NOCHANGE); a value seen again
+   moves that sample's `last_seen_utc_ts` forward, never back; a different
+   value for an existing key is a correction and overwrites. A sample dated
+   outside `CALNDR` fails the load.
 6. **Aggregates** (`refresh_aggregates.sh`). Recompute daily summaries,
    weeks and group weeks; touch only the rows whose numbers changed.
 
@@ -300,8 +304,11 @@ Three details matter more than the rest.
 
 **Measurements skip the landing dedup.** The landing keeps the newest row
 per key and attribute. That is right for an email and wrong for a price: two
-prices at two times are two observations. `METRIC_STG` is filled from the
+prices at two times may be two values. `METRIC_STG` is filled from the
 stage with the time in the dedup key, so only a true duplicate collapses.
+Whether a price seen again is a new sample is decided later, by NOCHANGE in
+`load_metrics.sh`: only a value that differs from the one in force before it
+is written. A, B, A is three samples; A, A, A is one, last seen at the third.
 
 **Only the feeds that just arrived are processed.** `source_landing` keeps
 the last delivery of every feed. A CRM window must not re-run the product
@@ -387,7 +394,7 @@ up").
 | `v_res` | every resource, live or deleted, with its parent |
 | `v_res_version` | every `RES_HIST` version with its validity window: a resource as at `:ts` is `valid_from <= :ts AND :ts < valid_to` |
 | `v_order_at_purchase` | each order's owner as at purchase: the parent of its first version, named as the customer was then |
-| `v_metric_sample` | every sample with names instead of surrogates |
+| `v_metric_sample` | every sample with names instead of surrogates, and its first and last seen |
 | `v_metric_latest` | the newest sample per resource, metric and provider |
 | `v_metric_weekly` | `METRIC_WEEKLY` with names |
 | `v_group_weekly` | members' weekly values summed per group |
@@ -401,7 +408,7 @@ up").
 |----------------------|-----------------------------------------------------------------------|
 | `make demo`          | fresh archive + schema + the full delivery sequence + printed mart    |
 | `make rebuild`       | regenerate the mart by replaying the raw layer                        |
-| `make test`          | run the test suite (242 assertions)                                   |
+| `make test`          | run the test suite (261 assertions)                                   |
 | `make mutate`        | apply each `tests/mutations/*.mut` to a scratch copy and check the suite turns red |
 | `make init`          | recreate the mart database from schema (the archive survives)         |
 | `make clean`         | delete `build/` only — **the archive survives**                       |
@@ -438,8 +445,8 @@ up").
 │   └── query.sh              # print the mart
 ├── source/                   # D0–D5, wide; byte-identical in all ten models
 ├── tests/
-│   ├── run_tests.sh          # 242 assertions
-│   ├── mutations/            # 36 deliberate breakages `make mutate` runs against the suite
+│   ├── run_tests.sh          # 261 assertions
+│   ├── mutations/            # 41 deliberate breakages `make mutate` runs against the suite
 │   └── fixtures/
 │       ├── d6_tiebreak.sql           # same-extract tiebreak (identical to Anchor's)
 │       ├── d7_repoint.sql            # O-101 re-pointed to C001 (identical to Anchor's)
@@ -458,13 +465,13 @@ up").
 make test
 ```
 
-**242 assertions** (36 core, 206 model), pure shell + `sqlite3`. The output comes in two parts: CORE,
+**261 assertions** (36 core, 225 model), pure shell + `sqlite3`. The output comes in two parts: CORE,
 the fourteen sections every one of the ten suites runs in the same order with the same labels
 (`../tests/core_spec.tsv`; the nine question answers are the SQL files in `tests/answers/`), then
-MODEL, what only this model shows. The mart keeps current state only, so C001's earlier email
-(C08.4) and O-101's earlier owner (C13.2) are answered from the raw archive, the final answer in
-every model. One core assertion is a known GAP: C04.3, because an unchanged price seen again is a
-new sample by design. Between them the parts cover:
+MODEL, what only this model shows. C001's earlier email (C08.4) and O-101's owner at purchase
+(C05.5) are answered from `RES_HIST`; O-101's earlier owner (C13.2) is still read from the raw
+archive. Every core assertion passes, C04.3 included: an unchanged price seen again writes no
+sample. Between them the parts cover:
 
 - **Delete semantics** — the stale-window trap, FULL-absence deletes,
   tombstones, recency dedup, load control, a rejected re-use of a
@@ -473,9 +480,11 @@ new sample by design. Between them the parts cover:
   aliases, parents, in-place updates that touch changed rows only, restore
   after delete, and a stub created for a parent no feed has delivered yet.
 - **Metrics** — numeric attributes as samples, name resolution through
-  `METRIC_STG2`, a re-observed value as a new sample, a corrected value
-  overwriting its sample, and (at level 2, narrow) a one-attribute delivery
-  leaving every other attribute alone.
+  `METRIC_STG2`, a value seen again writing no sample but moving its last
+  seen (never back, not on a whole delivery re-sent under a new `file_id`),
+  A, B, A stored as three samples, a corrected value overwriting its sample,
+  a trigger refusing any other change to a sample, and (at level 2, narrow)
+  a one-attribute delivery leaving every other attribute alone.
 - **Groups and aggregates** — groups built from paths, membership deletes by
   tombstone and by FULL absence, Monday weeks taken from `CALNDR`, a sample dated outside it rejected,
   a week averaging two samples,
@@ -497,7 +506,7 @@ new sample by design. Between them the parts cover:
   loaders; and the old narrow D0–D5 (`tests/fixtures/narrow`) building the
   same mart, surrogate for surrogate, as the wide files.
 
-`make mutate` applies each of the 34 breakages in `tests/mutations/` to a scratch copy and
+`make mutate` applies each of the 41 breakages in `tests/mutations/` to a scratch copy and
 requires the suite to go red; results for every model are in `../MUTATIONS.md`, and
 [METRICSMART.md](METRICSMART.md) lists what they break.
 
@@ -514,6 +523,14 @@ requires the suite to go red; results for every model are in `../MUTATIONS.md`, 
 - **Rows mutate.** Resources update in place and a corrected sample
   overwrites the old value. Focal and Anchor, the other models that load
   through the narrow landing, are insert-only.
+- **A sample is a value, not a sighting.** A value seen again writes no
+  sample, so the mart no longer says how often a value was seen, only when
+  it was first and last seen. The aggregates count samples in their period
+  and carry nothing forward, so a week in which a value was only seen
+  again has no row for it: in the demo SKU-2 has no week of 2026-03-02,
+  and O-100's group week holds only SKU-1's new price. The accepted
+  trade-off: last seen moves on every sighting, so that one column of a
+  sample is updated in place.
 - **Everything that isn't a number needs a column.** The model is generous
   to measurements and strict with descriptors: a new metric is a row, a new
   descriptive attribute is DDL on a populated table.

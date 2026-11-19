@@ -1,0 +1,5 @@
+name: sample-trigger-dropped
+tag: model
+what: trg_metric_sample_nu raises nothing, so any column of a sample can be updated
+file: schema/03_mart.sql
+sed: s/^  SELECT RAISE(ABORT, 'metric_sample: only.*$/  SELECT 1;/

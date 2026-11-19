@@ -1,0 +1,5 @@
+name: sample-last-seen-no-max
+tag: model
+what: last_seen_utc_ts is set to the latest sighting without MAX, so a delivery with an earlier extract moves it back
+file: scripts/load_metrics.sh
+sed: s/^SET last_seen_utc_ts = MAX(metric_sample\.last_seen_utc_ts, t\.seen_utc_ts)$/SET last_seen_utc_ts = t.seen_utc_ts/

@@ -1,0 +1,5 @@
+name: sample-nochange-removed
+tag: model
+what: load_metrics.sh writes every staged value, so an unchanged value seen again is a duplicate sample
+file: scripts/load_metrics.sh
+sed: s/^WHERE (SELECT p\.value FROM t_tl p$/WHERE 1 OR (SELECT p.value FROM t_tl p/

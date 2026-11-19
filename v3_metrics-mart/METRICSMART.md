@@ -16,8 +16,8 @@ the same narrow landing as the Focal Point and Anchor demos.
 ```bash
 make demo     # fresh archive + the full delivery sequence + views
 make rebuild  # regenerate the mart by replaying the raw layer
-make test     # 242 assertions (36 core, 1 of them a known GAP; 206 model), mutation-checked
-make mutate   # 36 mutations (21 shared, 15 model), each must turn the suite red
+make test     # 261 assertions (36 core, 225 model), mutation-checked
+make mutate   # 41 mutations (21 shared, 20 model), each must turn the suite red
 ```
 
 ## Review of the diagrams
@@ -51,7 +51,8 @@ make mutate   # 36 mutations (21 shared, 15 model), each must turn the suite red
 | 5 | **`RES_GRP` stores one hierarchy three ways:** `parent_res_grp`, `group_level` and `group_path`. Nothing keeps them in step. | The loader derives parent and level from the path; a second view checks all three agree. |
 | 6 | **One parent per resource.** Anything with two parents has to put one of them in a group. | Order lines become group memberships. |
 | 7 | **No business keys are declared.** Only surrogate primary keys are shown on `RES`, `METRIC`, `PROVIDER` and `RES_GRP`. | Unique keys added on `(res_type, res_code)`, `metric_code`, `provider_name` and `group_path`. |
-| 8 | **A corrected sample has nowhere to go.** The key of `METRIC_SAMPLE` is resource, metric, time and provider. A second value for the same key must overwrite or be refused. | Overwrite. The archive keeps both values. |
+| 8 | **A corrected sample has nowhere to go.** The key of `METRIC_SAMPLE` is resource, metric, time and provider. A second value for the same key must overwrite or be refused. | Overwrite: the one change to a sample's value a trigger allows. The archive keeps both values. |
+| 8a | **Nothing says whether a value seen again is a new sample.** Read as an observation log, every sighting is a row and an unchanged price fills the table with repeats. | A sample is a value first seen or changed. A value seen again writes no row and moves the sample's added `last_seen_utc_ts` forward. |
 | 9 | **`RES_RESGRP` has no dates or status.** A membership that ends is a physical delete, and group aggregates for past weeks use today's members. | Built as drawn; stated in the README as a limit. |
 | 10 | **Small inconsistencies.** `METRIC_WEEKLY` uses `FLOAT` and `GRP_METRIC_WEEKLY` uses `DOUBLE` for the same measures. `lcl_tz_code` is a foreign key on one and not the other. `METRIC_SAMPLE` has `srcd_d2k SMALLINT` where every other table has `srcd_ts`. `COUNTRY` has no key. | Types kept as drawn. `srcd_d2k` is read as days since 2000-01-01. |
 | 11 | **Foreign keys to tables that aren't shown:** `site_id`, `support_ctr_id`, `client_id`, `prvdr_inst_id`. | Plain nullable columns. |
@@ -81,10 +82,11 @@ the volume and the change are.
 
 **One thing did not carry over.** The Focal and Anchor landing keeps the
 newest row per key and attribute. That is right for a descriptor and wrong
-for a measurement, because two prices at two times are two observations. The
+for a measurement, because two prices at two times may be two values. The
 first version of this loader lost a sample that way and the suite caught it.
 Measurements now go from the stage to `METRIC_STG` with the time in the
-dedup key.
+dedup key, and NOCHANGE in `load_metrics.sh` decides which of them are new
+values.
 
 ## Where this implementation follows the diagrams, and where the shared discipline fills in
 
@@ -93,7 +95,7 @@ dedup key.
 | storage | 3NF core, snowflaked code tables | built as drawn; three subtype tables and two code tables for attributes `RES` has no column for |
 | source shape | `*_STG` tables | the shared wide files, unpivoted to the narrow landing, routed into those tables by two metadata maps |
 | identity | `RES_ALIAS` | one alias per resource (its own code); parents and metrics both resolve through it |
-| change capture | not addressed | descriptors: update in place, changed rows only, with a `RES_HIST` version per change. Numbers: a new sample per observation |
+| change capture | not addressed | descriptors: update in place, changed rows only, with a `RES_HIST` version per change. Numbers: a new sample per value first seen or changed, with first and last seen |
 | deletes | `load_oper`, `res_status` | the shared rule: tombstone always, absence only under FULL |
 | full vs incremental | **not addressed** | `load_mode` on the delivery, read by the router |
 | unknown parents | `RES_TYPE.autocrt_res_flag` | a stub resource when the flag is 1; a failed load when it is 0 |
@@ -111,7 +113,7 @@ dedup key.
 | descriptor change | `UPDATE` in place, plus a `RES_HIST` version | close the row, insert a version | new version row per atomic context | new row in that attribute's table |
 | numeric change | new `METRIC_SAMPLE` row | close the row, insert a version | new `val_num` version row | new row in that attribute's table |
 | delete | `res_status = 0` | closing version | closing row, `row_st='N'` | `DELETED` in the existence knot |
-| unchanged re-delivery | descriptors: nothing. Numbers: **a new sample** | writes nothing | writes nothing | writes nothing |
+| unchanged re-delivery | descriptors: nothing. Numbers: no sample; the sample's last seen moves forward | writes nothing | writes nothing | writes nothing |
 | relationship | `parent_res`, or a group membership | natural-key FK | relationship loader | historized tie |
 | re-point (D7) | parent overwritten; `RES_HIST` closes the old version | new order version | old pairing closed | new tie row |
 | "as at purchase" | `RES_HIST` range join on validity | range join on validity | bi-temporal query | attribute as-of |
@@ -119,7 +121,7 @@ dedup key.
 | new descriptive attribute | `ALTER TABLE` | `ALTER TABLE` | a metadata row | a new table |
 | identity across sources | `RES_ALIAS`, unqualified | conform at ingest | single-namespace registry | one namespace |
 | business rule (P→PENDING) | raw `'P'` + code table, on read | conformed at ingest | at ingest (`meta_value_map`) | knot, on read |
-| row mutation | resources update; samples overwrite on correction | versions close | never | never |
+| row mutation | resources update; a sample's last seen moves, and its value on a correction | versions close | never | never |
 
 ## What the demo shows
 
@@ -129,11 +131,22 @@ price is two samples and both are still there. C001's old email is gone from
 measured; the history of what was described is an addition beside it, and
 group membership still has none.
 
-**An unchanged value is still an observation.** Every sibling suppresses a
-restated value. Here SKU-2's unchanged 19.5 is a second sample, because
-"PIM looked again and it was still 19.5" is a fact a metrics mart exists to
-keep. Only an exact repeat of an observation is suppressed, by the primary
-key.
+**A sample is a value first seen or changed.** Like every sibling, the mart
+writes nothing for a restated value: SKU-2's unchanged 19.5 in D2 is not a
+second sample. What it keeps of "PIM looked again and it was still 19.5" is
+the sample's last seen, which moves from D0 to D2. The comparison is with
+the sample in force before the new value, not the oldest one, so A, B, A is
+three samples. Last seen only moves forward: a delivery with an earlier
+extract leaves it alone. A trigger refuses every other change to a sample
+except a correction's new value.
+
+The cost is the sighting count. The mart no longer says how many times a
+value was seen, only when it was first and last seen. The aggregates count
+the samples that fall in their period and carry nothing forward, so a week
+in which a value was only seen again has no row for it: SKU-2 has no week of
+2026-03-02, and O-100's group week for that week holds only SKU-1's new
+price. The accepted trade-off is that last seen moves on every sighting:
+that one column of a sample is updated in place.
 
 **A new metric is a row.** The suite inserts a `weight_kg` metric and one
 map row, delivers a value, and checks that the sample and its weekly rollup
@@ -165,8 +178,11 @@ table, stays and sets the week boundaries for the weekly rollups.
   with a join on time. The diagrams' model can't; `RES_HIST` answers it with
   a range join on validity, at the cost of a second copy of every
   descriptive column.
-- **Rows mutate.** A resource updates in place and a corrected sample
-  overwrites. Without the archive, a wrong load is unrecoverable.
+- **Rows mutate.** A resource updates in place, a corrected sample
+  overwrites, and a sample's last seen moves forward. Without the archive, a
+  wrong load is unrecoverable.
+- **Sightings are not counted.** A value seen again writes no sample, so a
+  period in which a value was only confirmed has no aggregate row for it.
 - **Descriptors are second-class.** Anything that isn't a number needs a
   column, and the diagrams give `RES` three text columns. Five of the
   corpus's ten non-key attributes needed tables the diagrams don't have.
@@ -192,6 +208,10 @@ scratch copy and runs the suite; all of them turn it red. Results are in
   tiebreak; taking the time out of the measurement dedup key.
 - **Change detection:** removing the changed-rows-only guard on `RES`, on
   the subtype tables, and on `METRIC_WEEKLY`; ignoring a corrected sample.
+- **Samples:** removing NOCHANGE, so a value seen again is a duplicate
+  sample; comparing with the oldest sample instead of the newest; never
+  moving last seen; moving last seen without `MAX`, so an earlier extract
+  moves it back; dropping the trigger that refuses other changes.
 - **History:** never closing a `RES_HIST` version; writing a version without
   its parent.
 - **Lifecycle:** removing the restore path; removing auto-create; letting a
@@ -245,6 +265,6 @@ scripts/load_res.sh            resources, aliases, parents, subtype columns, RES
 scripts/load_groups.sh         groups, type groups and memberships
 scripts/load_metrics.sh        METRIC_STG -> METRIC_STG2 -> METRIC_SAMPLE
 scripts/refresh_aggregates.sh  summaries, weeks, group weeks
-tests/run_tests.sh             242 assertions
-tests/mutations/*.mut          36 mutations `make mutate` runs against the suite
+tests/run_tests.sh             261 assertions
+tests/mutations/*.mut          41 mutations `make mutate` runs against the suite
 ```

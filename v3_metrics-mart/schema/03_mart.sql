@@ -192,18 +192,36 @@ CREATE TABLE provider (
     migration_src_fg CHAR(1)     NOT NULL
 );
 
--- One observation of one metric on one resource by one provider.
+-- One value of one metric on one resource by one provider, written when
+-- the value is first seen or differs from the sample in force before it.
+-- sample_utc_ts is when it was first seen; last_seen_utc_ts is the latest
+-- time the same value was seen again, and only ever moves forward.
 CREATE TABLE metric_sample (
-    res_id        INTEGER   NOT NULL REFERENCES res(res_id),
-    metric_id     INTEGER   NOT NULL REFERENCES metric(metric_id),
-    sample_utc_ts TIMESTAMP NOT NULL,
-    provider_id   INTEGER   NOT NULL REFERENCES provider(provider_id),
-    value         FLOAT     NOT NULL,
-    res_tz_code   CHAR(6)   NOT NULL,
-    sample_lcl_ts TIMESTAMP,
-    srcd_d2k      SMALLINT,
+    res_id           INTEGER   NOT NULL REFERENCES res(res_id),
+    metric_id        INTEGER   NOT NULL REFERENCES metric(metric_id),
+    sample_utc_ts    TIMESTAMP NOT NULL,
+    provider_id      INTEGER   NOT NULL REFERENCES provider(provider_id),
+    value            FLOAT     NOT NULL,
+    res_tz_code      CHAR(6)   NOT NULL,
+    sample_lcl_ts    TIMESTAMP,
+    srcd_d2k         SMALLINT,
+    last_seen_utc_ts TIMESTAMP NOT NULL,
     PRIMARY KEY (res_id, metric_id, sample_utc_ts, provider_id)
 );
+
+-- A sample does not change, with two exceptions: last_seen_utc_ts moves
+-- forward when the value is seen again, and a correction (same key, new
+-- value) overwrites value and srcd_d2k. Any other change aborts.
+CREATE TRIGGER trg_metric_sample_nu BEFORE UPDATE ON metric_sample
+WHEN NEW.res_id        IS NOT OLD.res_id
+  OR NEW.metric_id     IS NOT OLD.metric_id
+  OR NEW.sample_utc_ts IS NOT OLD.sample_utc_ts
+  OR NEW.provider_id   IS NOT OLD.provider_id
+  OR NEW.res_tz_code   IS NOT OLD.res_tz_code
+  OR NEW.sample_lcl_ts IS NOT OLD.sample_lcl_ts
+BEGIN
+  SELECT RAISE(ABORT, 'metric_sample: only last_seen_utc_ts, and a correction''s value and srcd_d2k, may change');
+END;
 
 -- Samples rolled up to a summary level. This demo derives level 'D'
 -- (one UTC day); a provider could also deliver summaries directly.
