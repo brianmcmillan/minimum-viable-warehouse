@@ -64,22 +64,11 @@ CORE_TOTALS="$LOGDIR/core_totals"
 : > "$ROWS"; : > "$FAILS"; : > "$NOTES"; : > "$CORE_TOTALS"
 overall=0
 
-# The tree's dirty paths, one line each: the `git status --porcelain`
-# line, a tab, and the content hash of the file (- when it is gone).
-# VERIFY.md and verify-logs/ are left out: the run always writes them.
-# Taken before the first model runs and again after the last, so a path
-# that was already dirty counts only if the run changed its status or
-# its content.
-tree_state() {
-  git status --porcelain --untracked-files=all 2>/dev/null |
-  while IFS= read -r line; do
-    p="${line:3}"; p="${p##* -> }"
-    case "$p" in VERIFY.md|verify-logs/*) continue ;; esac
-    if [ -f "$p" ]; then h="$(git hash-object -- "$p" 2>/dev/null)"; else h=-; fi
-    printf '%s\t%s\n' "$line" "${h:--}"
-  done | sort
-}
-tree_state > "$LOGDIR/tree.before"
+# Paths the run changes: the tree is listed before the first model runs
+# and again after the last (tools/tree_state.sh). VERIFY.md and
+# verify-logs/ are left out: the run always writes them.
+. "$ROOT/tools/tree_state.sh"
+tree_state "$ROOT" VERIFY.md verify-logs/ > "$LOGDIR/tree.before"
 
 for dir in v3_*/; do
   d="${dir%/}"
@@ -163,12 +152,9 @@ case "$core_total" in
           echo "- core totals differ between suites (or none was printed): ${core_total:-none}" >> "$NOTES" ;;
 esac
 
-# Paths the run itself changed: every path whose line or hash differs
-# between the two listings (became dirty, changed status or content,
-# became clean).
-tree_state > "$LOGDIR/tree.after"
-comm -3 "$LOGDIR/tree.before" "$LOGDIR/tree.after" | sed 's/^	//' | cut -f1 \
-  | cut -c4- | sed 's/.* -> //' | sort -u > "$LOGDIR/tree.changed"
+# Paths the run itself changed, listed under Notes.
+tree_state "$ROOT" VERIFY.md verify-logs/ > "$LOGDIR/tree.after"
+tree_changed "$LOGDIR/tree.before" "$LOGDIR/tree.after" > "$LOGDIR/tree.changed"
 dirty="$(wc -l < "$LOGDIR/tree.changed" | tr -d ' ')"
 if [ "$dirty" != 0 ]; then
   echo "- the run changed $dirty path(s) in the work tree:" >> "$NOTES"
@@ -189,7 +175,7 @@ fi
   echo "| bash | ${BASH_VERSION} |"
   echo "| Overall | $([ "$overall" = 0 ] && echo 'all demos and suites passed' || echo '**failures, see below**') |"
   echo "| Core assertions per suite | ${core_total:-none} (tests/core_spec.tsv) |"
-  echo "| Tree changed by the run | $([ "$dirty" = 0 ] && echo no || echo "**yes, $dirty path(s)**") |"
+  echo "| Tree changed by the run | $(tree_cell "$dirty") |"
   echo
   echo "## Results"
   echo

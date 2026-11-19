@@ -15,8 +15,9 @@
 #                 which assertions a mutation breaks first, and the exit
 #                 code a killed load reports, vary with the sqlite3
 #                 version.
-#   ANSWERS.md    every table except the sqlite3 version table, and the
-#                 End state block.
+#   ANSWERS.md    every table except the "Item | Value" header table
+#                 (commit, sqlite3 version, tree changed; before C6 a
+#                 one-row "sqlite3" table), and the End state block.
 #
 # Each compared row is printed as "<file> | <section> | <row>". On a
 # mismatch the differing rows are printed, committed copy first, and the

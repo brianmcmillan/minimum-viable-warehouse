@@ -66,6 +66,17 @@ fi
 
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
 
+# Paths the run changes: the tree is listed now and again after the last
+# model (tools/tree_state.sh), leaving out the report the run writes.
+# Mutations run in copies, so this should always come out "no".
+. "$ROOT/tools/tree_state.sh"
+case "$REPORT" in
+  '') REPORT_REL=MUTATIONS.md ;;
+  /*) REPORT_REL="${REPORT#$ROOT/}" ;;
+  *)  REPORT_REL="$REPORT" ;;
+esac
+tree_state "$ROOT" "$REPORT_REL" > "$WORK/tree.before"
+
 # ---- reading a mutation file ----------------------------------------
 # field FILE KEY -> the value of the first "KEY:" line (header only)
 field(){ awk -v k="$2" '
@@ -203,6 +214,13 @@ for d in "${dirs[@]}"; do
   run_model "$d"
 done
 
+tree_state "$ROOT" "$REPORT_REL" > "$WORK/tree.after"
+tree_changed "$WORK/tree.before" "$WORK/tree.after" > "$WORK/tree.changed"
+tree_n="$(wc -l < "$WORK/tree.changed" | tr -d ' ')"
+if [ "$tree_n" != 0 ]; then
+  echo "The run changed $tree_n path(s) in the work tree:"; sed 's/^/  /' "$WORK/tree.changed"
+fi
+
 # ---- the report ------------------------------------------------------------
 if [ -n "$REPORT" ]; then
   case "$REPORT" in /*) ;; *) REPORT="$ROOT/$REPORT" ;; esac
@@ -226,7 +244,14 @@ if [ -n "$REPORT" ]; then
     echo "| Commit | $(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown) on $(git -C "$ROOT" branch --show-current 2>/dev/null || echo unknown) |"
     echo "| sqlite3 | $(sqlite3 --version 2>/dev/null | awk '{print $1}') |"
     echo "| Overall | $([ "$overall" = 0 ] && echo 'every mutation killed or a known survivor' || echo '**unexpected survivors or errors, see below**') |"
+    echo "| Tree changed by the run | $(tree_cell "$tree_n") |"
     echo
+    if [ "$tree_n" != 0 ]; then
+      echo "Paths the run changed:"
+      echo
+      sed 's/^/- /' "$WORK/tree.changed"
+      echo
+    fi
     echo "## Summary"
     echo
     echo "| Model | Mutations | Shared | Model | Killed | Known survivors | Unexpected |"
