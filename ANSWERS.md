@@ -47,11 +47,11 @@ because it is the result.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Q1 | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE |
 | Q2 | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | RAW ¹ | NATIVE | NATIVE | RAW ¹ |
-| Q3 | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | RAW ¹ | NATIVE | RAW ¹ | RAW ¹ |
+| Q3 | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | RAW ¹ | NATIVE | NATIVE | RAW ¹ |
 | Q4 | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | RAW ¹ | NATIVE | NATIVE | RAW ¹ |
 | Q5 | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE |
 | Q6 | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE |
-| Q7 | NATIVE | RAW ¹ | NATIVE | NATIVE | NATIVE | NATIVE | RAW ¹ | NATIVE | RAW ¹ | RAW ¹ |
+| Q7 | NATIVE | RAW ¹ | NATIVE | NATIVE | NATIVE | NATIVE | RAW ¹ | NATIVE | NATIVE | RAW ¹ |
 | Q8 | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE |
 | Q9 | FINDING ¹ | NATIVE | NATIVE | FINDING ¹ | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE |
 
@@ -66,8 +66,6 @@ because it is the result.
 | uss | Q3 | RAW | the storage layer under the presentation model | presentation model: the star holds current values only; email history lives in the insert-only core (core_customer) | n/a |
 | uss | Q4 | RAW | the storage layer under the presentation model | presentation model: the star holds current values only; price history lives in the insert-only core (core_product) | n/a |
 | uss | Q7 | RAW | the storage layer under the presentation model | presentation model: the bridge records the current owner; the purchase-time owner lives in the insert-only core (v_order_as_recorded over core_order and core_customer) | n/a |
-| metrics | Q3 | RAW | the raw archive | current-state model: the email is updated in place; history would need a history table | n/a |
-| metrics | Q7 | RAW | the raw archive | current-state model: the order's parent is updated in place on a re-point; needs a history table for the parent link | n/a |
 | obt | Q2 | RAW | the raw archive | the latest tables hold only live customers; who was deleted is in the log alone | n/a |
 | obt | Q3 | RAW | the raw archive | the latest tables keep current values only; email history is in the log alone | n/a |
 | obt | Q4 | RAW | the raw archive | the latest tables keep current values only; price history is in the log alone | n/a |
@@ -81,8 +79,6 @@ end of C4b. A cell with no decision row should be NATIVE.
 | Model | Question | Now | Decided | Reason |
 | --- | --- | --- | --- | --- |
 | kimball | Q7 | RAW | NATIVE | SCD2 order ownership (run 4) |
-| metrics | Q3 | RAW | NATIVE | RES_HIST (run 3) |
-| metrics | Q7 | RAW | NATIVE | RES_HIST (run 3) |
 | obt | Q2 | RAW | NATIVE | views over the log (run 5) |
 | obt | Q3 | RAW | NATIVE | views over the log (run 5) |
 | obt | Q4 | RAW | NATIVE | views over the log (run 5) |

@@ -293,6 +293,33 @@ CREATE TABLE res_order (
     srcd_ts       TIMESTAMP NOT NULL
 );
 
+-- RES_HIST: the history RES does not keep. Not in the diagrams; added so
+-- the mart answers "what was it then?" itself. One row per resource per
+-- version of its descriptive columns (RES and its subtype row) and of its
+-- parent link. load_res.sh writes it close-and-insert in the same
+-- transaction that changes RES: a change closes the open version
+-- (valid_to = the batch) and opens a new one; a delete closes the open
+-- version and opens none; a restore opens a new one. Nothing else updates
+-- it. valid_to is NULL while a version is open. batch_no is the
+-- delivery's load_seq, so an ordered replay reproduces every row.
+-- Group membership (RES_RESGRP) has no history; see METRICSMART.md.
+CREATE TABLE res_hist (
+    res_id         INTEGER      NOT NULL REFERENCES res(res_id),
+    valid_from     TIMESTAMP    NOT NULL,
+    valid_to       TIMESTAMP,
+    batch_no       INTEGER      NOT NULL,
+    res_name       VARCHAR(100) NOT NULL,
+    res_short_name VARCHAR(20),
+    res_desc       VARCHAR(255),
+    parent_res     INTEGER REFERENCES res(res_id),
+    email_addr     VARCHAR(128),
+    signup_date    DATE,
+    currency_code  CHAR(3),
+    status_code    CHAR(1),
+    placed_at      TIMESTAMP,
+    PRIMARY KEY (res_id, valid_from)
+);
+
 -- ------------------------------ CALENDAR ------------------------------
 -- One row per day, like dim_date in the Kimball demo.
 --   day_of_week     1 = Monday .. 7 = Sunday

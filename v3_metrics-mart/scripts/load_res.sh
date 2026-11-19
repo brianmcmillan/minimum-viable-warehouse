@@ -7,6 +7,10 @@
 # row whose value really changed. An unchanged re-delivery writes
 # nothing and leaves srcd_ts alone.
 #
+# RES_HIST keeps the history RES does not: after RES and the subtype rows
+# are final, the open version of each changed or deleted resource is
+# closed, and every live resource without an open version gets a new one.
+#
 # Surrogates (provider_id, res_id) continue from the table maximum in
 # business-key order, so an ordered replay reproduces them.
 #
@@ -138,6 +142,37 @@ done < <(sql_run "SELECT m.source_system||'|'||m.source_entity||'|'||m.source_at
                                       AND f.source_entity=m.source_entity
                   WHERE m.target_kind='SUBTYPE'
                   ORDER BY m.source_system, m.source_entity, m.source_attribute;")
+
+# ---- RES_HIST: close-and-insert, after RES and the subtypes are final.
+bno="$(sql_int "$BATCH_NO")"
+SQL+="
+-- Close: the open version of a resource that was deleted, or whose
+-- descriptive columns or parent differ from its current state.
+UPDATE res_hist SET valid_to='$q_bts'
+WHERE valid_to IS NULL
+  AND (res_id NOT IN (SELECT res_id FROM v_res_snapshot)
+       OR EXISTS (SELECT 1 FROM v_res_snapshot s
+                  WHERE s.res_id = res_hist.res_id
+                    AND (s.res_name IS NOT res_hist.res_name
+                         OR s.res_short_name IS NOT res_hist.res_short_name
+                         OR s.res_desc IS NOT res_hist.res_desc
+                         OR s.parent_res IS NOT res_hist.parent_res
+                         OR s.email_addr IS NOT res_hist.email_addr
+                         OR s.signup_date IS NOT res_hist.signup_date
+                         OR s.currency_code IS NOT res_hist.currency_code
+                         OR s.status_code IS NOT res_hist.status_code
+                         OR s.placed_at IS NOT res_hist.placed_at)));
+
+-- Insert: a new open version for every live resource without one (new,
+-- changed, or restored).
+INSERT INTO res_hist(res_id, valid_from, batch_no, res_name, res_short_name, res_desc,
+                     parent_res, email_addr, signup_date, currency_code, status_code, placed_at)
+SELECT s.res_id, '$q_bts', $bno, s.res_name, s.res_short_name, s.res_desc,
+       s.parent_res, s.email_addr, s.signup_date, s.currency_code, s.status_code, s.placed_at
+FROM v_res_snapshot s
+WHERE NOT EXISTS (SELECT 1 FROM res_hist h WHERE h.res_id = s.res_id AND h.valid_to IS NULL)
+ORDER BY s.res_id;
+"
 
 SQL+="
 -- RES_TYPE_REL is not enforced by any key in the diagram; enforce it here.

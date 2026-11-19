@@ -16,8 +16,8 @@ the same narrow landing as the Focal Point and Anchor demos.
 ```bash
 make demo     # fresh archive + the full delivery sequence + views
 make rebuild  # regenerate the mart by replaying the raw layer
-make test     # 237 assertions (36 core, 1 of them a known GAP; 201 model), mutation-checked
-make mutate   # 34 mutations (21 shared, 13 model), each must turn the suite red
+make test     # 242 assertions (36 core, 1 of them a known GAP; 206 model), mutation-checked
+make mutate   # 36 mutations (21 shared, 15 model), each must turn the suite red
 ```
 
 ## Review of the diagrams
@@ -45,7 +45,7 @@ make mutate   # 34 mutations (21 shared, 13 model), each must turn the suite red
 | # | finding | what this demo does about it |
 |---|---|---|
 | 1 | **Nothing says whether a batch is full or incremental.** `load_oper` handles an explicit delete, but a resource missing from a batch is ambiguous. | The shared rule: absence deletes only under a FULL delivery. The router decides and writes `load_oper = 'D'`. |
-| 2 | **`RES` keeps no history.** No validity columns, so a changed name or parent overwrites the old one. | Built as drawn. The archive is the only history of descriptors, and the suite asserts that. |
+| 2 | **`RES` keeps no history.** No validity columns, so a changed name or parent overwrites the old one. | `RES` built as drawn, current state. An added `RES_HIST` keeps a version per change of a resource's descriptive columns (including its subtype row) and parent, written close-and-insert by `load_res.sh`. Group membership (`RES_RESGRP`) has no history. |
 | 3 | **`RES_ALIAS` is not qualified by provider.** The key is `(res_type, res_alias)`. Two providers using one name for different resources of the same type collide. | Built as drawn; noted as the wall a second source would hit first. |
 | 4 | **`RES_TYPE_REL` is not enforced.** It lists allowed parent/child type pairs, but `RES.parent_res` is a plain self-reference. | A view of violations, checked before every resource load commits. |
 | 5 | **`RES_GRP` stores one hierarchy three ways:** `parent_res_grp`, `group_level` and `group_path`. Nothing keeps them in step. | The loader derives parent and level from the path; a second view checks all three agree. |
@@ -93,13 +93,13 @@ dedup key.
 | storage | 3NF core, snowflaked code tables | built as drawn; three subtype tables and two code tables for attributes `RES` has no column for |
 | source shape | `*_STG` tables | the shared wide files, unpivoted to the narrow landing, routed into those tables by two metadata maps |
 | identity | `RES_ALIAS` | one alias per resource (its own code); parents and metrics both resolve through it |
-| change capture | not addressed | descriptors: update in place, changed rows only. Numbers: a new sample per observation |
+| change capture | not addressed | descriptors: update in place, changed rows only, with a `RES_HIST` version per change. Numbers: a new sample per observation |
 | deletes | `load_oper`, `res_status` | the shared rule: tombstone always, absence only under FULL |
 | full vs incremental | **not addressed** | `load_mode` on the delivery, read by the router |
 | unknown parents | `RES_TYPE.autocrt_res_flag` | a stub resource when the flag is 1; a failed load when it is 0 |
 | surrogates | integer ids | continued from the table maximum in business-key order, so replay reproduces them |
 | aggregates | `METRIC_SUMMARY`, `METRIC_WEEKLY`, `GRP_METRIC_WEEKLY` | derived after every delivery; only rows whose numbers changed are touched |
-| raw retention | not covered | a separate verbatim archive, the only history of descriptors |
+| raw retention | not covered | a separate verbatim archive; the only history of group membership and of corrected samples |
 | business rules | code tables | `ORDER_STATUS` closed (unknown code fails the load), `CURRENCY` open (the load adds codes), both decoded on read |
 | calendar | `CALNDR`, `CAL_EVT_TYPE`, `CALNDR_EVENT` | `CALNDR` only, seeded for 2026-2027 and used for week boundaries; the event tables are not built (tag `metrics-mart-with-calendar`) |
 | time zones | `TIME_ZONE`, `TZ_CODE` | not built; everything is UTC |
@@ -108,13 +108,13 @@ dedup key.
 
 | event | Metrics mart | Inmon 3NF | Focal Point | Anchor |
 |---|---|---|---|---|
-| descriptor change | `UPDATE` in place | close the row, insert a version | new version row per atomic context | new row in that attribute's table |
+| descriptor change | `UPDATE` in place, plus a `RES_HIST` version | close the row, insert a version | new version row per atomic context | new row in that attribute's table |
 | numeric change | new `METRIC_SAMPLE` row | close the row, insert a version | new `val_num` version row | new row in that attribute's table |
 | delete | `res_status = 0` | closing version | closing row, `row_st='N'` | `DELETED` in the existence knot |
 | unchanged re-delivery | descriptors: nothing. Numbers: **a new sample** | writes nothing | writes nothing | writes nothing |
 | relationship | `parent_res`, or a group membership | natural-key FK | relationship loader | historized tie |
-| re-point (D7) | parent overwritten | new order version | known gap | new tie row |
-| "as at purchase" | **not answerable** | range join on validity | bi-temporal query | attribute as-of |
+| re-point (D7) | parent overwritten; `RES_HIST` closes the old version | new order version | old pairing closed | new tie row |
+| "as at purchase" | `RES_HIST` range join on validity | range join on validity | bi-temporal query | attribute as-of |
 | new numeric attribute | a `METRIC` row | `ALTER TABLE` | a metadata row | a new table |
 | new descriptive attribute | `ALTER TABLE` | `ALTER TABLE` | a metadata row | a new table |
 | identity across sources | `RES_ALIAS`, unqualified | conform at ingest | single-namespace registry | one namespace |
@@ -123,10 +123,11 @@ dedup key.
 
 ## What the demo shows
 
-**Numbers get history for free and nothing else does.** SKU-1's price is two
-samples and both are still there. C001's old email is gone. The model draws
-a hard line between what was measured and what was described, and it only
-remembers the first.
+**Numbers get history for free; descriptors need a second table.** SKU-1's
+price is two samples and both are still there. C001's old email is gone from
+`RES` and kept in `RES_HIST`. The model as drawn remembers only what was
+measured; the history of what was described is an addition beside it, and
+group membership still has none.
 
 **An unchanged value is still an observation.** Every sibling suppresses a
 restated value. Here SKU-2's unchanged 19.5 is a second sample, because
@@ -159,10 +160,11 @@ table, stays and sets the week boundaries for the weekly rollups.
 
 ## What it costs
 
-- **No point-in-time answers about descriptors.** Kimball answers "who placed
+- **Point-in-time answers need the added table.** Kimball answers "who placed
   this order, as they were then?" with a frozen key and the Activity Schema
-  with a join on time. This model can't answer it. The archive could, with a
-  rebuild as of a date.
+  with a join on time. The diagrams' model can't; `RES_HIST` answers it with
+  a range join on validity, at the cost of a second copy of every
+  descriptive column.
 - **Rows mutate.** A resource updates in place and a corrected sample
   overwrites. Without the archive, a wrong load is unrecoverable.
 - **Descriptors are second-class.** Anything that isn't a number needs a
@@ -190,6 +192,8 @@ scratch copy and runs the suite; all of them turn it red. Results are in
   tiebreak; taking the time out of the measurement dedup key.
 - **Change detection:** removing the changed-rows-only guard on `RES`, on
   the subtype tables, and on `METRIC_WEEKLY`; ignoring a corrected sample.
+- **History:** never closing a `RES_HIST` version; writing a version without
+  its parent.
 - **Lifecycle:** removing the restore path; removing auto-create; letting a
   partial delivery null the name.
 - **Scope:** removing the current-feeds filter, so a stale FULL snapshot is
@@ -232,15 +236,15 @@ a row" true all the way down, because a metric a source starts sending is just a
 ```
 schema/01_landing.sql          wide stage, narrow landing (shared shape) + routing metadata + load guard
 schema/02_archive.sql          raw layer: append-only wide history (hist_*) + manifest
-schema/03_mart.sql             staging and core tables from the diagrams, CALNDR, plus the added subtypes
+schema/03_mart.sql             staging and core tables from the diagrams, CALNDR, plus the added subtypes and RES_HIST
 schema/04_seed.sql             reference rows and the routing maps
 schema/05_views.sql            business views, mart views, integrity views
 scripts/stage_narrow.sh        wide stage -> narrow landing rows (ingest AND replay)
 scripts/route_stage.sh         narrow landing -> the mart's staging tables; the shared delete rule
-scripts/load_res.sh            resources, aliases, parents, subtype columns
+scripts/load_res.sh            resources, aliases, parents, subtype columns, RES_HIST versions
 scripts/load_groups.sh         groups, type groups and memberships
 scripts/load_metrics.sh        METRIC_STG -> METRIC_STG2 -> METRIC_SAMPLE
 scripts/refresh_aggregates.sh  summaries, weeks, group weeks
-tests/run_tests.sh             237 assertions
-tests/mutations/*.mut          34 mutations `make mutate` runs against the suite
+tests/run_tests.sh             242 assertions
+tests/mutations/*.mut          36 mutations `make mutate` runs against the suite
 ```

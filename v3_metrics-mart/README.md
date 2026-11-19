@@ -23,10 +23,12 @@ their groups). The other says **what was measured on them, and when**.
 - **Identity goes through an alias.** A provider names a resource however it
   likes. `RES_ALIAS` turns that name into a `res_id`, and every metric and
   every parent reference is resolved through it.
-- **Resources are current state.** The diagram gives `RES` no validity
-  dates. A changed email is an `UPDATE` in place and a delete is
-  `res_status = 0`. History of *measurements* is the samples. History of
-  *descriptors* is only in the archive.
+- **Resources are current state, with a history table beside them.** The
+  diagram gives `RES` no validity dates. A changed email is an `UPDATE` in
+  place and a delete is `res_status = 0`. History of *measurements* is the
+  samples. History of *descriptors and the parent link* is `RES_HIST`, an
+  added table written close-and-insert in the same step. Group membership
+  has no history.
 - **Aggregates are derived.** Daily summaries, weekly rollups and group
   weeks are recomputed after every delivery.
 
@@ -68,7 +70,7 @@ network.
 ```bash
 make demo          # fresh archive + schema + the full 6-delivery sequence, then print the mart
 make rebuild       # delete the mart; replay the raw layer to rebuild it
-make test          # 237 assertions (36 core, 201 model): delete semantics, samples, aggregates, exact rebuild
+make test          # 242 assertions (36 core, 206 model): delete semantics, samples, history, aggregates, exact rebuild
 make clean         # delete build/ only — the archive SURVIVES
 make clean-archive # delete archive/ — destroys the raw layer, and the ability to rebuild
 ```
@@ -142,11 +144,11 @@ known and hands the loaders a plain `load_oper = 'D'`.
 
 | event | metrics mart (this demo) |
 |---|---|
-| descriptor change | `UPDATE` in place on `RES` or its subtype table; changed rows only |
+| descriptor change | `UPDATE` in place on `RES` or its subtype table, changed rows only; `RES_HIST` closes the open version and inserts a new one |
 | numeric change | a new `METRIC_SAMPLE` row at the observation time |
 | delete detected | `res_status = 0`; the row and its samples stay |
 | unchanged re-delivery | descriptors write nothing; a numeric value observed again is a new sample |
-| re-pointed relationship | `parent_res` overwritten in place |
+| re-pointed relationship | `parent_res` overwritten in place; `RES_HIST` keeps the old parent as a closed version |
 | business rule (`P → PENDING`) | raw `'P'` in `RES_ORDER`; decoded **on read** by joining `ORDER_STATUS` |
 | row mutation | yes: `RES` and its subtypes update in place; samples overwrite only on a correction |
 
@@ -210,7 +212,7 @@ O-100's amount is 29.49 and stays 29.49. Its basket at list price drops to
 | group | tables |
 |---|---|
 | staging | `METRIC_STG`, `METRIC_STG2`, `RES_STG`, `RES_ALIAS_STG`, `RES_RESGRP_STG` |
-| resource | `RES`, `RES_TYPE`, `RES_TYPE_REL`, `RES_ALIAS`, `RES_GRP`, `RES_RESGRP` |
+| resource | `RES`, `RES_TYPE`, `RES_TYPE_REL`, `RES_ALIAS`, `RES_GRP`, `RES_RESGRP`; added: `RES_HIST` (not in the diagrams) |
 | metrics | `METRIC`, `VALUE_TYPE`, `PROVIDER`, `METRIC_SAMPLE`, `METRIC_SUMMARY` |
 | aggregations | `METRIC_WEEKLY`, `GRP_METRIC_WEEKLY` |
 | calendar | `CALNDR`, the day table (the event tables are not built; see below) |
@@ -322,9 +324,10 @@ whose `CHECK` fails the transaction.
   manifest. **Durable.** `make clean` never touches it. Its layout is the
   shared wide one (`hist_*` per source extract), the same in all ten models.
 
-The archive matters more here than in most of the siblings. `RES` keeps no
-history, so the raw layer is the only place an earlier email, an earlier
-parent or a corrected sample value can still be found.
+`RES` keeps no history, but `RES_HIST` keeps every version of a resource's
+descriptive columns and parent, so an earlier email or an earlier parent is
+answered from the mart. The raw layer is still the only place a corrected
+sample value, or a group's earlier members, can be found.
 
 `make rebuild` replays every completed delivery in its original order
 through the *same* `stage_narrow.sh` and `apply_delivery.sh` path that
@@ -382,6 +385,8 @@ up").
 | `v_customer` / `v_product` / `v_order` | current, live subjects — column-for-column with the Anchor demo |
 | `v_order_line` | order × product pairs, read back from group memberships |
 | `v_res` | every resource, live or deleted, with its parent |
+| `v_res_version` | every `RES_HIST` version with its validity window: a resource as at `:ts` is `valid_from <= :ts AND :ts < valid_to` |
+| `v_order_at_purchase` | each order's owner as at purchase: the parent of its first version, named as the customer was then |
 | `v_metric_sample` | every sample with names instead of surrogates |
 | `v_metric_latest` | the newest sample per resource, metric and provider |
 | `v_metric_weekly` | `METRIC_WEEKLY` with names |
@@ -396,7 +401,7 @@ up").
 |----------------------|-----------------------------------------------------------------------|
 | `make demo`          | fresh archive + schema + the full delivery sequence + printed mart    |
 | `make rebuild`       | regenerate the mart by replaying the raw layer                        |
-| `make test`          | run the test suite (237 assertions)                                   |
+| `make test`          | run the test suite (242 assertions)                                   |
 | `make mutate`        | apply each `tests/mutations/*.mut` to a scratch copy and check the suite turns red |
 | `make init`          | recreate the mart database from schema (the archive survives)         |
 | `make clean`         | delete `build/` only — **the archive survives**                       |
@@ -433,8 +438,8 @@ up").
 │   └── query.sh              # print the mart
 ├── source/                   # D0–D5, wide; byte-identical in all ten models
 ├── tests/
-│   ├── run_tests.sh          # 237 assertions
-│   ├── mutations/            # 34 deliberate breakages `make mutate` runs against the suite
+│   ├── run_tests.sh          # 242 assertions
+│   ├── mutations/            # 36 deliberate breakages `make mutate` runs against the suite
 │   └── fixtures/
 │       ├── d6_tiebreak.sql           # same-extract tiebreak (identical to Anchor's)
 │       ├── d7_repoint.sql            # O-101 re-pointed to C001 (identical to Anchor's)
@@ -453,7 +458,7 @@ up").
 make test
 ```
 
-**237 assertions** (36 core, 201 model), pure shell + `sqlite3`. The output comes in two parts: CORE,
+**242 assertions** (36 core, 206 model), pure shell + `sqlite3`. The output comes in two parts: CORE,
 the fourteen sections every one of the ten suites runs in the same order with the same labels
 (`../tests/core_spec.tsv`; the nine question answers are the SQL files in `tests/answers/`), then
 MODEL, what only this model shows. The mart keeps current state only, so C001's earlier email
@@ -500,10 +505,12 @@ requires the suite to go red; results for every model are in `../MUTATIONS.md`, 
 
 ## What the metrics mart gives up
 
-- **No history of descriptors.** `RES` is current state. After D1 the mart
-  cannot say what C001's email used to be, and after the re-point it cannot
-  say C002 ever owned O-101. Only the archive can. "As it was when the order
-  was placed" is not a question this model answers.
+- **History lives beside the model, not in it.** `RES` is current state, as
+  the diagram draws it. `RES_HIST`, an added table, keeps a version per
+  change of a resource's descriptive columns and parent, so the mart says
+  what C001's email used to be, that C002 owned O-101 before the re-point,
+  and who placed O-101 as at purchase. Every descriptive attribute is a
+  column in both tables, so a new one is DDL twice.
 - **Rows mutate.** Resources update in place and a corrected sample
   overwrites the old value. Focal and Anchor, the other models that load
   through the narrow landing, are insert-only.
@@ -522,8 +529,9 @@ requires the suite to go red; results for every model are in `../MUTATIONS.md`, 
 - **Aliases are not qualified by provider.** `RES_ALIAS` is keyed on
   `(res_type, res_alias)`. Two providers using the same name for different
   resources of one type would collide.
-- **Group history is current membership.** `RES_RESGRP` has no dates, so a
-  group's past weeks are recomputed with today's members.
+- **Group history is current membership.** `RES_RESGRP` has no dates and no
+  history table, so a group's past weeks are recomputed with today's
+  members, and an order line that left an order is only in the archive.
 - **Type groups cost rows.** Every resource is a member of its
   `/TYPE/<res_type>` group, and `GRP_METRIC_WEEKLY` carries a row per
   resource per type group per week. That is also a rollup by type for free.

@@ -297,7 +297,7 @@ core C05.2 "$(q "SELECT COUNT(*) FROM v_customer WHERE customer_ref='C002'")" "0
 core C05.3 "$(q "SELECT order_ref||'/'||COALESCE(placed_by,'NULL') FROM v_order WHERE order_ref='O-101'")" "O-101/NULL"
 core C05.4 "$(q "SELECT r.res_name||'/'||c.email_addr FROM res r JOIN res_customer c USING(res_id) WHERE r.res_code='C002'")" \
            "Bob Jones/bob@example.com"
-core C05.5 "$(aans 7)" "Bob Jones"
+core C05.5 "$(ans 7)" "Bob Jones"
 later M04 "tombstone: O-101 still points at C002 (parent_res is not cleared)" \
    "$(q "SELECT parent FROM v_res WHERE res_code='O-101'")" "CUSTOMER:C002"
 
@@ -334,7 +334,7 @@ core C08.2 "$(ans 1)" "C001"
 core C08.3 "$(ans 2)" "C002,C003"
 # The mart updates the email in place; the history is answered from the
 # raw archive, which is the final answer (Q3 reads it).
-core C08.4 "$(aans 3)" "alice@example.com>alice@newmail.com"
+core C08.4 "$(ans 3)" "alice@example.com>alice@newmail.com"
 later M07 "NOCHANGE: C001 restated unchanged writes nothing" \
    "$(q "SELECT srcd_ts FROM res WHERE res_id=1")/$(q "SELECT srcd_ts FROM res_customer WHERE res_id=1")" "$before_c001"
 later M07 "FULL reconciliation: already-deleted C002 is not restamped" \
@@ -412,9 +412,33 @@ later M07 "repoint: ...the archive does" \
 later M04 "repoint: unchanged status, currency and placed_at wrote nothing" \
    "$(q "SELECT o.srcd_ts FROM res_order o JOIN res r USING(res_id) WHERE r.res_code='O-101'")" "2026-02-05 08:00:00"
 later M03 "repoint: the restated amount is a new observation (2 samples)" "$(nsamp O-101 amount)" "2"
+later M27 "C001's email history from RES_HIST, one version per change" \
+   "$(q "SELECT group_concat(email_addr||'@'||valid_from,'>') FROM (SELECT h.email_addr, h.valid_from
+          FROM res_hist h JOIN res r USING(res_id) WHERE r.res_code='C001' ORDER BY h.valid_from)")" \
+   "alice@example.com@2026-02-05 08:00:00>alice@newmail.com@2026-03-02 08:00:00"
+later M27 "O-101's owner as at purchase after the re-point (Q7)" "$(ans 7)" "Bob Jones"
+later M27 "O-101's parent: one closed version (C002), one open version (C001)" \
+   "$(q "SELECT group_concat(parent_code||'/'||CASE is_open WHEN 1 THEN 'open' ELSE 'closed@'||valid_to END,'>')
+          FROM (SELECT * FROM v_res_version WHERE res_code='O-101' ORDER BY valid_from)")" \
+   "C002/closed@2027-02-03 08:00:00>C001/open"
 before="$(snap)"
+before_hist="$(q "SELECT COUNT(*) FROM res_hist")"
 feed d7_repoint.sql D7R '2027-02-15 08:00:00' "$HERE/fixtures"
 later M07 "re-asserted repoint (same extract) writes nothing" "$(snap)" "$before"
+later M27 "the re-asserted re-point writes no RES_HIST version" "$(q "SELECT COUNT(*) FROM res_hist")" "$before_hist"
+# Rebuild in a scratch copy, so the main database keeps the state every
+# later section expects. Every column of every RES_HIST row, ordered.
+hist_rows(){ q "SELECT COUNT(*)||' rows' FROM res_hist; SELECT res_id||'|'||valid_from||'|'||COALESCE(valid_to,'')||'|'||batch_no||'|'||
+        res_name||'|'||COALESCE(res_short_name,'')||'|'||COALESCE(res_desc,'')||'|'||COALESCE(parent_res,'')||'|'||
+        COALESCE(email_addr,'')||'|'||COALESCE(signup_date,'')||'|'||COALESCE(currency_code,'')||'|'||
+        COALESCE(status_code,'')||'|'||COALESCE(placed_at,'') FROM res_hist ORDER BY res_id, valid_from"; }
+ingested_hist="$(hist_rows)"
+SAVE_DB="$DB"; SAVE_ARCHIVE_DB="$ARCHIVE_DB"
+cp "$DB" "$LOGDIR/m27.db"; cp "$ARCHIVE_DB" "$LOGDIR/m27_archive.db"
+export DB="$LOGDIR/m27.db" ARCHIVE_DB="$LOGDIR/m27_archive.db"
+"$PROJ/scripts/rebuild.sh" >/dev/null 2>&1 || echo "  (rebuild exited $?)"
+later M27 "rebuild reproduces RES_HIST row for row" "$(hist_rows)" "$ingested_hist"
+export DB="$SAVE_DB" ARCHIVE_DB="$SAVE_ARCHIVE_DB"
 
 core_section C14
 core C14.1 "$(q "SELECT group_concat(customer_ref||'('||COALESCE(email,'null')||')',' ')
@@ -747,6 +771,9 @@ own "level 2: per-attribute recency -- newest extract_ts wins, not MAX" \
    "$(q "SELECT email FROM v_customer WHERE customer_ref='C003'")" "new@x.com"
 export DB="$SAVE_DB" ARCHIVE_DB="$SAVE_ARCHIVE_DB"
 
+
+own_section M27 "History: RES_HIST versions descriptors and the parent link"
+replay M27
 
 own_section M26 "Load control: a file_id names CONTENT (same block in all ten suites)"
 # Own database pair, so these deliveries never reach the main archive or
