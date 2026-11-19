@@ -1,0 +1,5 @@
+name: gone-filter-dropped
+tag: model
+what: v_customer_gone drops the "no longer in the latest table" filter, so every customer the log has seen is listed as gone
+file: schema/03_log_views.sql
+sed: s/^WHERE s\.customer_id NOT IN (SELECT customer_ref FROM main\.obt_customer);$/WHERE 1;/

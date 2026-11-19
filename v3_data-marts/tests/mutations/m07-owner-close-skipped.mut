@@ -1,0 +1,5 @@
+name: owner-close-skipped
+tag: model
+what: load_facts.sh never closes the current dim_order_owner row, so a re-point keeps the first owner current and inserts no new version
+file: scripts/load_facts.sh
+sed: s/^    UPDATE dim_order_owner SET row_exp_ts='\$q_bts', is_current=0$/    UPDATE dim_order_owner SET row_exp_ts=row_exp_ts, is_current=is_current/

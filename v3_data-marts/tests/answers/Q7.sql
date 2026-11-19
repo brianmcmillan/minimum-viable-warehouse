@@ -1,14 +1,11 @@
 -- Q7. Who placed O-101, as at purchase?  Expected: Bob Jones
--- CANNOT: the re-point restates the fact in place and re-freezes its customer key; needs SCD2 history on the order-customer pairing
--- Needs the archive attached as `arch`. The star keeps current state for
--- this question: a re-point restates the fact in place and re-freezes its
--- customer key to the new owner's current version, so the purchase-time
--- owner survives only in the archive (answering it from the star would
--- need SCD2 history on the order-customer pairing). The order's first
--- archived row, and that customer's latest archived row as of the same
--- delivery.
-WITH o AS (SELECT customer_ref, load_seq FROM arch.hist_order
-           WHERE order_ref = 'O-101' ORDER BY load_seq, seq_nbr LIMIT 1)
-SELECT c.full_name FROM arch.hist_customer c, o
-WHERE c.customer_id = o.customer_ref AND c.op = 'UPSERT' AND c.load_seq <= o.load_seq
-ORDER BY c.load_seq DESC, c.seq_nbr DESC LIMIT 1;
+-- SCD2 on the pairing: O-101's first dim_order_owner version (the owner
+-- when the star first recorded the order), named by that customer's
+-- dim_customer version current at the same moment. A re-point closes
+-- that version and leaves it as it was.
+SELECT c.customer_name
+FROM dim_order_owner o
+JOIN dim_customer c ON c.customer_ref = o.customer_ref
+                   AND c.row_eff_ts <= o.row_eff_ts AND o.row_eff_ts < c.row_exp_ts
+WHERE o.order_ref = 'O-101'
+  AND o.row_eff_ts = (SELECT MIN(row_eff_ts) FROM dim_order_owner WHERE order_ref = 'O-101');

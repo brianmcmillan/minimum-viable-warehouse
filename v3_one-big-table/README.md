@@ -61,7 +61,7 @@ directory; nothing reaches the network.
 ```bash
 make demo          # fresh archive + schema + the full 6-delivery sequence, then print the tables
 make rebuild       # init + ONE full refresh — no replay loop, nothing incremental
-make test          # 91 assertions (36 core, 55 model): derived deletes, the storage bill, history-as-a-query
+make test          # 100 assertions (36 core, 64 model): derived deletes, the storage bill, history as views over the log
 make clean         # delete build/ only — the archive (the real warehouse) SURVIVES
 make clean-archive # delete archive/ — destroys the log, and with it everything
 ```
@@ -167,6 +167,25 @@ fully recomputed on every load:
 | `obt_order_lines` | order × product pairs                                                            |
 | `obt_order_wide`  | the **One Big Table**: order-line grain, customers and products joined in flat   |
 
+**The history views** (`schema/03_log_views.sql`) read the log directly.
+They are TEMP views, because a view stored in `build/obt.db` may not read an
+attached database and the log is not copied into it: a connection attaches
+the archive as `arch`, then `.read`s the file. `scripts/query.sh` does, and
+so do the answer files for Q2, Q3, Q4 and Q7 (with a path from the repo root,
+where `make compare` and the suite run them).
+
+| View                  | Holds                                                                                   |
+|-----------------------|-----------------------------------------------------------------------------------------|
+| `v_customer_version`  | every version of each customer, `valid_from`/`valid_to`; only values that differ from the one before |
+| `v_product_version`   | the same for products                                                                   |
+| `v_customer_gone`     | every customer the log has seen that `obt_customer` no longer holds, with `went_at`     |
+| `v_order_first_owner` | each order's first owner, with that owner's attributes as at the same delivery          |
+
+A delivery applies one row per key (newest `extract_dt`, then last in the
+file), the rule `refresh_latest.sh` uses; `valid_from` is that delivery's
+batch timestamp and `valid_to` the next version's. When a customer went is
+`v_customer_gone`, not `valid_to`.
+
 **The transform** (`scripts/refresh_latest.sh`) is the entire model layer.
 For each feed it ranks every mention of every key, decides alive-or-dead by
 the derived delete rule, takes the newest UPSERT values for the survivors,
@@ -265,11 +284,12 @@ the storage bill below.
    re-delivered snapshot under a new `file_id` grows the log while changing
    nothing. Every sibling suppresses this — OBT's storage grows with
    **deliveries**, not with **change**.
-2. **History is a query, not a table.** C001's email timeline is recoverable
-   — via `LAG` over the log with the correct three-column ordering — and the
-   suite proves it. But every history question is that query, written again,
-   by every consumer, correctly, every time. Deleted Bob survives *only* in
-   the log; nothing keeps him queryable.
+2. **History is a set of views over the log, not a table.** The `LAG` diff
+   that recovers C001's email timeline is written once, in
+   `schema/03_log_views.sql`, instead of by every consumer. The views are
+   TEMP, so each connection attaches the log and loads them, and every read
+   recomputes history from the whole log. Deleted Bob survives *only* in the
+   log; the views are how he stays queryable.
 3. **Semantics live in views, or nowhere.** The `P → PENDING` rule is a
    `CASE` in `v_order`. Anyone who queries `obt_orders` (or `obt_order_wide`)
    directly gets the raw code. There is no model layer to state the rule once.
@@ -304,7 +324,7 @@ exists.
 |----------------------|--------------------------------------------------------------------------------------------|
 | `make demo`          | fresh archive + schema + the full delivery sequence + printed tables                       |
 | `make rebuild`       | `init` + ONE full refresh (no replay loop needed)                                          |
-| `make test`          | run the OBT test suite (91 assertions)                                                      |
+| `make test`          | run the OBT test suite (100 assertions)                                                     |
 | `make mutate`        | apply each `tests/mutations/*.mut` to a scratch copy and check the suite turns red          |
 | `make init`          | recreate the latest tables from schema (the archive survives)                              |
 | `make clean`         | delete `build/` only — **the archive, the real warehouse, survives**; `make rebuild` restores the tables |
@@ -323,7 +343,8 @@ once `COMPLETE`; it is the only target that discards the log implicitly.
 ├── OBT.md                   # design notes: the null hypothesis vs the sibling models, in depth
 ├── schema/
 │   ├── 01_stage.sql         # the file-ingest stage + the derived latest tables + business views
-│   └── 02_archive.sql       # THE warehouse: append-only wide log + manifest + triggers
+│   ├── 02_archive.sql       # THE warehouse: append-only wide log + manifest + triggers
+│   └── 03_log_views.sql     # history: TEMP views over the log (attach the archive, then .read)
 ├── scripts/
 │   ├── lib.sh               # shared helpers; the DB choke points + SQL-injection guards
 │   ├── init_db.sh           # (re)create the latest tables; preserve the log
@@ -333,8 +354,8 @@ once `COMPLETE`; it is the only target that discards the log implicitly.
 │   └── query.sh             # print the latest tables + the pattern's signature exhibits
 ├── source/                  # the demo delivery files (D0–D5), byte-identical with ../v3_datavault
 ├── tests/
-│   ├── run_tests.sh         # 91-assertion suite (derived deletes, the storage bill, history-as-a-query)
-│   ├── mutations/           # 20 deliberate breakages `make mutate` runs against the suite
+│   ├── run_tests.sh         # 100-assertion suite (derived deletes, the storage bill, history views)
+│   ├── mutations/           # 22 deliberate breakages `make mutate` runs against the suite
 │   └── fixtures/
 │       ├── d6_repoint.sql   # restatement fixture: latest wins here
 │       ├── d7_restore.sql   # restore after delete, with the pre-delete values
@@ -351,16 +372,16 @@ once `COMPLETE`; it is the only target that discards the log implicitly.
 make test
 ```
 
-One suite, pure shell + `sqlite3`, **91 assertions** (36 core, 55 model),
-mutation-tested: `make mutate` applies each of the 20 breakages in
+One suite, pure shell + `sqlite3`, **100 assertions** (36 core, 64 model),
+mutation-tested: `make mutate` applies each of the 22 breakages in
 `tests/mutations/` to a scratch copy and requires the suite to go red
 (results for every model in `../MUTATIONS.md`). It replays the shared delivery scenario against the latest tables
 and then exercises the OBT-specific behaviours. The output comes in two parts:
 CORE, the fourteen sections every one of the ten suites runs in the same order
 with the same labels (`../tests/core_spec.tsv`; the nine question answers are
 the SQL files in `tests/answers/`), then MODEL, what only this model shows.
-OBT keeps only the latest state, so its history answers (Q2, Q3, Q4, Q7) are
-queries over the archived log, and its rule-change check redefines the CASE in
+OBT keeps only the latest state, so its history answers (Q2, Q3, Q4, Q7) read
+the TEMP views over the log, and its rule-change check redefines the CASE in
 `v_order` on a copy of the database.
 
 - **Delete semantics *derived* from the log** — an incremental window does
@@ -370,8 +391,10 @@ queries over the archived log, and its rule-change check redefines the CASE in
   one).
 - **The storage bill** — an unchanged SKU is stored again; a re-delivered
   snapshot grows the log without changing an answer.
-- **History-as-a-query** — the `LAG`-over-the-log email timeline reconstructs
-  correctly under the three-column ordering.
+- **History as views over the log** — each view checked after D5 and after
+  the re-point: versions keep only changes (an unchanged FULL restatement and
+  a re-sent snapshot add none), who is gone and when, and each order's first
+  owner as at that delivery; a restored customer leaves `v_customer_gone`.
 - **Rebuild triviality** — `init` + one refresh reproduces the latest tables
   exactly, with no replay loop.
 

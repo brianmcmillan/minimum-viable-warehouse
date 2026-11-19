@@ -1,0 +1,5 @@
+name: history-lag-dedup-dropped
+tag: model
+what: the version views keep every applied row, so a value restated unchanged becomes a new customer or product version
+file: schema/03_log_views.sql
+sed: s/^WHERE prev_diff IS NULL OR diff IS NOT prev_diff)$/WHERE 1)/

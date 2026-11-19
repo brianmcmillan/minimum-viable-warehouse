@@ -14,20 +14,30 @@
 #   4. Q9: compare/rules/<model>.sh changes the rule P -> PLACED with no
 #      reload, then tests/answers/Q9.sql runs.
 #
-# Each cell is SAME (the expected answer in compare/questions.tsv),
-# DIFFERENT (with the value) or CANNOT (with the reason), where:
-#   * an answer file that reads the archive (`arch.`) is a question the
-#     derived layer cannot answer: CANNOT, with the one-line reason from
-#     the file's "-- CANNOT: <reason>" header, and the archive column says
-#     whether the archive's answer is the expected one;
-#   * a rule script that prints CANNOT<TAB><reason> is a model whose rule
-#     cannot change without a reload; it then rebuilds from the archive
-#     with the new rule, and the archive column records that answer.
+# Every cell gets one label (expected answers: compare/questions.tsv):
+#   NATIVE     the answer file has no "-- RAW:" header and does not read
+#              `arch.`, and its answer is the expected one;
+#   RAW        the file has a "-- RAW: <reason>" header (it reads the
+#              archive, or the storage layer under a presentation model),
+#              and its answer is the expected one;
+#   FINDING    the question cannot be answered as asked: a Q9 rule script
+#              printed CANNOT<TAB><reason>, and compare/decisions.tsv
+#              records "finding" for that cell. The script then rebuilt
+#              from the archive with the new rule; the report says whether
+#              that rebuild gives the expected answer;
+#   DIFFERENT  the answer is not the expected one, under any label;
+#   ERROR      the file reads `arch.` without a "-- RAW:" header (so no
+#              archive read is ever labelled NATIVE), a rule script printed
+#              CANNOT with no "finding" decision, or the query failed.
+# compare/decisions.tsv also says which label each cell should reach at
+# the end of C4b; the report lists every cell not there yet (a cell with
+# no decision row should be NATIVE).
 #
 # Writes ANSWERS.md, and the end-state block in README.md between the
-# compare:end-state markers. No run time or commit goes into either, so a
-# rerun on the same inputs writes the same bytes.
-# Written for bash 3.2. Exit status: 0 if every model built, 1 otherwise.
+# compare:end-state markers. No run time, commit or duration goes into
+# either, so a rerun on the same inputs writes the same bytes.
+# Written for bash 3.2. Exit status: 0 if every model built and no cell is
+# an ERROR, 1 otherwise.
 # =====================================================================
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -37,54 +47,65 @@ OUT="$ROOT/ANSWERS.md"
 README="$ROOT/README.md"
 BEGIN_MARK='<!-- compare:end-state:begin -->'
 END_MARK='<!-- compare:end-state:end -->'
+TAB="$(printf '\t')"
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
 
 "$SQLITE" --version >/dev/null 2>&1 || { echo "compare: sqlite3 is not on PATH" >&2; exit 2; }
 
 # models.tsv: dir, label, customer_view   questions.tsv: id, question, expected
+# decisions.tsv: model (label), question, baseline, decision, reason
 models(){ awk -F'\t' 'NR>1 && $1!="" {print $1}' "$HERE/models.tsv"; }
 mcol(){ awk -F'\t' -v d="$1" -v c="$2" 'NR>1 && $1==d {print $c; exit}' "$HERE/models.tsv"; }
 qids(){ awk -F'\t' 'NR>1 && $1!="" {print $1}' "$HERE/questions.tsv"; }
 qcol(){ awk -F'\t' -v q="$1" -v c="$2" 'NR>1 && $1==q {print $c; exit}' "$HERE/questions.tsv"; }
+dcol(){ awk -F'\t' -v m="$1" -v q="$2" -v c="$3" 'NR>1 && $1==m && $2==q {print $c; exit}' "$HERE/decisions.tsv"; }
 mk(){ sed -nE "s/^$2 *\?= *([^ #]+).*/\1/p" "$1/Makefile" | head -1; }
 
 # ---- one model ---------------------------------------------------------
 # Writes $WORK/<dir>.res, one line per question:
-#   id <TAB> kind <TAB> value <TAB> reason
-# kind: derived | archive (the answer file reads arch.) | rule (Q9 rebuilt) | error
+#   id <TAB> label <TAB> value <TAB> reason <TAB> source
+# label: NATIVE | RAW | FINDING | DIFFERENT | ERROR
+# source: archive | storage (RAW without arch.) | derived | rebuild (FINDING)
 run_model(){ local dir="$1" copy="$WORK/$1" res="$WORK/$1.res" log="$WORK/$1.log"
-  local db adb fix q f val kind reason rc
+  local db adb fix q f val label reason src rc rawhdr exp m
+  m="$(mcol "$dir" 2)"
   cp -R "$ROOT/$dir" "$copy"; rm -rf "$copy/build" "$copy/archive"
   db="$copy/$(mk "$copy" DB)"; adb="$copy/$(mk "$copy" ARCHIVE_DB)"
   : > "$res"
   if ! (cd "$copy" && make demo) > "$log" 2>&1; then
-    echo "BUILD	error	make demo failed	see the log" > "$res"; return; fi
+    printf 'BUILD\tERROR\tmake demo failed\t\t\n' > "$res"; return; fi
   fix="$(ls "$copy"/tests/fixtures/d*_repoint.sql 2>/dev/null | head -1)"
   if [ -z "$fix" ] || ! (cd "$copy" && DB="$db" ARCHIVE_DB="$adb" BATCH_TS='2027-02-01 08:00:00' \
         ./scripts/load_feed.sh "$fix" D6) >> "$log" 2>&1; then
-    echo "BUILD	error	re-point fixture failed	see the log" > "$res"; return; fi
+    printf 'BUILD\tERROR\tre-point fixture failed\t\t\n' > "$res"; return; fi
   # The README's end-state line: current customers as ref(email).
   "$SQLITE" "$db" "SELECT group_concat(customer_ref||'('||COALESCE(email,'null')||')',' ')
                    FROM (SELECT * FROM $(mcol "$dir" 3) ORDER BY customer_ref)" \
     > "$WORK/$dir.end" 2>&1
   ask(){ "$SQLITE" -cmd "ATTACH DATABASE '$adb' AS arch" "$db" < "$copy/tests/answers/$1.sql" 2>&1; }
   for q in $(qids); do
-    f="$copy/tests/answers/$q.sql"; reason=""
-    if [ ! -f "$f" ]; then printf '%s\terror\tno tests/answers/%s.sql\t\n' "$q" "$q" >> "$res"; continue; fi
+    f="$copy/tests/answers/$q.sql"; reason=""; exp="$(qcol "$q" 3)"
+    if [ ! -f "$f" ]; then printf '%s\tERROR\tno tests/answers/%s.sql\t\t\n' "$q" "$q" >> "$res"; continue; fi
     if [ "$q" = Q9 ]; then
       reason="$(cd "$copy" && DB="$db" ARCHIVE_DB="$adb" bash "$HERE/rules/$dir.sh" 2>>"$log")"; rc=$?
-      if [ "$rc" -ne 0 ]; then printf '%s\terror\trule change failed\t\n' "$q" >> "$res"; continue; fi
+      if [ "$rc" -ne 0 ]; then printf '%s\tERROR\trule change failed\t\t\n' "$q" >> "$res"; continue; fi
     fi
     val="$(ask "$q")"; rc=$?
     val="$(printf '%s' "$val" | tr '\n' ' ' | sed 's/ *$//')"
-    if [ "$rc" -ne 0 ] || printf '%s' "$val" | grep -q '^\(Parse \)\{0,1\}[Ee]rror'; then kind=error
-    elif [ -n "$reason" ]; then kind=rule; reason="${reason#CANNOT	}"
-    elif grep -q 'arch\.' "$f"; then kind=archive
-      # The reason is the file's own "-- CANNOT: <reason>" header line.
-      reason="$(sed -n 's/^-- CANNOT: *//p' "$f" | head -1)"
-      [ -n "$reason" ] || reason="the answer reads the raw archive (no -- CANNOT: line in the file)"
-    else kind=derived; fi
-    printf '%s\t%s\t%s\t%s\n' "$q" "$kind" "$val" "$reason" >> "$res"
+    rawhdr="$(sed -n 's/^-- RAW: *//p' "$f" | head -1)"
+    if grep -q 'arch\.' "$f"; then src=archive; elif [ -n "$rawhdr" ]; then src=storage; else src=derived; fi
+    if [ "$rc" -ne 0 ] || printf '%s' "$val" | grep -q '^\(Parse \)\{0,1\}[Ee]rror'; then
+      label=ERROR; reason="the query failed"
+    elif [ "$src" = archive ] && [ -z "$rawhdr" ]; then
+      label=ERROR; reason="reads arch. without a -- RAW: header"
+    elif [ -n "$reason" ]; then
+      reason="${reason#CANNOT$TAB}"; src=rebuild
+      if [ "$(dcol "$m" "$q" 4)" = finding ]; then label=FINDING
+      else label=ERROR; reason="the rule script printed CANNOT, and decisions.tsv has no finding for $m $q"; fi
+    elif [ "$val" != "$exp" ]; then label=DIFFERENT
+    elif [ -n "$rawhdr" ]; then label=RAW; reason="$rawhdr"
+    else label=NATIVE; fi
+    printf '%s\t%s\t%s\t%s\t%s\n' "$q" "$label" "$val" "$reason" "$src" >> "$res"
   done; }
 
 printf 'Building ten models in scratch copies'
@@ -101,16 +122,16 @@ n_sql="$(cut -f4 "$WORK/fixtures.tsv" | sort -u | grep -c .)"
 
 # ---- the report -------------------------------------------------------------
 esc(){ printf '%s' "$1" | sed 's/|/\\|/g'; }
-overall=0
-cell(){ local d="$1" q="$2" line kind val reason exp
-  line="$(awk -F'\t' -v q="$q" '$1==q' "$WORK/$d.res")"
-  [ -n "$line" ] || line="$(awk -F'\t' '$1=="BUILD"' "$WORK/$d.res")"
-  kind="$(printf '%s' "$line" | cut -f2)"; val="$(printf '%s' "$line" | cut -f3)"
-  reason="$(printf '%s' "$line" | cut -f4)"; exp="$(qcol "$q" 3)"
-  case "$kind" in
-    derived) if [ "$val" = "$exp" ]; then echo SAME; else echo "DIFFERENT: \`$(esc "$val")\`"; fi ;;
-    archive|rule) echo "CANNOT ¹" ;;
-    *) echo "**ERROR**: $(esc "$val")" ;;
+row(){ local l; l="$(awk -F'\t' -v q="$2" '$1==q' "$WORK/$1.res")"
+  [ -n "$l" ] || l="$(awk -F'\t' '$1=="BUILD"' "$WORK/$1.res")"; printf '%s' "$l"; }
+cell(){ local l label val reason
+  l="$(row "$1" "$2")"; label="$(printf '%s' "$l" | cut -f2)"
+  val="$(printf '%s' "$l" | cut -f3)"; reason="$(printf '%s' "$l" | cut -f4)"
+  case "$label" in
+    NATIVE) echo NATIVE ;;
+    RAW|FINDING) echo "$label ¹" ;;
+    DIFFERENT) echo "DIFFERENT: \`$(esc "$val")\`" ;;
+    *) echo "**ERROR**: $(esc "${reason:-$val}")" ;;
   esac; }
 
 {
@@ -123,12 +144,22 @@ cell(){ local d="$1" q="$2" line kind val reason exp
   echo "fixture. Each model answers with its own \`tests/answers/Q<n>.sql\`, the"
   echo "same files its suite asserts. The suites ask each question at its own"
   echo "point in the story (Q7 straight after the D3 tombstone, for example), so a"
-  echo "question can pass in a suite and still differ here."
+  echo "question can pass in a suite and still differ here. C4's matrix is kept"
+  echo "unchanged in [\`ANSWERS-baseline.md\`](ANSWERS-baseline.md)."
   echo
-  echo "- **SAME**: the expected answer in \`compare/questions.tsv\`."
-  echo "- **DIFFERENT**: another answer, shown."
-  echo "- **CANNOT ¹**: the derived layer cannot answer; see the table below for the"
-  echo "  reason and for whether the raw archive can."
+  echo "A model passes a question at NATIVE or RAW; the difference stays visible"
+  echo "because it is the result."
+  echo
+  echo "- **NATIVE**: the answer file reads only the model's own derived layer, and"
+  echo "  the answer is the expected one in \`compare/questions.tsv\`."
+  echo "- **RAW ¹**: the answer file reads the raw archive, or the storage layer"
+  echo "  under a presentation model, and says so in a \`-- RAW:\` header; the"
+  echo "  answer is the expected one."
+  echo "- **FINDING ¹**: the question cannot be answered as asked. The table below"
+  echo "  gives the reason and whether a rebuild from the archive answers it."
+  echo "- **DIFFERENT**: a wrong answer, shown, under any label."
+  echo "- **ERROR**: an archive read without a \`-- RAW:\` header, a CANNOT with no"
+  echo "  finding decision in \`compare/decisions.tsv\`, or a failed query."
   echo
   echo "| sqlite3 | $("$SQLITE" --version | awk '{print $1}') |"
   echo "| --- | --- |"
@@ -147,18 +178,45 @@ cell(){ local d="$1" q="$2" line kind val reason exp
     printf '| %s |' "$q"; for d in $(models); do printf ' %s |' "$(cell "$d" "$q")"; done; echo
   done
   echo
-  echo "## ¹ CANNOT: why, and whether the archive can answer"
+  echo "## ¹ RAW and FINDING: what answers, and why"
   echo
-  echo "| Model | Question | Why the derived layer cannot | Archive can answer |"
-  echo "| --- | --- | --- | --- |"
+  echo "| Model | Question | Label | What answers | Why | Rebuild from the archive answers it |"
+  echo "| --- | --- | --- | --- | --- | --- |"
   for d in $(models); do
-    awk -F'\t' '$2=="archive" || $2=="rule"' "$WORK/$d.res" | while IFS="$(printf '\t')" read -r q kind val reason; do
-      exp="$(qcol "$q" 3)"
-      if [ "$val" = "$exp" ]; then a="yes"; else a="no: \`$(esc "$val")\`"; fi
-      [ "$kind" = rule ] && a="$a (rebuilt from the archive with the new rule)"
-      echo "| $(mcol "$d" 2) | $q | $(esc "$reason") | $a |"
+    awk -F'\t' '$2=="RAW" || $2=="FINDING"' "$WORK/$d.res" |
+    while IFS="$TAB" read -r q label val reason src; do
+      case "$src" in
+        archive) what="the raw archive" ;;
+        storage) what="the storage layer under the presentation model" ;;
+        rebuild) what="nothing without a reload" ;;
+        *) what="$src" ;;
+      esac
+      if [ "$label" = FINDING ]; then
+        if [ "$val" = "$(qcol "$q" 3)" ]; then rb="yes"; else rb="no: \`$(esc "$val")\`"; fi
+      else rb="n/a"; fi
+      echo "| $(mcol "$d" 2) | $q | $label | $what | $(esc "$reason") | $rb |"
     done
   done
+  echo
+  echo "## Against the C4b decisions"
+  echo
+  echo "Cells whose label is not yet the one \`compare/decisions.tsv\` decides for the"
+  echo "end of C4b. A cell with no decision row should be NATIVE."
+  echo
+  echo "| Model | Question | Now | Decided | Reason |"
+  echo "| --- | --- | --- | --- | --- |"
+  n_off=0
+  for d in $(models); do m="$(mcol "$d" 2)"
+    for q in $(qids); do
+      now="$(row "$d" "$q" | cut -f2)"
+      want="$(dcol "$m" "$q" 4 | tr 'a-z' 'A-Z')"; want="${want:-NATIVE}"
+      if [ "$now" != "$want" ]; then
+        n_off=$((n_off+1))
+        echo "| $m | $q | $now | $want | $(esc "$(dcol "$m" "$q" 5)") |"
+      fi
+    done
+  done
+  [ "$n_off" -gt 0 ] || echo "| — | — | — | — | every cell is at its decided label |"
   echo
   echo "## End state"
   echo
@@ -182,10 +240,11 @@ cell(){ local d="$1" q="$2" line kind val reason exp
   echo
   echo "| Model | File | Bytes | Checksum of the SQL without comments |"
   echo "| --- | --- | --- | --- |"
-  while IFS="$(printf '\t')" read -r d f b c; do echo "| $(mcol "$d" 2) | \`$f\` | $b | $c |"; done < "$WORK/fixtures.tsv"
+  while IFS="$TAB" read -r d f b c; do echo "| $(mcol "$d" 2) | \`$f\` | $b | $c |"; done < "$WORK/fixtures.tsv"
 } > "$OUT"
 
 # ---- the README block -------------------------------------------------------
+overall=0
 if grep -qF "$BEGIN_MARK" "$README" && grep -qF "$END_MARK" "$README"; then
   { echo '```'
     for d in $(models); do printf '%-8s: %s\n' "$(mcol "$d" 2)" "$(cat "$WORK/$d.end")"; done
@@ -200,8 +259,10 @@ else
 fi
 
 for d in $(models); do
-  if awk -F'\t' '$1=="BUILD"' "$WORK/$d.res" | grep -q .; then
-    echo "compare: $d did not build; see ANSWERS.md" >&2; overall=1; fi
+  if awk -F'\t' '$2=="ERROR"' "$WORK/$d.res" | grep -q .; then
+    awk -F'\t' -v d="$d" '$2=="ERROR" {print "compare: " d " " $1 ": " ($4!="" ? $4 : $3)}' "$WORK/$d.res" >&2
+    overall=1
+  fi
 done
 echo "Wrote ANSWERS.md."
 exit "$overall"

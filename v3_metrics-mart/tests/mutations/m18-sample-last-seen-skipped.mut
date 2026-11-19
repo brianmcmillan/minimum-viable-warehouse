@@ -1,0 +1,5 @@
+name: sample-last-seen-skipped
+tag: model
+what: a value seen again never moves last_seen_utc_ts, so a sample's last seen stays its first seen
+file: scripts/load_metrics.sh
+sed: s/^SET last_seen_utc_ts = MAX(metric_sample\.last_seen_utc_ts, t\.seen_utc_ts)$/SET last_seen_utc_ts = metric_sample.last_seen_utc_ts/

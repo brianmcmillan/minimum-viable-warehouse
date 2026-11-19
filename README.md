@@ -242,8 +242,8 @@ model doesn't force a difference.
   (its per-delivery checks read it).
 - **`make clean` never touches the durable layer.** Destroying raw
   history takes the explicit `clean-archive` target.
-- **Mutation-tested suites** (Metrics mart 236, Activity 153, Focal 212,
-  DV 324, USS 145, HOOK 134, Kimball 108, Anchor 136, Inmon 99, OBT 91
+- **Mutation-tested suites** (Metrics mart 261, Activity 153, Focal 218,
+  DV 324, USS 145, HOOK 134, Kimball 115, Anchor 136, Inmon 99, OBT 100
   assertions). I broke the FULL-absence guard, the replay ordering, the
   dedup tiebreaks, the restatement and idempotence guards, the tie guards,
   the OBT refresh, the activity loader's event-time and immutability
@@ -266,11 +266,10 @@ model doesn't force a difference.
   place.
 - **Known gaps are executable, not just documented.** A core assertion a
   model cannot pass today runs as an amber GAP line with the reason, and
-  flips the suite red the moment it passes: Focal's driving-key re-point
-  (C13.1, with the suggested fix printed; see
-  [`v3_focal-point/FOCALPOINT.md`](v3_focal-point/FOCALPOINT.md), "Known gap")
-  and the metrics mart's re-observed price, which writes a new sample
-  (C04.3). History a model updates away in place is still answered: the
+  flips the suite red the moment it passes. The last two are closed:
+  Focal's driving-key re-point (C13.1) and the metrics mart's re-observed
+  price (C04.3), which now writes no sample. Every suite passes all 36 core
+  assertions. History a model updates away in place is still answered: the
   raw archive is the final answer, in every model.
 - **One raw layer for all ten.** Every model loads the same six wide
   delivery files, byte for byte, and keeps them in the same archive

@@ -1,0 +1,5 @@
+name: sample-nochange-oldest
+tag: model
+what: NOCHANGE compares a staged value with the OLDEST earlier sample instead of the newest, so A, B, A drops the second A
+file: scripts/load_metrics.sh
+sed: s/^        ORDER BY p\.sample_utc_ts DESC LIMIT 1) IS NOT i\.value$/        ORDER BY p.sample_utc_ts ASC LIMIT 1) IS NOT i.value/

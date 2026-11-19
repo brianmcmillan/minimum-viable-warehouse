@@ -1,0 +1,15 @@
+model	question	baseline	decision	reason
+focal	Q8	DIFFERENT	native	driving-key re-point fix (run 2)
+metrics	Q3	CANNOT	native	RES_HIST (run 3)
+metrics	Q7	CANNOT	native	RES_HIST (run 3)
+kimball	Q7	CANNOT	native	SCD2 order ownership (run 4)
+obt	Q2	CANNOT	native	views over the log (run 5)
+obt	Q3	CANNOT	native	views over the log (run 5)
+obt	Q4	CANNOT	native	views over the log (run 5)
+obt	Q7	CANNOT	native	views over the log (run 5)
+uss	Q2	SAME	raw	presentation model: history lives in the insert-only core
+uss	Q3	SAME	raw	presentation model: history lives in the insert-only core
+uss	Q4	SAME	raw	presentation model: history lives in the insert-only core
+uss	Q7	SAME	raw	presentation model: history lives in the insert-only core
+inmon	Q9	CANNOT	finding	conformed at ingest: a new rule needs a rebuild from the archive
+focal	Q9	CANNOT	finding	applied at ingest (meta_value_map): a new rule needs a rebuild from the archive

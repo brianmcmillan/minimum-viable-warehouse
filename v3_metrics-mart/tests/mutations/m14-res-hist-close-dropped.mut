@@ -1,0 +1,5 @@
+name: res-hist-close-dropped
+tag: model
+what: load_res.sh never closes a RES_HIST version, so a changed or deleted resource keeps its first version open
+file: scripts/load_res.sh
+sed: s/^WHERE valid_to IS NULL$/WHERE 0/

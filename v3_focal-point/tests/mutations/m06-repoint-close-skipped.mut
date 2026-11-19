@@ -1,0 +1,5 @@
+name: repoint-close-skipped
+tag: model
+what: load_rel.sh opens the re-pointed pairing but never closes the driving key's old one
+file: scripts/load_rel.sh
+sed: s/REP_UNION="UNION SELECT \* FROM del_repoint"/REP_UNION=""/

@@ -340,7 +340,7 @@ OMS.ORDER_LINE  INCREMENTAL  1           6         6
 │   ├── apply_delivery.sh # the one path from staged rows to the warehouse (ingest AND replay)
 │   ├── load_keys.sh      # surrogate keys + identifiers
 │   ├── load_desc.sh      # descriptors: bi-temporal delta with strategy-aware deletes
-│   ├── load_rel.sh       # relationships: same safe-delete rule
+│   ├── load_rel.sh       # relationships: same safe-delete rule, plus the driving-key re-point
 │   ├── rebuild.sh        # replay the archive to regenerate the warehouse
 │   ├── archive_status.sh # report the raw layer
 │   └── query.sh          # print the business views
@@ -363,8 +363,8 @@ OMS.ORDER_LINE  INCREMENTAL  1           6         6
 make test
 ```
 
-One suite, pure shell + `sqlite3`: 213 assertions (36 core, of which 1 is a known GAP; 177 model),
-mutation-tested by `make mutate` (22 breakages in `tests/mutations/`; results in `../MUTATIONS.md`).
+One suite, pure shell + `sqlite3`: 218 assertions (36 core, 182 model),
+mutation-tested by `make mutate` (24 breakages in `tests/mutations/`; results in `../MUTATIONS.md`).
 The output comes in two parts: CORE, the fourteen sections every one of the ten suites runs in the
 same order with the same labels (`../tests/core_spec.tsv`; the nine question answers are the SQL files
 in `tests/answers/`), then MODEL, what only this model shows. The model part covers:
@@ -381,24 +381,23 @@ in `tests/answers/`), then MODEL, what only this model shows. The model part cov
   are derived rather than preserved, recency survives replay, a changed business rule re-derives
   from the untouched raw values, and every existence row is reproduced.
 
-The suite passes with no external setup. The driving-key re-point (see below) is core assertion C13.1,
-reported as a non-fatal amber **GAP** line rather than hidden.
+The suite passes with no external setup, with no known gaps. The driving-key re-point (see below) is
+core assertion C13.1, and model section M06 checks its history, its rebuild and its re-send.
 
 ---
 
-## Known limitation: driving-key re-point
+## Driving-key re-point
 
-The relationship loader understands three deltas — NEW, tombstone-DELETE, and FULL-absence-DELETE — but
-not *re-pointing*. When an incremental delivery moves an order from one customer to another, the new
-pairing is inserted and the old one stays active: one order, two live customers, and `v_order.placed_by`
-becomes undefined (its subquery picks one with `LIMIT 1` and no `ORDER BY`).
+An order is placed by one customer at a time. `meta_relationship.driving_role` declares that: `SOURCE`
+for PLACED_BY (the order drives), NULL for CONTAINS (an order's products are additive pairs). The
+relationship loader understands four deltas — NEW, tombstone-DELETE, FULL-absence-DELETE and, for a
+relationship with a driving role, re-point. When a delivery moves an order to another customer,
+`load_rel.sh` closes the old pairing in the same step that opens the new one, so the order never has
+two live customers. The old pairing stays as closed history, and "as at purchase" still answers from it.
 
-Rather than only document this, the project keeps it **executable**: `tests/fixtures/d7_repoint.sql`
-loads the re-point, the suite asserts today's defective state as a regular test, and asserts the
-*desired* state as expected failures — amber `GAP` lines with the suggested fix printed beneath them. If
-the fix ever lands, those lines flip to a red failure telling you to promote them. The fix itself is
-small: declare a driving role per relationship in `meta_relationship`, plus a `del_repoint` step in
-`load_rel.sh` mirroring the existing tombstone step.
+The step is generic: it reads the role from metadata, with no per-relationship code, and surrogate keys
+do not change. `tests/fixtures/d7_repoint.sql` exercises it (core C13, model M06); see
+[FOCALPOINT.md](FOCALPOINT.md), "Driving-key relationships".
 
 ---
 

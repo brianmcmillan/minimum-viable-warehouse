@@ -1,0 +1,5 @@
+name: res-hist-parent-dropped
+tag: model
+what: a RES_HIST version is written without parent_res, so the parent link has no history
+file: scripts/load_res.sh
+sed: s/^       s\.parent_res, s\.email_addr,/       NULL, s.email_addr,/

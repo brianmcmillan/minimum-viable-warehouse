@@ -48,6 +48,46 @@ LEFT JOIN res_order o    ON o.res_id = r.res_id
 LEFT JOIN order_status s ON s.status_code = o.status_code
 WHERE r.res_type = 'ORDER' AND r.res_status = 1;
 
+-- ---- History: RES_HIST -------------------------------------------------
+-- The version a live resource has right now: its descriptive columns
+-- (RES and its subtype row) and its parent. load_res.sh compares RES_HIST's
+-- open version with this to decide whether to close it and open a new one.
+CREATE VIEW v_res_snapshot AS
+SELECT r.res_id, r.res_name, r.res_short_name, r.res_desc, r.parent_res,
+       c.email_addr, c.signup_date,
+       COALESCE(p.currency_code, o.currency_code) AS currency_code,
+       o.status_code, o.placed_at
+FROM res r
+LEFT JOIN res_customer c ON c.res_id = r.res_id
+LEFT JOIN res_product  p ON p.res_id = r.res_id
+LEFT JOIN res_order    o ON o.res_id = r.res_id
+WHERE r.res_status = 1;
+
+-- Every version of every resource, with its validity window. A resource as
+-- at a timestamp :ts is the row with valid_from <= :ts AND :ts < valid_to
+-- (an open version's valid_to reads as the end of time).
+CREATE VIEW v_res_version AS
+SELECT h.res_id, r.res_type, r.res_code,
+       h.valid_from, COALESCE(h.valid_to, '9999-12-31 23:59:59') AS valid_to,
+       CASE WHEN h.valid_to IS NULL THEN 1 ELSE 0 END AS is_open, h.batch_no,
+       h.res_name, h.res_short_name, h.res_desc,
+       h.parent_res, (SELECT x.res_code FROM res x WHERE x.res_id = h.parent_res) AS parent_code,
+       h.email_addr, h.signup_date, h.currency_code, h.status_code, h.placed_at
+FROM res_hist h JOIN res r ON r.res_id = h.res_id;
+
+-- Who placed each order, as at purchase: the parent of the order's first
+-- version, named by that customer's version valid when the order was
+-- first recorded. A re-point opens a new order version and leaves this one.
+CREATE VIEW v_order_at_purchase AS
+SELECT f.res_code AS order_ref, f.valid_from AS recorded_at,
+       f.parent_code AS customer_ref,
+       (SELECT c.res_name FROM v_res_version c
+         WHERE c.res_id = f.parent_res
+           AND c.valid_from <= f.valid_from AND f.valid_from < c.valid_to) AS placed_by_at_purchase
+FROM v_res_version f
+WHERE f.res_type = 'ORDER'
+  AND f.valid_from = (SELECT MIN(x.valid_from) FROM res_hist x WHERE x.res_id = f.res_id);
+
 CREATE VIEW v_order_line AS
 SELECT g.res_grp_name AS order_ref, r.res_code AS sku
 FROM res_resgrp x
@@ -64,9 +104,12 @@ SELECT r.res_id, r.res_type, r.res_code, r.res_name,
        p.res_type || ':' || p.res_code AS parent, r.srcd_ts
 FROM res r LEFT JOIN res p ON p.res_id = r.parent_res;
 
+-- Every sample. A sample is a value first seen or changed: first seen is
+-- sample_utc_ts, last seen is the latest time the same value came again.
 CREATE VIEW v_metric_sample AS
 SELECT r.res_type, r.res_code, m.metric_code, p.provider_name,
-       s.sample_utc_ts, s.value
+       s.sample_utc_ts, s.value,
+       s.sample_utc_ts AS first_seen_utc_ts, s.last_seen_utc_ts
 FROM metric_sample s
 JOIN res r      ON r.res_id = s.res_id
 JOIN metric m   ON m.metric_id = s.metric_id

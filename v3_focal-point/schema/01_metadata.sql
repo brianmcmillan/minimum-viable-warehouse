@@ -106,10 +106,16 @@ CREATE TABLE meta_attribute (
     type_key INTEGER NOT NULL REFERENCES meta_atomic_context(type_key),
     attr_name TEXT NOT NULL, phys_column TEXT NOT NULL, data_type TEXT NOT NULL,
     PRIMARY KEY (type_key, attr_name));
+-- driving_role names the side that holds ONE active pairing at a time:
+-- 'SOURCE' (each source key has one counterpart: an order has one
+-- customer), 'TARGET' (the mirror image), or NULL (pairs are additive:
+-- an order has many products). load_rel.sh reads it to close the old
+-- pairing when a delivery re-points the driving key.
 CREATE TABLE meta_relationship (
     type_key INTEGER PRIMARY KEY, rel_name TEXT NOT NULL,
     source_entity TEXT NOT NULL REFERENCES meta_entity(entity_id),
-    target_entity TEXT NOT NULL REFERENCES meta_entity(entity_id), x_table TEXT NOT NULL);
+    target_entity TEXT NOT NULL REFERENCES meta_entity(entity_id), x_table TEXT NOT NULL,
+    driving_role TEXT CHECK (driving_role IN ('SOURCE','TARGET')));
 CREATE TABLE meta_source_map (
     map_id INTEGER PRIMARY KEY, entity_id TEXT NOT NULL, type_key INTEGER,
     source_system TEXT NOT NULL, source_entity TEXT NOT NULL, role TEXT NOT NULL,

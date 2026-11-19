@@ -127,7 +127,15 @@ snap(){ q "
          placed_date_key, COALESCE(placed_at,''), 0, 0 FROM fact_orders
   UNION ALL
   SELECT 'fl', product_key, order_ref, placed_date_key, '', '', '', 0, 0 FROM fact_order_lines
+  UNION ALL
+  SELECT 'oo', owner_key, order_ref, customer_ref, '', row_eff_ts, row_exp_ts, is_current, 0 FROM dim_order_owner
   ORDER BY 1,2,3;"; }
+# Every column of every dim_order_owner row, surrogate key included.
+owners(){ q "SELECT COUNT(*)||' rows' FROM dim_order_owner; SELECT owner_key||'|'||order_ref||'|'||customer_ref||'|'||
+        row_eff_ts||'|'||row_exp_ts||'|'||is_current FROM dim_order_owner ORDER BY owner_key"; }
+# O-101's ownership versions, oldest first: owner/open or owner/closed@ts.
+owner_versions(){ q "SELECT group_concat(customer_ref||'/'||CASE is_current WHEN 1 THEN 'open' ELSE 'closed@'||row_exp_ts END,'>')
+        FROM (SELECT * FROM dim_order_owner WHERE order_ref='$1' ORDER BY row_eff_ts, owner_key)"; }
 
 # Run one delivery; abort the suite if a loader crashes. Its manifest
 # and stage checks are model assertions, reported in M01.
@@ -203,7 +211,10 @@ core C05.2 "$(q "SELECT COUNT(*) FROM mart_customers WHERE customer_ref='C002'")
 core C05.3 "$(q "SELECT COALESCE(placed_by_current,'<none>') FROM mart_orders WHERE order_ref='O-101'")" "<none>"
 core C05.4 "$(q "SELECT customer_name||'/'||email FROM dim_customer WHERE customer_ref='C002' AND is_deleted=0")" \
            "Bob Jones/bob@example.com"
-core C05.5 "$(aans 7)" "Bob Jones"
+core C05.5 "$(ans 7)" "Bob Jones"
+later M09 "baseline: one current ownership version per order, keyed in order_ref order" \
+   "$(q "SELECT group_concat(owner_key||'='||order_ref||'~'||customer_ref||'/'||is_current,',') FROM (SELECT * FROM dim_order_owner ORDER BY owner_key)")" \
+   "1=O-100~C001/1,2=O-101~C002/1"
 later M04 "tombstone: last-known attrs carried onto the marker" \
    "$(q "SELECT customer_name FROM dim_customer WHERE customer_ref='C002' AND is_current=1")" "Bob Jones"
 
@@ -266,21 +277,38 @@ later M03 "  ...and rebuild resets it: schema seed is the source of truth" \
    "$(q "SELECT DISTINCT status FROM mart_orders")" "PENDING"
 
 core_section C13
+o101_first="$(q "SELECT owner_key||'/'||customer_ref||'/'||row_eff_ts FROM dim_order_owner WHERE order_ref='O-101'")"
 feed d6_repoint.sql D6 '2027-02-01 08:00:00' "$HERE/fixtures"
 core C13.1 "$(ans 8)" "Alice Smith"
-# The fact row is restated in place, so the star no longer holds O-101's
-# earlier owner. The raw archive does, and the archive is the final answer.
+# The fact row is restated in place, so the FACT no longer holds O-101's
+# earlier owner. dim_order_owner does (M09); this core check reads the
+# raw archive, the final answer in every model.
 core C13.2 "$(pq "SELECT group_concat(DISTINCT customer_ref) FROM arch.hist_order
                   WHERE order_ref='O-101' AND customer_ref<>'C001'")" "C002"
 later M06 "repoint: fact row count unchanged (an UPDATE, not an insert)" \
    "$(q "SELECT COUNT(*) FROM fact_orders")" "2"
 later M06 "repoint: O-101 now keyed to C001's current version" \
    "$(q "SELECT placed_by_at_purchase FROM mart_orders WHERE order_ref='O-101'")" "Alice Smith"
-later M06 "repoint: prior pairing survives ONLY in the archive" \
+later M06 "repoint: the fact keeps no prior pairing; the archive still has it" \
    "$(pq "SELECT COUNT(*) FROM arch.hist_order WHERE order_ref='O-101' AND customer_ref='C002'")" "1"
-before_d6r="$(census)"
+later M09 "repoint: O-101 has two ownership versions, C002 closed at the re-point, C001 current" \
+   "$(owner_versions O-101)" "C002/closed@2027-02-01 08:00:00>C001/open"
+later M09 "repoint: the closed version kept its key, owner and row_eff_ts (only the close was written)" \
+   "$(q "SELECT owner_key||'/'||customer_ref||'/'||row_eff_ts FROM dim_order_owner WHERE order_ref='O-101' AND is_current=0")" \
+   "$o101_first"
+later M09 "repoint: Q7 still answers the owner as at purchase from the star" "$(ans 7)" "Bob Jones"
+later M09 "repoint: O-100 untouched (one current version)" "$(owner_versions O-100)" "C001/open"
+before_d6r="$(census)"; before_owners="$(owners)"
 feed d6_repoint.sql D6R '2027-02-15 08:00:00' "$HERE/fixtures"
 later M06 "re-asserted repoint writes nothing" "$(census)" "$before_d6r"
+later M09 "re-sending the re-point writes no ownership row" "$(owners)" "$before_owners"
+# Rebuild in a scratch copy, so the main database keeps its state.
+SAVE_DB="$DB"; SAVE_ARCHIVE_DB="$ARCHIVE_DB"
+cp "$DB" "$LOGDIR/m09.db"; cp "$ARCHIVE_DB" "$LOGDIR/m09_archive.db"
+export DB="$LOGDIR/m09.db" ARCHIVE_DB="$LOGDIR/m09_archive.db"
+"$PROJ/scripts/rebuild.sh" >/dev/null 2>&1 || echo "  (rebuild exited $?)"
+later M09 "rebuild reproduces dim_order_owner row for row, owner_key included" "$(owners)" "$before_owners"
+export DB="$SAVE_DB" ARCHIVE_DB="$SAVE_ARCHIVE_DB"
 
 core_section C14
 core C14.1 "$(q "SELECT group_concat(customer_ref||'('||COALESCE(email,'null')||')',' ')
@@ -402,6 +430,9 @@ own "restore: still live after rebuild" \
 own "frozen key: still at purchase after rebuild" \
    "$(q "SELECT placed_by_at_purchase FROM mart_orders WHERE order_ref='O-100'")" "Alice Smith"
 export DB="$SAVE_DB" ARCHIVE_DB="$SAVE_ARCHIVE_DB"
+
+own_section M09 "Order ownership: SCD2 history of the order-customer pairing"
+replay M09
 
 rm -f "$DB" "$ARCHIVE_DB"
 summary

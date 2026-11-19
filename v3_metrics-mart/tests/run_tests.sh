@@ -5,9 +5,8 @@
 # PART 1, CORE: the fourteen sections every one of the ten suites runs,
 # in the same order and with the same labels (tests/core_spec.tsv at the
 # repo root). Each model supplies its own SQL; the nine question
-# answers live in tests/answers/Q<n>.sql. The mart keeps current state
-# only; history it updated away is answered from the raw archive, the
-# final answer. One core assertion is a known GAP (C04.3).
+# answers live in tests/answers/Q<n>.sql. Descriptor history is RES_HIST;
+# a metric sample is a value first seen or changed, with its last seen.
 # PART 2, MODEL: what the metrics mart shows on its own -- one RES table
 # for every type, metrics as samples, code tables, groups, aggregates
 # over CALNDR weeks, updates in place, and its fixtures.
@@ -134,7 +133,7 @@ snap(){ q "
   UNION ALL SELECT 'prov', provider_id, provider_name, srcd_ts FROM provider
   UNION ALL SELECT 'grp', res_grp_id, group_path||'|'||COALESCE(parent_res_grp,'')||'|'||group_level, srcd_ts FROM res_grp
   UNION ALL SELECT 'mem', res_grp_id, res_id, srcd_ts FROM res_resgrp
-  UNION ALL SELECT 'smp', res_id, metric_id||'|'||sample_utc_ts||'|'||provider_id||'|'||value, srcd_d2k FROM metric_sample
+  UNION ALL SELECT 'smp', res_id, metric_id||'|'||sample_utc_ts||'|'||provider_id||'|'||value||'|'||last_seen_utc_ts, srcd_d2k FROM metric_sample
   UNION ALL SELECT 'sum', res_id, metric_id||'|'||start_utc_ts||'|'||value||'|'||value_cnt, srcd_ts FROM metric_summary
   UNION ALL SELECT 'wk',  res_id, metric_id||'|'||start_lcl_dt||'|'||value||'|'||value_cnt, srcd_ts FROM metric_weekly
   UNION ALL SELECT 'gwk', res_id, res_grp_id||'|'||metric_id||'|'||start_lcl_dt||'|'||value, srcd_ts FROM grp_metric_weekly
@@ -270,15 +269,17 @@ core_section C04
 feed d2_prod_full_v2.sql D2 '2026-03-02 09:00:00'
 core C04.1 "$(price SKU-1)" "8.99"
 core C04.2 "$(q "SELECT COUNT(*) FROM v_product WHERE sku='SKU-3'")" "0"
-core_gap C04.3 "$(q "SELECT (SELECT srcd_ts FROM res WHERE res_code='SKU-2')||'/'||(SELECT p.srcd_ts FROM res_product p JOIN res r USING(res_id) WHERE r.res_code='SKU-2')")/$(nsamp SKU-2 price)" \
-  "2026-02-05 08:00:00/2026-02-05 08:00:00/1" \
-  "an unchanged price seen again is a NEW sample by design (metrics are observations); name and currency wrote nothing"
+core C04.3 "$(q "SELECT (SELECT srcd_ts FROM res WHERE res_code='SKU-2')||'/'||(SELECT p.srcd_ts FROM res_product p JOIN res r USING(res_id) WHERE r.res_code='SKU-2')")/$(nsamp SKU-2 price)" \
+  "2026-02-05 08:00:00/2026-02-05 08:00:00/1"
 core C04.4 "$(ans 4)" "9.99>8.99"
 later M07 "FULL absence: SKU-3 deleted (res_status = 0)" "$(status PRODUCT SKU-3)" "DELETED"
 later M07 "FULL absence: router staged it as load_oper = 'D'" \
    "$(q "SELECT load_oper||'/'||res_status FROM res_stg WHERE res_code='SKU-3'")" "D/0"
 later M03 "SKU-3 keeps its samples: measurement history outlives the resource" "$(nsamp SKU-3 price)" "1"
-later M03 "OBSERVATION: unchanged SKU-2 price seen again is a NEW sample" "$(nsamp SKU-2 price)" "2"
+later M03 "unchanged SKU-2 price seen again writes no sample" "$(nsamp SKU-2 price)" "1"
+later M28 "after D2, SKU-2's one price sample: first seen D0, last seen D2's extract" \
+   "$(q "SELECT first_seen_utc_ts||'>'||last_seen_utc_ts FROM v_metric_sample WHERE res_code='SKU-2' AND metric_code='price'")" \
+   "2026-02-05 00:00:00>2026-03-02 00:00:00"
 later M03 "...but its unchanged name and currency wrote nothing" \
    "$(q "SELECT (SELECT srcd_ts FROM res WHERE res_code='SKU-2')||'/'||(SELECT p.srcd_ts FROM res_product p JOIN res r USING(res_id) WHERE r.res_code='SKU-2')")" \
    "2026-02-05 08:00:00/2026-02-05 08:00:00"
@@ -287,8 +288,52 @@ later M06 "AGGREGATES: SKU-1 now has two weeks" \
    "2026-02-02=9.99,2026-03-02=8.99"
 later M06 "AGGREGATES: untouched weeks keep their srcd_ts" \
    "$(q "SELECT COUNT(DISTINCT srcd_ts) FROM metric_weekly WHERE start_lcl_dt='2026-02-02'")" "1"
-later M06 "AGGREGATES: O-100's group week reprices to 28.49 (amount stays 29.49)" \
-   "$(q "SELECT printf('%.2f',value_sum) FROM v_group_weekly WHERE group_path='/ORDER/O-100' AND metric_code='price' AND week_start='2026-03-02'")" "28.49"
+later M06 "AGGREGATES: O-100's group week of 03-02 holds only SKU-1's new price (SKU-2 wrote no sample that week)" \
+   "$(q "SELECT members||'/'||printf('%.2f',value_sum) FROM v_group_weekly WHERE group_path='/ORDER/O-100' AND metric_code='price' AND week_start='2026-03-02'")" "1/8.99"
+
+# Samples, in a scratch copy taken after D2, so the main database keeps
+# the state every later section expects. Every column of every sample.
+sample_rows(){ q "SELECT COUNT(*)||' rows' FROM metric_sample; SELECT res_id||'|'||metric_id||'|'||sample_utc_ts||'|'||
+        provider_id||'|'||value||'|'||res_tz_code||'|'||COALESCE(sample_lcl_ts,'')||'|'||COALESCE(srcd_d2k,'')||'|'||
+        last_seen_utc_ts FROM metric_sample ORDER BY res_id, metric_id, provider_id, sample_utc_ts"; }
+SAVE_DB="$DB"; SAVE_ARCHIVE_DB="$ARCHIVE_DB"
+cp "$DB" "$LOGDIR/m28.db"; cp "$ARCHIVE_DB" "$LOGDIR/m28_archive.db"
+export DB="$LOGDIR/m28.db" ARCHIVE_DB="$LOGDIR/m28_archive.db"
+before="$(snap)"
+feed d2_prod_full_v2.sql D2N '2026-03-03 08:00:00'
+later M28 "re-sending D2 whole under a new file id writes no sample and changes nothing" "$(snap)" "$before"
+cat > "$LOGDIR/sku2_early.sql" <<'SQL'
+INSERT INTO stg_product_l1(sku, prod_name, price, currency, extract_dt, op, load_mode) VALUES
+('SKU-2','Gadget',19.5,'USD','2026-02-20','UPSERT','INCREMENTAL');
+SQL
+feed sku2_early.sql E1 '2026-03-04 08:00:00' "$LOGDIR"
+later M28 "a delivery with an earlier extract writes no sample and does not move last seen back" \
+   "$(q "SELECT COUNT(*)||'/'||MAX(last_seen_utc_ts) FROM v_metric_sample WHERE res_code='SKU-2' AND metric_code='price'")" \
+   "1/2026-03-02 00:00:00"
+cat > "$LOGDIR/sku1_aba.sql" <<'SQL'
+INSERT INTO stg_product_l1(sku, prod_name, price, currency, extract_dt, op, load_mode) VALUES
+('SKU-1','Widget',9.99,'USD','2026-03-10','UPSERT','INCREMENTAL'),
+('SKU-1','Widget',8.99,'USD','2026-03-11','UPSERT','INCREMENTAL'),
+('SKU-1','Widget',9.99,'USD','2026-03-12','UPSERT','INCREMENTAL');
+SQL
+feed sku1_aba.sql E2 '2026-03-13 08:00:00' "$LOGDIR"
+# SKU-1 already holds 9.99 (D0) then 8.99 (D2), so every value here equals
+# the OLDEST sample and differs from the one just before it.
+later M28 "A, B, A stores three samples: each value is compared with the newest before it, not the oldest" \
+   "$(q "SELECT group_concat(printf('%.2f',value),'>') FROM (SELECT value FROM v_metric_sample WHERE res_code='SKU-1' AND metric_code='price' ORDER BY sample_utc_ts)")" \
+   "9.99>8.99>9.99>8.99>9.99"
+# trg_metric_sample_nu: last seen may move, and a correction's value and
+# srcd_d2k; every other column of a sample is refused.
+sample_refused(){ local out; out="$("$SQLITE" "$DB" "UPDATE metric_sample SET $1 WHERE res_id=6;" 2>&1)"
+  case "$out" in *"only last_seen_utc_ts"*) printf 'refused';; *) printf '%s' "${out:-accepted}";; esac; }
+later M28 "UPDATE of any other sample column aborts" \
+   "$(for c in "res_id=res_id+100" "metric_id=metric_id+100" "sample_utc_ts='2026-01-01 00:00:00'" \
+               "provider_id=provider_id+100" "res_tz_code='CET'" "sample_lcl_ts='2026-01-01 00:00:00'"; do printf '%s ' "$(sample_refused "$c")"; done)" \
+   "refused refused refused refused refused refused "
+ingested_samples="$(sample_rows)"
+"$PROJ/scripts/rebuild.sh" >/dev/null 2>&1 || echo "  (rebuild exited $?)"
+later M28 "rebuild reproduces every sample row, last seen included" "$(sample_rows)" "$ingested_samples"
+export DB="$SAVE_DB" ARCHIVE_DB="$SAVE_ARCHIVE_DB"
 
 core_section C05
 feed d3_cust_tombstone.sql D3 '2026-03-16 08:00:00'
@@ -297,7 +342,7 @@ core C05.2 "$(q "SELECT COUNT(*) FROM v_customer WHERE customer_ref='C002'")" "0
 core C05.3 "$(q "SELECT order_ref||'/'||COALESCE(placed_by,'NULL') FROM v_order WHERE order_ref='O-101'")" "O-101/NULL"
 core C05.4 "$(q "SELECT r.res_name||'/'||c.email_addr FROM res r JOIN res_customer c USING(res_id) WHERE r.res_code='C002'")" \
            "Bob Jones/bob@example.com"
-core C05.5 "$(aans 7)" "Bob Jones"
+core C05.5 "$(ans 7)" "Bob Jones"
 later M04 "tombstone: O-101 still points at C002 (parent_res is not cleared)" \
    "$(q "SELECT parent FROM v_res WHERE res_code='O-101'")" "CUSTOMER:C002"
 
@@ -334,7 +379,7 @@ core C08.2 "$(ans 1)" "C001"
 core C08.3 "$(ans 2)" "C002,C003"
 # The mart updates the email in place; the history is answered from the
 # raw archive, which is the final answer (Q3 reads it).
-core C08.4 "$(aans 3)" "alice@example.com>alice@newmail.com"
+core C08.4 "$(ans 3)" "alice@example.com>alice@newmail.com"
 later M07 "NOCHANGE: C001 restated unchanged writes nothing" \
    "$(q "SELECT srcd_ts FROM res WHERE res_id=1")/$(q "SELECT srcd_ts FROM res_customer WHERE res_id=1")" "$before_c001"
 later M07 "FULL reconciliation: already-deleted C002 is not restamped" \
@@ -346,7 +391,7 @@ later M07 "END STATE: products" \
    "$(q "SELECT group_concat(sku||'='||printf('%.2f',price),' ') FROM (SELECT * FROM v_product ORDER BY 1)")" \
    "SKU-1=8.99 SKU-2=19.50"
 later M07 "END STATE: census" "$(census)" \
-   "res=8 live=5 alias=8 grp=7 member=11 provider=3 sample=7 summary=7 weekly=7 grpwk=13"
+   "res=8 live=5 alias=8 grp=7 member=11 provider=3 sample=6 summary=6 weekly=6 grpwk=10"
 
 core_section C09
 before_r="$(snap)"
@@ -411,10 +456,37 @@ later M07 "repoint: ...the archive does" \
           WHERE order_ref='O-101' ORDER BY load_seq)")" "C002>C001"
 later M04 "repoint: unchanged status, currency and placed_at wrote nothing" \
    "$(q "SELECT o.srcd_ts FROM res_order o JOIN res r USING(res_id) WHERE r.res_code='O-101'")" "2026-02-05 08:00:00"
-later M03 "repoint: the restated amount is a new observation (2 samples)" "$(nsamp O-101 amount)" "2"
+later M03 "repoint: the restated amount writes no sample (1 sample)" "$(nsamp O-101 amount)" "1"
+later M28 "repoint: O-101's amount sample now last seen at the re-point's extract" \
+   "$(q "SELECT first_seen_utc_ts||'>'||last_seen_utc_ts FROM v_metric_sample WHERE res_code='O-101' AND metric_code='amount'")" \
+   "2026-02-05 00:00:00>2027-02-01 00:00:00"
+later M27 "C001's email history from RES_HIST, one version per change" \
+   "$(q "SELECT group_concat(email_addr||'@'||valid_from,'>') FROM (SELECT h.email_addr, h.valid_from
+          FROM res_hist h JOIN res r USING(res_id) WHERE r.res_code='C001' ORDER BY h.valid_from)")" \
+   "alice@example.com@2026-02-05 08:00:00>alice@newmail.com@2026-03-02 08:00:00"
+later M27 "O-101's owner as at purchase after the re-point (Q7)" "$(ans 7)" "Bob Jones"
+later M27 "O-101's parent: one closed version (C002), one open version (C001)" \
+   "$(q "SELECT group_concat(parent_code||'/'||CASE is_open WHEN 1 THEN 'open' ELSE 'closed@'||valid_to END,'>')
+          FROM (SELECT * FROM v_res_version WHERE res_code='O-101' ORDER BY valid_from)")" \
+   "C002/closed@2027-02-03 08:00:00>C001/open"
 before="$(snap)"
+before_hist="$(q "SELECT COUNT(*) FROM res_hist")"
 feed d7_repoint.sql D7R '2027-02-15 08:00:00' "$HERE/fixtures"
 later M07 "re-asserted repoint (same extract) writes nothing" "$(snap)" "$before"
+later M27 "the re-asserted re-point writes no RES_HIST version" "$(q "SELECT COUNT(*) FROM res_hist")" "$before_hist"
+# Rebuild in a scratch copy, so the main database keeps the state every
+# later section expects. Every column of every RES_HIST row, ordered.
+hist_rows(){ q "SELECT COUNT(*)||' rows' FROM res_hist; SELECT res_id||'|'||valid_from||'|'||COALESCE(valid_to,'')||'|'||batch_no||'|'||
+        res_name||'|'||COALESCE(res_short_name,'')||'|'||COALESCE(res_desc,'')||'|'||COALESCE(parent_res,'')||'|'||
+        COALESCE(email_addr,'')||'|'||COALESCE(signup_date,'')||'|'||COALESCE(currency_code,'')||'|'||
+        COALESCE(status_code,'')||'|'||COALESCE(placed_at,'') FROM res_hist ORDER BY res_id, valid_from"; }
+ingested_hist="$(hist_rows)"
+SAVE_DB="$DB"; SAVE_ARCHIVE_DB="$ARCHIVE_DB"
+cp "$DB" "$LOGDIR/m27.db"; cp "$ARCHIVE_DB" "$LOGDIR/m27_archive.db"
+export DB="$LOGDIR/m27.db" ARCHIVE_DB="$LOGDIR/m27_archive.db"
+"$PROJ/scripts/rebuild.sh" >/dev/null 2>&1 || echo "  (rebuild exited $?)"
+later M27 "rebuild reproduces RES_HIST row for row" "$(hist_rows)" "$ingested_hist"
+export DB="$SAVE_DB" ARCHIVE_DB="$SAVE_ARCHIVE_DB"
 
 core_section C14
 core C14.1 "$(q "SELECT group_concat(customer_ref||'('||COALESCE(email,'null')||')',' ')
@@ -747,6 +819,12 @@ own "level 2: per-attribute recency -- newest extract_ts wins, not MAX" \
    "$(q "SELECT email FROM v_customer WHERE customer_ref='C003'")" "new@x.com"
 export DB="$SAVE_DB" ARCHIVE_DB="$SAVE_ARCHIVE_DB"
 
+
+own_section M27 "History: RES_HIST versions descriptors and the parent link"
+replay M27
+
+own_section M28 "Samples: a value first seen or changed, and when it was last seen"
+replay M28
 
 own_section M26 "Load control: a file_id names CONTENT (same block in all ten suites)"
 # Own database pair, so these deliveries never reach the main archive or

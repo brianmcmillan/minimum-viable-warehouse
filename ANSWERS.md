@@ -7,12 +7,22 @@ after the six shared deliveries (D0 to D5) and each model's re-point
 fixture. Each model answers with its own `tests/answers/Q<n>.sql`, the
 same files its suite asserts. The suites ask each question at its own
 point in the story (Q7 straight after the D3 tombstone, for example), so a
-question can pass in a suite and still differ here.
+question can pass in a suite and still differ here. C4's matrix is kept
+unchanged in [`ANSWERS-baseline.md`](ANSWERS-baseline.md).
 
-- **SAME**: the expected answer in `compare/questions.tsv`.
-- **DIFFERENT**: another answer, shown.
-- **CANNOT ¹**: the derived layer cannot answer; see the table below for the
-  reason and for whether the raw archive can.
+A model passes a question at NATIVE or RAW; the difference stays visible
+because it is the result.
+
+- **NATIVE**: the answer file reads only the model's own derived layer, and
+  the answer is the expected one in `compare/questions.tsv`.
+- **RAW ¹**: the answer file reads the raw archive, or the storage layer
+  under a presentation model, and says so in a `-- RAW:` header; the
+  answer is the expected one.
+- **FINDING ¹**: the question cannot be answered as asked. The table below
+  gives the reason and whether a rebuild from the archive answers it.
+- **DIFFERENT**: a wrong answer, shown, under any label.
+- **ERROR**: an archive read without a `-- RAW:` header, a CANNOT with no
+  finding decision in `compare/decisions.tsv`, or a failed query.
 
 | sqlite3 | 3.54.0 |
 | --- | --- |
@@ -35,29 +45,35 @@ question can pass in a suite and still differ here.
 
 | | inmon | kimball | vault | focal | anchor | hook | uss | activity | metrics | obt |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Q1 | SAME | SAME | SAME | SAME | SAME | SAME | SAME | SAME | SAME | SAME |
-| Q2 | SAME | SAME | SAME | SAME | SAME | SAME | SAME | SAME | SAME | CANNOT ¹ |
-| Q3 | SAME | SAME | SAME | SAME | SAME | SAME | SAME | SAME | CANNOT ¹ | CANNOT ¹ |
-| Q4 | SAME | SAME | SAME | SAME | SAME | SAME | SAME | SAME | SAME | CANNOT ¹ |
-| Q5 | SAME | SAME | SAME | SAME | SAME | SAME | SAME | SAME | SAME | SAME |
-| Q6 | SAME | SAME | SAME | SAME | SAME | SAME | SAME | SAME | SAME | SAME |
-| Q7 | SAME | CANNOT ¹ | SAME | SAME | SAME | SAME | SAME | SAME | CANNOT ¹ | CANNOT ¹ |
-| Q8 | SAME | SAME | SAME | DIFFERENT: `Alice Smith,Bob Jones` | SAME | SAME | SAME | SAME | SAME | SAME |
-| Q9 | CANNOT ¹ | SAME | SAME | CANNOT ¹ | SAME | SAME | SAME | SAME | SAME | SAME |
+| Q1 | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE |
+| Q2 | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | RAW ¹ | NATIVE | NATIVE | NATIVE |
+| Q3 | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | RAW ¹ | NATIVE | NATIVE | NATIVE |
+| Q4 | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | RAW ¹ | NATIVE | NATIVE | NATIVE |
+| Q5 | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE |
+| Q6 | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE |
+| Q7 | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | RAW ¹ | NATIVE | NATIVE | NATIVE |
+| Q8 | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE |
+| Q9 | FINDING ¹ | NATIVE | NATIVE | FINDING ¹ | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE |
 
-## ¹ CANNOT: why, and whether the archive can answer
+## ¹ RAW and FINDING: what answers, and why
 
-| Model | Question | Why the derived layer cannot | Archive can answer |
-| --- | --- | --- | --- |
-| inmon | Q9 | conformed at ingest: stored rows keep PENDING until a rebuild | yes (rebuilt from the archive with the new rule) |
-| kimball | Q7 | the re-point restates the fact in place and re-freezes its customer key; needs SCD2 history on the order-customer pairing | yes |
-| focal | Q9 | applied at ingest (meta_value_map): stored rows keep PENDING until a rebuild | yes (rebuilt from the archive with the new rule) |
-| metrics | Q3 | current-state model: the email is updated in place; history would need a history table | yes |
-| metrics | Q7 | current-state model: the order's parent is updated in place on a re-point; needs a history table for the parent link | yes |
-| obt | Q2 | the latest tables hold only live customers; who was deleted is in the log alone | yes |
-| obt | Q3 | the latest tables keep current values only; email history is in the log alone | yes |
-| obt | Q4 | the latest tables keep current values only; price history is in the log alone | yes |
-| obt | Q7 | the latest tables keep the current owner only; the purchase-time owner is in the log alone | yes |
+| Model | Question | Label | What answers | Why | Rebuild from the archive answers it |
+| --- | --- | --- | --- | --- | --- |
+| inmon | Q9 | FINDING | nothing without a reload | conformed at ingest: stored rows keep PENDING until a rebuild | yes |
+| focal | Q9 | FINDING | nothing without a reload | applied at ingest (meta_value_map): stored rows keep PENDING until a rebuild | yes |
+| uss | Q2 | RAW | the storage layer under the presentation model | presentation model: the star holds live customers only; deletes live in the insert-only core (v_latest__customer) | n/a |
+| uss | Q3 | RAW | the storage layer under the presentation model | presentation model: the star holds current values only; email history lives in the insert-only core (core_customer) | n/a |
+| uss | Q4 | RAW | the storage layer under the presentation model | presentation model: the star holds current values only; price history lives in the insert-only core (core_product) | n/a |
+| uss | Q7 | RAW | the storage layer under the presentation model | presentation model: the bridge records the current owner; the purchase-time owner lives in the insert-only core (v_order_as_recorded over core_order and core_customer) | n/a |
+
+## Against the C4b decisions
+
+Cells whose label is not yet the one `compare/decisions.tsv` decides for the
+end of C4b. A cell with no decision row should be NATIVE.
+
+| Model | Question | Now | Decided | Reason |
+| --- | --- | --- | --- | --- |
+| — | — | — | — | every cell is at its decided label |
 
 ## End state
 

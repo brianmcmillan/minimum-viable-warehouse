@@ -192,18 +192,36 @@ CREATE TABLE provider (
     migration_src_fg CHAR(1)     NOT NULL
 );
 
--- One observation of one metric on one resource by one provider.
+-- One value of one metric on one resource by one provider, written when
+-- the value is first seen or differs from the sample in force before it.
+-- sample_utc_ts is when it was first seen; last_seen_utc_ts is the latest
+-- time the same value was seen again, and only ever moves forward.
 CREATE TABLE metric_sample (
-    res_id        INTEGER   NOT NULL REFERENCES res(res_id),
-    metric_id     INTEGER   NOT NULL REFERENCES metric(metric_id),
-    sample_utc_ts TIMESTAMP NOT NULL,
-    provider_id   INTEGER   NOT NULL REFERENCES provider(provider_id),
-    value         FLOAT     NOT NULL,
-    res_tz_code   CHAR(6)   NOT NULL,
-    sample_lcl_ts TIMESTAMP,
-    srcd_d2k      SMALLINT,
+    res_id           INTEGER   NOT NULL REFERENCES res(res_id),
+    metric_id        INTEGER   NOT NULL REFERENCES metric(metric_id),
+    sample_utc_ts    TIMESTAMP NOT NULL,
+    provider_id      INTEGER   NOT NULL REFERENCES provider(provider_id),
+    value            FLOAT     NOT NULL,
+    res_tz_code      CHAR(6)   NOT NULL,
+    sample_lcl_ts    TIMESTAMP,
+    srcd_d2k         SMALLINT,
+    last_seen_utc_ts TIMESTAMP NOT NULL,
     PRIMARY KEY (res_id, metric_id, sample_utc_ts, provider_id)
 );
+
+-- A sample does not change, with two exceptions: last_seen_utc_ts moves
+-- forward when the value is seen again, and a correction (same key, new
+-- value) overwrites value and srcd_d2k. Any other change aborts.
+CREATE TRIGGER trg_metric_sample_nu BEFORE UPDATE ON metric_sample
+WHEN NEW.res_id        IS NOT OLD.res_id
+  OR NEW.metric_id     IS NOT OLD.metric_id
+  OR NEW.sample_utc_ts IS NOT OLD.sample_utc_ts
+  OR NEW.provider_id   IS NOT OLD.provider_id
+  OR NEW.res_tz_code   IS NOT OLD.res_tz_code
+  OR NEW.sample_lcl_ts IS NOT OLD.sample_lcl_ts
+BEGIN
+  SELECT RAISE(ABORT, 'metric_sample: only last_seen_utc_ts, and a correction''s value and srcd_d2k, may change');
+END;
 
 -- Samples rolled up to a summary level. This demo derives level 'D'
 -- (one UTC day); a provider could also deliver summaries directly.
@@ -291,6 +309,33 @@ CREATE TABLE res_order (
     currency_code CHAR(3) REFERENCES currency(currency_code),
     placed_at     TIMESTAMP,
     srcd_ts       TIMESTAMP NOT NULL
+);
+
+-- RES_HIST: the history RES does not keep. Not in the diagrams; added so
+-- the mart answers "what was it then?" itself. One row per resource per
+-- version of its descriptive columns (RES and its subtype row) and of its
+-- parent link. load_res.sh writes it close-and-insert in the same
+-- transaction that changes RES: a change closes the open version
+-- (valid_to = the batch) and opens a new one; a delete closes the open
+-- version and opens none; a restore opens a new one. Nothing else updates
+-- it. valid_to is NULL while a version is open. batch_no is the
+-- delivery's load_seq, so an ordered replay reproduces every row.
+-- Group membership (RES_RESGRP) has no history; see METRICSMART.md.
+CREATE TABLE res_hist (
+    res_id         INTEGER      NOT NULL REFERENCES res(res_id),
+    valid_from     TIMESTAMP    NOT NULL,
+    valid_to       TIMESTAMP,
+    batch_no       INTEGER      NOT NULL,
+    res_name       VARCHAR(100) NOT NULL,
+    res_short_name VARCHAR(20),
+    res_desc       VARCHAR(255),
+    parent_res     INTEGER REFERENCES res(res_id),
+    email_addr     VARCHAR(128),
+    signup_date    DATE,
+    currency_code  CHAR(3),
+    status_code    CHAR(1),
+    placed_at      TIMESTAMP,
+    PRIMARY KEY (res_id, valid_from)
 );
 
 -- ------------------------------ CALENDAR ------------------------------

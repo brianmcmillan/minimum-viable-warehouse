@@ -10,8 +10,8 @@ byte-identical.
 ```bash
 make demo     # fresh archive + the full delivery sequence + tables
 make rebuild  # init + ONE refresh -- no replay loop, nothing incremental
-make test     # 91 assertions (36 core, 55 model), mutation-hardened
-make mutate   # 20 mutations (17 shared, 3 model), each must turn the suite red
+make test     # 100 assertions (36 core, 64 model), mutation-hardened
+make mutate   # 22 mutations (17 shared, 5 model), each must turn the suite red
 ```
 
 This demo exists to answer the question the other nine raise:
@@ -39,11 +39,18 @@ This demo exists to answer the question the other nine raise:
    (2 archive rows); a re-delivered D5 under a new file id grows the
    archive while changing nothing. Every sibling demo suppresses this;
    OBT's storage grows with *deliveries*, not with *change*.
-2. **History is a query, not a table.** C001's email timeline is
-   recoverable — via `LAG` over the log with the correct three-column
-   ordering. It works, and the suite proves it, but every history question
-   is that query, written again, by every consumer, correctly, every time.
-   Deleted Bob survives *only* in the log; nothing keeps him queryable.
+2. **History is a set of views over the log.** `schema/03_log_views.sql`
+   holds TEMP views that read the log directly: every version of each
+   customer and product with `valid_from`/`valid_to` (only values that
+   differ from the one before, by `LAG`), every customer the latest table no
+   longer holds with when it went, and each order's first owner as at that
+   delivery. The `LAG` diff is written once, not by every consumer. They are
+   TEMP because a view stored in `build/obt.db` may not read the attached
+   log, and the log is not copied: every connection that wants history
+   attaches the archive and loads the file (`query.sh` and the answer files
+   for Q2, Q3, Q4 and Q7 do). The bill moves rather than disappears: every
+   read recomputes the history from the whole log. Deleted Bob survives
+   *only* in the log; the views are how he stays queryable.
 3. **Semantics live in views or nowhere.** The P→PENDING rule is a `CASE`
    in `v_order`. Consumers who query `obt_orders` directly get raw codes.
    There is no model layer to state a rule once.
@@ -66,12 +73,13 @@ hypothesis runnable next to them.
 ```
 schema/01_stage.sql       stage (file-ingest surface) + latest tables + views
 schema/02_archive.sql     THE warehouse: append-only wide log + manifest
+schema/03_log_views.sql   history: TEMP views over the log (attach the archive, then .read)
 scripts/load_feed.sh      stage -> append -> refresh; shared load control
 scripts/refresh_latest.sh the ONE transform: full recomputation over the log
 scripts/rebuild.sh        init + one refresh
 source/d0..d5*.sql        byte-identical copies of the v3_datavault deliveries
-tests/run_tests.sh        91 assertions
-tests/mutations/*.mut     20 mutations `make mutate` runs against the suite
+tests/run_tests.sh        100 assertions
+tests/mutations/*.mut     22 mutations `make mutate` runs against the suite
 tests/fixtures/d6_repoint.sql  the restatement fixture (latest wins here)
 tests/fixtures/d7_restore.sql  restore after delete, with unchanged values
 tests/fixtures/d8_tiebreak_wide.sql  same-extract tiebreak, through rebuild

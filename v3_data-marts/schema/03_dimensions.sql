@@ -51,6 +51,24 @@ CREATE TABLE dim_product (
 );
 CREATE INDEX ix_dim_product_bk ON dim_product(sku, is_current);
 
+-- ----------------- DIM_ORDER_OWNER (SCD2 pairing history) ---------------
+-- Who owns each order, Type 2: one row per order per owner, written
+-- close-and-insert by load_facts.sh. A re-point CLOSES the current row
+-- (row_exp_ts, is_current=0 -- the only UPDATE this table ever takes)
+-- and inserts a row for the new owner. fact_orders still restates its
+-- customer_key in place; this table is where the earlier owner stays.
+-- Same determinism as the dimensions: owner_key is a rowid, inserted in
+-- order_ref order, so replay reproduces it.
+CREATE TABLE dim_order_owner (
+    owner_key    INTEGER PRIMARY KEY,          -- surrogate (rowid)
+    order_ref    TEXT NOT NULL,                -- the order (degenerate dim in the fact)
+    customer_ref TEXT NOT NULL,                -- the owner's business key
+    row_eff_ts   TEXT NOT NULL,
+    row_exp_ts   TEXT NOT NULL DEFAULT '9999-12-31 23:59:59',
+    is_current   INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX ix_dim_order_owner_bk ON dim_order_owner(order_ref, is_current);
+
 -- ------------------------- DIM_DATE (generated) -----------------------
 -- The signature Kimball dimension: one row per calendar day, smart key
 -- YYYYMMDD. Generated once at init; no loader ever touches it.

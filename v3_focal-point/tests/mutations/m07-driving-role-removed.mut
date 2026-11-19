@@ -1,0 +1,5 @@
+name: driving-role-removed
+tag: model
+what: PLACED_BY declares no driving role, so a re-point leaves the order with two active customers
+file: schema/03_seed_metadata.sql
+sed: s/(90,'PLACED_BY','ORDER','CUSTOMER','order_customer_x','SOURCE'),/(90,'PLACED_BY','ORDER','CUSTOMER','order_customer_x',NULL),/

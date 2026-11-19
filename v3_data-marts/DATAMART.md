@@ -12,8 +12,8 @@ makes the mart disposable.
 make demo           # fresh archive + the full delivery sequence + the star
 make rebuild        # throw the star away; replay the archive to rebuild it
 make archive-status # what the archive holds, and where it is growing
-make test           # 108 assertions (36 core, 72 model), mutation-hardened
-make mutate         # 24 mutations (18 shared, 6 model), each must turn the suite red
+make test           # 115 assertions (36 core, 79 model), mutation-hardened
+make mutate         # 26 mutations (18 shared, 8 model), each must turn the suite red
 ```
 
 ## The same core rule, a third mechanism
@@ -46,9 +46,14 @@ make mutate         # 24 mutations (18 shared, 6 model), each must turn the suit
    demo artifact.
 3. **Facts are UPDATED in place.** The D6 re-point fixture becomes an
    `UPDATE fact_orders SET customer_key=...` — the only in-place fact restatement
-   in the set (Inmon also UPDATEs, but only to close a version). The prior pairing survives *only* in the archive
-   (`hist_order` still holds O-101→C002). Kimball trades in-database history
-   of facts for query speed and leans on the archive for audit.
+   in the set (Inmon also UPDATEs, but only to close a version). The fact
+   keeps no prior state; Kimball trades in-database history of facts for
+   query speed and leans on the archive for audit. The pairing is the
+   exception: `dim_order_owner` is a Type 2 table of order owners, written
+   close-and-insert, so the re-point closes O-101→C002 and inserts
+   O-101→C001. "Who placed O-101, as at purchase?" is answered from the star
+   (the first ownership version, named by the customer version current when
+   it was written), while the fact restatement stays as it was.
 
 ## What it gives up (and where the others win)
 
@@ -97,16 +102,16 @@ column). End state after D0–D5 matches the rest of the set: C001 alive with
 ```
 schema/01_stage.sql      stage L1 (shared shape with v3_datavault) + L2 views
 schema/02_archive.sql    raw layer: wide history + manifest + triggers
-schema/03_dimensions.sql SCD2 dims, generated dim_date, seeded decode dim
+schema/03_dimensions.sql SCD2 dims, dim_order_owner (SCD2 pairing), generated dim_date, seeded decode dim
 schema/04_facts.sql      fact_orders, fact_order_lines, comparison views
 scripts/load_feed.sh     driver: stage → archive → apply, clear-on-success
 scripts/apply_delivery.sh one shared path for ingest AND replay
 scripts/load_dims.sh     SCD2: expire → new versions → deleted markers
-scripts/load_facts.sh    insert new, UPDATE restated, unknown members (-1)
+scripts/load_facts.sh    insert new, UPDATE restated, close-and-insert owners, unknown members (-1)
 scripts/rebuild.sh       replay the archive in load_seq order
 source/d0..d5*.sql       byte-identical copies of the v3_datavault deliveries
-tests/run_tests.sh       108 assertions
-tests/mutations/*.mut    24 mutations `make mutate` runs against the suite
+tests/run_tests.sh       115 assertions
+tests/mutations/*.mut    26 mutations `make mutate` runs against the suite
 tests/fixtures/d6_repoint.sql  the restatement fixture (fact UPDATE here)
 tests/fixtures/d7_restore.sql  restore after delete, with unchanged values
 tests/fixtures/d8_tiebreak_wide.sql  same-extract tiebreak, through replay

@@ -65,7 +65,7 @@ directory; nothing reaches the network.
 make demo           # fresh archive + schema + the full 6-delivery sequence, then print the star
 make rebuild        # delete the star; replay the archive to rebuild it — surrogate keys included
 make archive-status # what the durable archive holds, and where it is growing
-make test           # 108 assertions (36 core, 72 model): delete semantics, SCD2, frozen keys, exact rebuild
+make test           # 115 assertions (36 core, 79 model): delete semantics, SCD2, frozen keys, ownership history, exact rebuild
 ```
 
 `make demo` loads six deliveries standing in for a few weeks of real feeds,
@@ -161,6 +161,7 @@ dimensions by surrogate key.
 | `dim_product`      | SCD **Type 2** dimension    | one row per version of a SKU, same shape                                                        |
 | `dim_date`         | generated dimension         | one row per calendar day, smart key `YYYYMMDD`; built once at init, no loader ever touches it   |
 | `dim_order_status` | **Type 1** decode dimension | raw source code ⇄ label (`P → PENDING`); seeded, updated in place                              |
+| `dim_order_owner`  | SCD **Type 2** pairing      | one row per order per owner: `order_ref`, `customer_ref`, validity window, `is_current`; a re-point closes the row and inserts a new one |
 | `fact_orders`      | transaction-grain fact      | one row per order; surrogate FKs **frozen** to the versions current at load; **UPDATED** in place on restatement |
 | `fact_order_lines` | factless fact               | order × product grain                                                                          |
 
@@ -274,7 +275,7 @@ one delivery safely, capturing the raw input *before* applying it:
    triggers, so retries are safe), assigning `load_seq` on first sight.
 4. **Apply** via `apply_delivery.sh` → `load_dims.sh` (SCD2: expire → new
    versions → deleted markers) then `load_facts.sh` (insert new, UPDATE
-   restated, unknown-member fallbacks). Both branch on the effective
+   restated, close-and-insert order owners, unknown-member fallbacks). Both branch on the effective
    FULL/INCREMENTAL mode.
 5. **Mark COMPLETE** only after every loader succeeds, then clear the stage.
    A delivery that crashes half-way stays `STARTED`, leaves its staged rows
@@ -314,7 +315,13 @@ siblings charge a history query for.
   `UPDATE`d, not versioned. This is the deliberate contrast with the
   insert-only siblings: the star trades in-database history of facts for query
   speed, and the archive is what keeps that honest — every prior state still lives
-  in `hist_order`, and `make rebuild` reapplies the whole history.
+  in `hist_order`, and `make rebuild` reapplies the whole history. The one
+  exception is the order-to-customer pairing: `dim_order_owner` keeps it as
+  Type 2 history beside the fact. A re-point still restates
+  `fact_orders.customer_key` in place, and it also closes O-101's C002 row
+  and inserts a C001 row, so "who placed O-101, as at purchase?" (Q7) is
+  answered from the star: the order's first ownership version, named by the
+  `dim_customer` version current when that version was written.
 
 ---
 
@@ -329,6 +336,7 @@ Defined in `schema/03_dimensions.sql` and `schema/04_facts.sql`, printed by
 | `mart_orders`                                      | one row per order, with both `placed_by_at_purchase` and `placed_by_current` |
 | `v_dim_customer_current` / `v_dim_product_current` | the current version of each dimension                                        |
 | `v_customer_history`                               | every SCD2 version of every customer, with its validity window               |
+| `v_order_owner_history`                            | every owner of every order, with its validity window and the owner's name as then |
 | `v_star_order_lines`                               | the star fully joined: one line per order line, all dimensions decoded       |
 
 `mart_customers` / `mart_products` / `mart_orders` mirror the sibling demos'
@@ -344,7 +352,7 @@ across models.
 | `make demo`           | fresh archive + schema + the full delivery sequence + printed star                         |
 | `make rebuild`        | regenerate the star by replaying the archive                                               |
 | `make archive-status` | report on the archive (read-only): deliveries, rows per feed, growth                       |
-| `make test`           | run the Kimball test suite (108 assertions)                                                |
+| `make test`           | run the Kimball test suite (115 assertions)                                                |
 | `make mutate`         | apply each `tests/mutations/*.mut` to a scratch copy and check the suite turns red          |
 | `make init`           | recreate the star from schema (the archive survives)                                       |
 | `make clean`          | delete `build/` only — **the archive survives**; `make rebuild` restores the star          |
@@ -382,7 +390,7 @@ OMS.ORDER       1           2         2
 ├── schema/
 │   ├── 01_stage.sql        # stage L1 tables (shared shape) + L2 dedup / diff_str views
 │   ├── 02_archive.sql      # raw layer: per-feed history + manifest + append-only triggers
-│   ├── 03_dimensions.sql   # SCD2 dims, generated dim_date, seeded decode dim, current views
+│   ├── 03_dimensions.sql   # SCD2 dims, order ownership (SCD2), generated dim_date, seeded decode dim, current views
 │   └── 04_facts.sql        # fact_orders, fact_order_lines, comparison + star views
 ├── scripts/
 │   ├── lib.sh              # shared helpers; the single DB choke point + SQL-injection guards
@@ -390,13 +398,13 @@ OMS.ORDER       1           2         2
 │   ├── load_feed.sh        # ingest ONE delivery safely (stage → archive → apply → complete)
 │   ├── apply_delivery.sh   # the one path from staged rows to the star (ingest AND replay)
 │   ├── load_dims.sh        # SCD2: expire → new versions → deleted markers
-│   ├── load_facts.sh       # facts: insert new, UPDATE restated, unknown members (-1)
+│   ├── load_facts.sh       # facts: insert new, UPDATE restated, close-and-insert owners, unknown members (-1)
 │   ├── rebuild.sh          # replay the archive to regenerate the star
 │   ├── archive_status.sh   # report on the archive
 │   └── query.sh            # print the star + its signature queries
 ├── source/                 # the demo delivery files (D0–D5), byte-identical with ../v3_datavault
 ├── tests/
-│   ├── run_tests.sh        # 72-assertion suite (delete semantics, SCD2, frozen keys, exact rebuild)
+│   ├── run_tests.sh        # 115-assertion suite (delete semantics, SCD2, frozen keys, ownership history, exact rebuild)
 │   └── fixtures/
 │       └── d6_repoint.sql  # restatement fixture: the re-point that becomes a fact UPDATE
 ├── build/                  # generated: the star (safe to delete)
@@ -411,17 +419,18 @@ OMS.ORDER       1           2         2
 make test
 ```
 
-One suite, pure shell + `sqlite3`, **108 assertions** (36 core, 72 model),
-mutation-tested: `make mutate` applies each of the 24 breakages in
+One suite, pure shell + `sqlite3`, **115 assertions** (36 core, 79 model),
+mutation-tested: `make mutate` applies each of the 26 breakages in
 `tests/mutations/` to a scratch copy and requires the suite to go red
 (results for every model in `../MUTATIONS.md`). It replays the shared delivery scenario against the star and then
 exercises the Kimball-specific behaviours. The output comes in two parts: CORE,
 the fourteen sections every one of the ten suites runs in the same order with
 the same labels (`../tests/core_spec.tsv`; the nine question answers are the
 SQL files in `tests/answers/`), then MODEL, what only this model shows. After
-the re-point the star no longer holds O-101's earlier owner, because the fact
-row is updated in place; core C13.2 answers it from the raw archive, which is
-the final answer in every model.
+the re-point the fact row no longer holds O-101's earlier owner, because it is
+updated in place; `dim_order_owner` does, and Q7 (C05.5) reads it. Core C13.2
+still reads the earlier owner from the raw archive, the final answer in every
+model.
 
 - **Delete semantics under a realistic cadence** — an incremental window does
   *not* delete an absent-but-unchanged record; a FULL snapshot *does* delete
@@ -435,7 +444,11 @@ the final answer in every model.
 - **Type 1 vs Type 2** — a decode `UPDATE` is read instantly by every fact,
   and a rebuild resets it to the seed.
 - **In-place fact restatement** — the D6 re-point becomes an
-  `UPDATE fact_orders`; the prior pairing survives *only* in the archive.
+  `UPDATE fact_orders`; the fact keeps no prior pairing.
+- **Ownership history** — `dim_order_owner` holds one version per order
+  per owner: after the re-point O-101 has C002 closed at the re-point and
+  C001 current, the closed row keeps its key and values, a re-sent re-point
+  writes nothing, and a rebuild reproduces the table row for row.
 - **The archive guarantees** — append-only is absolute, and `make clean` +
   `make rebuild` reproduces the star *exactly*, surrogate keys and SCD2
   windows included.
@@ -451,6 +464,8 @@ them honest rather than hiding them:
 
 - **History of facts lives in dimensions, not facts.** A restated amount
   overwrites the fact row; only the archive retains the prior state. The
+  pairing to a customer is the exception, because `dim_order_owner` versions
+  it; amount, status and `placed_at` have no such table. The
   insert-only siblings keep every fact state queryable *in the warehouse
   itself*.
 - **Type 1 overlays are not durable across a rebuild.** An ad-hoc decode
