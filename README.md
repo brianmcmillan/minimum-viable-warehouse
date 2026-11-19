@@ -292,7 +292,8 @@ model doesn't force a difference.
 
 ## Requirements
 
-bash, make, sqlite3. Any recent version; the stock macOS binary works.
+bash, make, and sqlite3 3.47 or newer (Data Vault's triggers put an
+expression in RAISE, which 3.47 added); the stock macOS binary works.
 Each directory's `make help` lists its targets, and each has its own
 standalone README — the design, the deviations, and a plain accounting
 of what that model gives up — plus a design-notes companion that draws

@@ -46,7 +46,7 @@ of shell and SQL, following the DV101 Baseline conventions (source → stage L1 
 | Tool      | Version used in development | Notes                                    |
 |-----------|-----------------------------|------------------------------------------|
 | `bash`    | 5.x (also runs on 3.2)      | macOS's built-in bash works              |
-| `sqlite3` | 3.51                        | Any modern SQLite with window functions  |
+| `sqlite3` | 3.51                        | 3.47 or newer: triggers use RAISE with an expression |
 | `make`    | 3.81+                       | GNU Make                                 |
 
 That's the whole list. Everything runs against local files in the project directory.

@@ -64,6 +64,23 @@ CORE_TOTALS="$LOGDIR/core_totals"
 : > "$ROWS"; : > "$FAILS"; : > "$NOTES"; : > "$CORE_TOTALS"
 overall=0
 
+# The tree's dirty paths, one line each: the `git status --porcelain`
+# line, a tab, and the content hash of the file (- when it is gone).
+# VERIFY.md and verify-logs/ are left out: the run always writes them.
+# Taken before the first model runs and again after the last, so a path
+# that was already dirty counts only if the run changed its status or
+# its content.
+tree_state() {
+  git status --porcelain --untracked-files=all 2>/dev/null |
+  while IFS= read -r line; do
+    p="${line:3}"; p="${p##* -> }"
+    case "$p" in VERIFY.md|verify-logs/*) continue ;; esac
+    if [ -f "$p" ]; then h="$(git hash-object -- "$p" 2>/dev/null)"; else h=-; fi
+    printf '%s\t%s\n' "$line" "${h:--}"
+  done | sort
+}
+tree_state > "$LOGDIR/tree.before"
+
 for dir in v3_*/; do
   d="${dir%/}"
   printf '%-24s' "$d"
@@ -146,7 +163,17 @@ case "$core_total" in
           echo "- core totals differ between suites (or none was printed): ${core_total:-none}" >> "$NOTES" ;;
 esac
 
-dirty="$(git status --porcelain 2>/dev/null | grep -vE '^\?\? (VERIFY\.md|verify-logs/)' | wc -l | tr -d ' ')"
+# Paths the run itself changed: every path whose line or hash differs
+# between the two listings (became dirty, changed status or content,
+# became clean).
+tree_state > "$LOGDIR/tree.after"
+comm -3 "$LOGDIR/tree.before" "$LOGDIR/tree.after" | sed 's/^	//' | cut -f1 \
+  | cut -c4- | sed 's/.* -> //' | sort -u > "$LOGDIR/tree.changed"
+dirty="$(wc -l < "$LOGDIR/tree.changed" | tr -d ' ')"
+if [ "$dirty" != 0 ]; then
+  echo "- the run changed $dirty path(s) in the work tree:" >> "$NOTES"
+  sed 's/^/      /' "$LOGDIR/tree.changed" >> "$NOTES"
+fi
 
 {
   echo "# Verification run"

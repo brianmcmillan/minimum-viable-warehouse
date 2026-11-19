@@ -8,8 +8,13 @@
 #                 header table (run time, commit, machine, sqlite3 and
 #                 bash versions, overall, tree changed) and the Time
 #                 column are not compared.
-#   MUTATIONS.md  every table except the "Item | Value" header table
-#                 (run time, commit, sqlite3 version, overall).
+#   MUTATIONS.md  the Summary table, and the Mutation, Tag and Result
+#                 columns of each model's table. Not the "Item | Value"
+#                 header table (run time, commit, sqlite3 version,
+#                 overall), nor "What it breaks" or "Assertions broken":
+#                 which assertions a mutation breaks first, and the exit
+#                 code a killed load reports, vary with the sqlite3
+#                 version.
 #   ANSWERS.md    every table except the sqlite3 version table, and the
 #                 End state block.
 #
@@ -54,9 +59,31 @@ extract_tables(){ awk -v file="$1" '
     print file " | " sec " | " $0; next }
   { intab = 0 }'; }
 
+# MUTATIONS.md: the Summary table whole; in each model's table only the
+# Mutation, Tag and Result columns, found by header name. What a
+# mutation breaks first, and the exit code a killed load reports, depend
+# on the sqlite3 version, so "Assertions broken" is not compared.
+extract_mutations(){ awk '
+  function trim(s){ sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
+  /^## / { sec = substr($0, 4) }
+  /^```/ { fence = !fence; next }
+  fence  { next }
+  /^\|/ {
+    n = split($0, c, "|")
+    if (!intab) { intab = 1; keep = (trim(c[2]) != "Item"); mut = 0
+      if (keep) for (i = 2; i < n; i++) col[trim(c[i])] = i
+      if (keep && ("Mutation" in col)) mut = 1
+      if (mut && !(("Tag" in col) && ("Result" in col))) { print "MISSING COLUMN Tag/Result in " sec; keep = 0 } }
+    if (!keep || $0 ~ /^\| *---/) next
+    if (mut) print "MUTATIONS.md | " sec " | " trim(c[col["Mutation"]]) " | " trim(c[col["Tag"]]) " | " trim(c[col["Result"]])
+    else     print "MUTATIONS.md | " sec " | " $0
+    next }
+  { intab = 0; split("", col) }'; }
+
 extract(){ case "$1" in
-  VERIFY.md) extract_verify ;;
-  *)         extract_tables "$1" ;;
+  VERIFY.md)    extract_verify ;;
+  MUTATIONS.md) extract_mutations ;;
+  *)            extract_tables "$1" ;;
 esac; }
 
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
