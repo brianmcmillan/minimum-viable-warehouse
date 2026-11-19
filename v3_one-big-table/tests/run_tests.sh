@@ -6,7 +6,8 @@
 # in the same order and with the same labels (tests/core_spec.tsv at the
 # repo root). Each model supplies its own SQL; the nine question
 # answers live in tests/answers/Q<n>.sql. OBT keeps only the latest
-# state, so its history answers are queries over the archived log.
+# state; its history answers read TEMP views over the archived log
+# (schema/03_log_views.sql), which the answer files load themselves.
 # PART 2, MODEL: the pattern's honest edges -- raw codes translated
 # per-consumer, history only by diffing the log, and an archive that
 # stores everything again on every FULL delivery.
@@ -100,12 +101,29 @@ summary(){ local rc=0
 # ---- end of the shared block ------------------------------------------
 
 # An answer that reads the log: tests/answers/Q<n>.sql run with the
-# archive attached as `arch` (the files say so in their header).
+# archive attached as `arch`, from the repo root -- the history answers
+# `.read v3_one-big-table/schema/03_log_views.sql`, a path from there,
+# as `make compare` runs them.
 aans(){ local out rc=0
-        out="$("$SQLITE" -cmd "ATTACH DATABASE '$ARCHIVE_DB' AS arch" "$DB" < "$HERE/answers/Q$1.sql" 2>&1)" || rc=$?
+        out="$(cd "$PROJ/.." && "$SQLITE" -cmd "ATTACH DATABASE '$ARCHIVE_DB' AS arch" "$DB" < "$HERE/answers/Q$1.sql" 2>&1)" || rc=$?
         [ "$rc" -eq 0 ] || { printf "  \033[31mSQL ERROR\033[0m Q%s: %s\n" "$1" "$out" >&2
                              printf '<SQL-ERROR>'; return 0; }
         printf '%s' "$out"; }
+
+# A query against the history views: archive attached, views loaded.
+lq(){ local out rc=0
+      out="$("$SQLITE" -cmd "ATTACH DATABASE '$ARCHIVE_DB' AS arch" -cmd ".read '$PROJ/schema/03_log_views.sql'" "$DB" "$1" 2>&1)" || rc=$?
+      [ "$rc" -eq 0 ] || { printf "  \033[31mSQL ERROR\033[0m %s\n    %s\n" "$out" "$1" >&2
+                           printf '<SQL-ERROR>'; return 0; }
+      printf '%s' "$out"; }
+# The four views, one line each (versions as value@valid_from..valid_to).
+v_cver(){ lq "SELECT group_concat(customer_id||'='||email_addr||'@'||valid_from||'..'||COALESCE(valid_to,'open'),' ')
+              FROM (SELECT * FROM v_customer_version ORDER BY customer_id, valid_from)"; }
+v_pver(){ lq "SELECT group_concat(sku||'='||price||'@'||valid_from||'..'||COALESCE(valid_to,'open'),' ')
+              FROM (SELECT * FROM v_product_version ORDER BY sku, valid_from)"; }
+v_gone(){ lq "SELECT group_concat(customer_id||'@'||COALESCE(went_at,'?'),',') FROM (SELECT * FROM v_customer_gone ORDER BY customer_id)"; }
+v_owner(){ lq "SELECT group_concat(order_ref||'='||customer_ref||'/'||full_name||'/'||email_addr,',')
+               FROM (SELECT * FROM v_order_first_owner ORDER BY order_ref)"; }
 
 snap(){ q "
   SELECT 'c', customer_ref, COALESCE(full_name,'')||'/'||COALESCE(email,'') FROM obt_customer
@@ -222,6 +240,14 @@ core C08.1 "$(q "SELECT COUNT(*) FROM obt_customer WHERE customer_ref='C003'")" 
 core C08.2 "$(ans 1)" "C001"
 core C08.3 "$(aans 2)" "C002,C003"
 core C08.4 "$(aans 3)" "alice@example.com>alice@newmail.com"
+D5_CVER="C001=alice@example.com@2026-02-05 08:00:00..2026-03-02 08:00:00 C001=alice@newmail.com@2026-03-02 08:00:00..open C002=bob@example.com@2026-02-05 08:00:00..open C003=new@x.com@2026-04-02 08:00:00..open"
+D5_PVER="SKU-1=9.99@2026-02-05 08:00:00..2026-03-02 09:00:00 SKU-1=8.99@2026-03-02 09:00:00..open SKU-2=19.5@2026-02-05 08:00:00..open SKU-3=5.0@2026-02-05 08:00:00..open"
+D5_GONE="C002@2026-03-16 08:00:00,C003@2026-12-31 08:00:00"
+D5_OWNER="O-100=C001/Alice Smith/alice@example.com,O-101=C002/Bob Jones/bob@example.com"
+later M08 "after D5, v_customer_version: one row per change; C001's unchanged FULL restatement and C003's two D4 rows add none" "$(v_cver)" "$D5_CVER"
+later M08 "after D5, v_product_version: SKU-2 restated unchanged by D2 is one version" "$(v_pver)" "$D5_PVER"
+later M08 "after D5, v_customer_gone: who the latest table no longer holds, and when it went" "$(v_gone)" "$D5_GONE"
+later M08 "after D5, v_order_first_owner: each order's first owner as at that delivery (O-100: C001's first email)" "$(v_owner)" "$D5_OWNER"
 
 core_section C09
 # The derived tables must not change -- but the ARCHIVE GROWS: OBT has no
@@ -260,6 +286,10 @@ core C13.1 "$(ans 8)" "Alice Smith"
 core C13.2 "$(aq "SELECT COUNT(*) FROM arch.hist_order WHERE order_ref='O-101' AND customer_ref='C002'")" "1"
 later M05 "repoint: O-101 now belongs to C001, effortlessly" \
    "$(q "SELECT customer_ref FROM obt_orders WHERE order_ref='O-101'")" "C001"
+later M08 "after the re-point, v_order_first_owner: O-101's first owner is still C002" "$(v_owner)" "$D5_OWNER"
+later M08 "after the re-point, v_customer_version: D5R's re-sent snapshot added no version" "$(v_cver)" "$D5_CVER"
+later M08 "after the re-point, v_product_version: unchanged" "$(v_pver)" "$D5_PVER"
+later M08 "after the re-point, v_customer_gone: unchanged (D5R's later FULL does not move C003's went_at)" "$(v_gone)" "$D5_GONE"
 
 core_section C14
 core C14.1 "$(q "SELECT group_concat(customer_ref||'('||COALESCE(email,'null')||')',' ')
@@ -376,7 +406,11 @@ own "tiebreak: still the last row after rebuild (one refresh over the log)" \
    "$(q "SELECT email FROM v_customer WHERE customer_ref='C004'")" "last@x.com"
 own "restore: still live after rebuild" \
    "$(q "SELECT COUNT(*) FROM v_customer WHERE customer_ref='C002'")" "1"
+own "restore: v_customer_gone no longer lists C002 once the latest table holds it again" "$(v_gone)" ""
 export DB="$SAVE_DB" ARCHIVE_DB="$SAVE_ARCHIVE_DB"
+
+own_section M08 "History as TEMP views over the log"
+replay M08
 
 rm -f "$DB" "$ARCHIVE_DB"
 summary

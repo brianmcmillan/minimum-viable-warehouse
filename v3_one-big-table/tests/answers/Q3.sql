@@ -1,8 +1,5 @@
 -- Q3. What has C001's email been, oldest first?  Expected: alice@example.com>alice@newmail.com
--- RAW: the latest tables keep current values only; email history is in the log alone
--- Needs the archive attached as `arch`. History is a query over the log:
--- keep each value that differs from the one before it (LAG).
+-- v_customer_version: C001's versions, each a change from the one before.
+.read v3_one-big-table/schema/03_log_views.sql
 SELECT group_concat(email_addr, '>') FROM (
-  SELECT email_addr, LAG(email_addr) OVER (ORDER BY load_seq, extract_dt, seq_nbr) AS prev
-  FROM arch.hist_customer WHERE customer_id = 'C001' AND op = 'UPSERT')
-WHERE prev IS NULL OR email_addr IS NOT prev;
+  SELECT email_addr FROM v_customer_version WHERE customer_id = 'C001' ORDER BY valid_from);

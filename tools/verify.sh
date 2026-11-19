@@ -42,7 +42,7 @@ published() {
     v3_hook:run_tests)                echo 134 ;;
     v3_inmon-3nf:run_tests)           echo 99  ;;
     v3_metrics-mart:run_tests)        echo 261 ;;
-    v3_one-big-table:run_tests)       echo 91  ;;
+    v3_one-big-table:run_tests)       echo 100 ;;
     v3_unified-star-schema:run_tests) echo 145 ;;
     *) echo "" ;;
   esac

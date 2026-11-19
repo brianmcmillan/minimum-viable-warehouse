@@ -46,12 +46,12 @@ because it is the result.
 | | inmon | kimball | vault | focal | anchor | hook | uss | activity | metrics | obt |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Q1 | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE |
-| Q2 | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | RAW ¹ | NATIVE | NATIVE | RAW ¹ |
-| Q3 | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | RAW ¹ | NATIVE | NATIVE | RAW ¹ |
-| Q4 | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | RAW ¹ | NATIVE | NATIVE | RAW ¹ |
+| Q2 | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | RAW ¹ | NATIVE | NATIVE | NATIVE |
+| Q3 | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | RAW ¹ | NATIVE | NATIVE | NATIVE |
+| Q4 | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | RAW ¹ | NATIVE | NATIVE | NATIVE |
 | Q5 | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE |
 | Q6 | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE |
-| Q7 | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | RAW ¹ | NATIVE | NATIVE | RAW ¹ |
+| Q7 | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | RAW ¹ | NATIVE | NATIVE | NATIVE |
 | Q8 | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE |
 | Q9 | FINDING ¹ | NATIVE | NATIVE | FINDING ¹ | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE |
 
@@ -65,10 +65,6 @@ because it is the result.
 | uss | Q3 | RAW | the storage layer under the presentation model | presentation model: the star holds current values only; email history lives in the insert-only core (core_customer) | n/a |
 | uss | Q4 | RAW | the storage layer under the presentation model | presentation model: the star holds current values only; price history lives in the insert-only core (core_product) | n/a |
 | uss | Q7 | RAW | the storage layer under the presentation model | presentation model: the bridge records the current owner; the purchase-time owner lives in the insert-only core (v_order_as_recorded over core_order and core_customer) | n/a |
-| obt | Q2 | RAW | the raw archive | the latest tables hold only live customers; who was deleted is in the log alone | n/a |
-| obt | Q3 | RAW | the raw archive | the latest tables keep current values only; email history is in the log alone | n/a |
-| obt | Q4 | RAW | the raw archive | the latest tables keep current values only; price history is in the log alone | n/a |
-| obt | Q7 | RAW | the raw archive | the latest tables keep the current owner only; the purchase-time owner is in the log alone | n/a |
 
 ## Against the C4b decisions
 
@@ -77,10 +73,7 @@ end of C4b. A cell with no decision row should be NATIVE.
 
 | Model | Question | Now | Decided | Reason |
 | --- | --- | --- | --- | --- |
-| obt | Q2 | RAW | NATIVE | views over the log (run 5) |
-| obt | Q3 | RAW | NATIVE | views over the log (run 5) |
-| obt | Q4 | RAW | NATIVE | views over the log (run 5) |
-| obt | Q7 | RAW | NATIVE | views over the log (run 5) |
+| — | — | — | — | every cell is at its decided label |
 
 ## End state
 

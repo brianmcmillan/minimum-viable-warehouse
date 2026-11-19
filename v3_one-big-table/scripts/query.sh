@@ -16,18 +16,24 @@ echo "  THE ONE BIG TABLE: order-line grain, everything denormalized"
 echo "======================================================================"
 show "obt_order_wide" "SELECT * FROM obt_order_wide ORDER BY order_ref, sku;"
 
+# History reads TEMP views over the log: attach the archive, load the
+# view file, query. Nothing is copied into build/obt.db.
+hshow() { echo; echo "### $1"; shift
+  "$SQLITE" -cmd "ATTACH DATABASE '$(sql_quote "$ARCHIVE_DB")' AS arch" \
+            -cmd ".read '$ROOT_DIR/schema/03_log_views.sql'" -header -column "$DB" "$1"; }
+
 echo; echo "======================================================================"
-echo "  HISTORY = DIFFING THE LOG. Possible, but every question is a query"
-echo "  like this one (email changes for every customer, via LAG):"
+echo "  HISTORY = TEMP VIEWS OVER THE LOG (schema/03_log_views.sql):"
+echo "  the LAG diff is written once, in the views, not by every consumer"
 echo "======================================================================"
-ashow "Email change history, computed on demand" \
- "SELECT customer_id, email_addr, batch_ts FROM (
-    SELECT customer_id, email_addr, batch_ts,
-           LAG(email_addr) OVER (PARTITION BY customer_id
-                                 ORDER BY load_seq, extract_dt, seq_nbr) AS prev
-    FROM arch.hist_customer WHERE op='UPSERT')
-  WHERE prev IS NULL OR email_addr IS NOT prev
-  ORDER BY customer_id, batch_ts;"
+hshow "Customer versions (a row only where a value changed)" \
+ "SELECT customer_id, full_name, email_addr, valid_from, valid_to
+  FROM v_customer_version ORDER BY customer_id, valid_from;"
+hshow "Customers the latest table no longer holds" \
+ "SELECT customer_id, went_at FROM v_customer_gone ORDER BY customer_id;"
+hshow "Each order's first owner, as at that delivery" \
+ "SELECT order_ref, customer_ref, full_name, email_addr, first_seen
+  FROM v_order_first_owner ORDER BY order_ref;"
 
 echo; echo "======================================================================"
 echo "  STORAGE, STATED PLAINLY: no NOCHANGE suppression -- FULL feeds"

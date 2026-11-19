@@ -13,8 +13,8 @@ labels, prefixed with the MODEL section they print under.
 
 | Item | Value |
 | --- | --- |
-| Run at (UTC) | 2026-11-19 16:53:57 |
-| Commit | 92c31e5 on plan/C4b |
+| Run at (UTC) | 2026-11-19 17:37:42 |
+| Commit | 0523125 on plan/C4b |
 | sqlite3 | 3.54.0 |
 | Overall | every mutation killed or a known survivor |
 
@@ -30,7 +30,7 @@ labels, prefixed with the MODEL section they print under.
 | `v3_hook` | 26 | 18 | 8 | 25 | 1 | 0 |
 | `v3_inmon-3nf` | 23 | 18 | 5 | 23 | 0 | 0 |
 | `v3_metrics-mart` | 41 | 21 | 20 | 41 | 0 | 0 |
-| `v3_one-big-table` | 20 | 17 | 3 | 20 | 0 | 0 |
+| `v3_one-big-table` | 22 | 17 | 5 | 22 | 0 | 0 |
 | `v3_unified-star-schema` | 26 | 18 | 8 | 26 | 0 | 0 |
 
 ## `v3_activity-schema`
@@ -306,15 +306,17 @@ Survivors:
 
 | Mutation | Tag | What it breaks | Result | Assertions broken |
 | --- | --- | --- | --- | --- |
-| `refresh-skipped` | model | a delivery is appended to the log but the latest tables are never refreshed | KILLED | C02.1; C02.2; C02.3; C03.1; C03.2; C04.1; C05.3; C06.1; C06.2; C08.2; C08.3; C11.1; C13.1; M02 baseline: C001 email v1; M02 INCREMENTAL: C002 email unchanged; M03 raw code stored, translated per-consumer in the view; M05 repoint: O-101 now belongs to C001, effortlessly; M07 wide table: O-101's line stays after C002's delete, with no customer name; M07 restore: C002 re-sent with its pre-delete values is live again; M07 restore: the wide table names C002 on O-101 again; M07 tiebreak: equal extract_dt -> the last row in the file wins |
+| `refresh-skipped` | model | a delivery is appended to the log but the latest tables are never refreshed | KILLED | C02.1; C02.2; C02.3; C03.1; C03.2; C04.1; C05.3; C06.1; C06.2; C08.2; C08.3; C11.1; C13.1; M02 baseline: C001 email v1; M02 INCREMENTAL: C002 email unchanged; M03 raw code stored, translated per-consumer in the view; M05 repoint: O-101 now belongs to C001, effortlessly; M07 wide table: O-101's line stays after C002's delete, with no customer name; M07 restore: C002 re-sent with its pre-delete values is live again; M07 restore: the wide table names C002 on O-101 again; M07 tiebreak: equal extract_dt -> the last row in the file wins; M08 after D5, v_customer_gone: who the latest table no longer holds, and when it went |
 | `wide-drops-orphans` | model | the One Big Table inner-joins customers, so an order whose customer is deleted drops out | KILLED | M07 wide table: O-101's line stays after C002's delete, with no customer name |
 | `consumer-decode-lost` | model | v_order's CASE no longer translates 'P' | KILLED | C02.2; C12.1; M03 raw code stored, translated per-consumer in the view |
-| `full-guard-dropped` | shared | any later delivery of a feed, not only a FULL one, counts as absence | KILLED | C03.2; C03.3; M02 INCREMENTAL: C002 email unchanged; M07 restore: still live after rebuild |
-| `full-absence-ignored` | shared | a later FULL delivery that leaves a key out never makes it deleted | KILLED | C04.2; C08.1; C08.2; C08.3; C14.1 |
+| `history-lag-dedup-dropped` | model | the version views keep every applied row, so a value restated unchanged becomes a new customer or product version | KILLED | C08.4; M08 after D5, v_customer_version: one row per change;  C001's unchanged FULL restatement and C003's two D4 rows add none; M08 after D5, v_product_version: SKU-2 restated unchanged by D2 is one version; M08 after the re-point, v_customer_version: D5R's re-sent snapshot added no version; M08 after the re-point, v_product_version: unchanged |
+| `gone-filter-dropped` | model | v_customer_gone drops the "no longer in the latest table" filter, so every customer the log has seen is listed as gone | KILLED | C08.3; M07 restore: v_customer_gone no longer lists C002 once the latest table holds it again; M08 after D5, v_customer_gone: who the latest table no longer holds, and when it went; M08 after the re-point, v_customer_gone: unchanged (D5R's later FULL does not move C003's went_at) |
+| `full-guard-dropped` | shared | any later delivery of a feed, not only a FULL one, counts as absence | KILLED | C03.2; C03.3; M02 INCREMENTAL: C002 email unchanged; M07 restore: still live after rebuild; M07 restore: v_customer_gone no longer lists C002 once the latest table holds it again |
+| `full-absence-ignored` | shared | a later FULL delivery that leaves a key out never makes it deleted | KILLED | C04.2; C08.1; C08.2; C08.3; C14.1; M08 after D5, v_customer_gone: who the latest table no longer holds, and when it went; M08 after the re-point, v_customer_gone: unchanged (D5R's later FULL does not move C003's went_at) |
 | `tombstone-ignored` | shared | a key whose latest mention is a tombstone still counts as alive | KILLED | C05.2; C05.3; M07 wide table: O-101's line stays after C002's delete, with no customer name |
-| `restore-ignored` | shared | a customer tombstoned once stays deleted even when a later delivery upserts it | KILLED | M07 restore: C002 re-sent with its pre-delete values is live again; M07 restore: the wide table names C002 on O-101 again; M07 restore: still live after rebuild |
-| `archive-update-allowed` | shared | the archive accepts UPDATE (hist_customer trigger dropped) | KILLED | C10.2; C11.1; C13.1 |
-| `archive-delete-allowed` | shared | the archive accepts DELETE (hist_order trigger dropped) | KILLED | C10.3; C11.1; C12.1; C13.2 |
+| `restore-ignored` | shared | a customer tombstoned once stays deleted even when a later delivery upserts it | KILLED | M07 restore: C002 re-sent with its pre-delete values is live again; M07 restore: the wide table names C002 on O-101 again; M07 restore: still live after rebuild; M07 restore: v_customer_gone no longer lists C002 once the latest table holds it again |
+| `archive-update-allowed` | shared | the archive accepts UPDATE (hist_customer trigger dropped) | KILLED | C10.2; C11.1; C13.1; M08 after the re-point, v_order_first_owner: O-101's first owner is still C002 |
+| `archive-delete-allowed` | shared | the archive accepts DELETE (hist_order trigger dropped) | KILLED | C10.3; C11.1; C12.1; C13.2; M08 after the re-point, v_order_first_owner: O-101's first owner is still C002 |
 | `archive-deduped` | shared | the archive keeps only the last row per customer, not the delivery verbatim | KILLED | ABORT load_feed.sh exited 1 at delivery D4 (d4_cust_recency.sql) |
 | `complete-never-skips` | shared | a COMPLETE delivery re-sent is applied again instead of skipped | KILLED | C07.1; M06 reuse: COMPLETE X1 re-sent with its original content is skipped |
 | `started-skips` | shared | a crashed (STARTED) delivery re-sent is skipped instead of retried | KILLED | M06 reuse: STARTED X1 re-sent with its original content retries to COMPLETE; M06 reuse: STARTED X2 re-sent with its original content retries to COMPLETE |
@@ -325,7 +327,7 @@ Survivors:
 | `dedup-recency-reversed` | shared | within one delivery, the OLDEST extract per key wins | KILLED | C06.2 |
 | `dedup-tiebreak-reversed` | shared | on equal load_seq and extract_dt, the FIRST row in the file wins | KILLED | M07 tiebreak: equal extract_dt -> the last row in the file wins; M07 tiebreak: still the last row after rebuild (one refresh over the log) |
 | `dedup-dropped` | shared | the latest-value pick passes every UPSERT mention through, duplicates included | KILLED | ABORT load_feed.sh exited 1 at delivery D1 (d1_cust_win_day60.sql) |
-| `log-order-reversed` | shared | the refresh reads the log oldest delivery first (OBT's replay order: its rebuild is one refresh) | KILLED | C03.1; C04.1; C04.3; C05.2; C05.3; C08.2; C08.3; C13.1; C14.1; M05 repoint: O-101 now belongs to C001, effortlessly; M07 wide table: O-101's line stays after C002's delete, with no customer name |
+| `log-order-reversed` | shared | the refresh reads the log oldest delivery first (OBT's replay order: its rebuild is one refresh) | KILLED | C03.1; C04.1; C04.3; C05.2; C05.3; C08.2; C08.3; C13.1; C14.1; M05 repoint: O-101 now belongs to C001, effortlessly; M07 wide table: O-101's line stays after C002's delete, with no customer name; M08 after D5, v_customer_gone: who the latest table no longer holds, and when it went; M08 after the re-point, v_customer_gone: unchanged (D5R's later FULL does not move C003's went_at) |
 
 ## `v3_unified-star-schema`
 
