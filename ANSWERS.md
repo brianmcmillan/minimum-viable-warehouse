@@ -24,8 +24,11 @@ because it is the result.
 - **ERROR**: an archive read without a `-- RAW:` header, a CANNOT with no
   finding decision in `compare/decisions.tsv`, or a failed query.
 
-| sqlite3 | 3.54.0 |
+| Item | Value |
 | --- | --- |
+| Commit | 9955735 on plan/C6 |
+| sqlite3 | 3.54.0 |
+| Tree changed by the run | no |
 
 ## Questions
 
