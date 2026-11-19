@@ -13,8 +13,8 @@ labels, prefixed with the MODEL section they print under.
 
 | Item | Value |
 | --- | --- |
-| Run at (UTC) | 2026-11-19 16:14:21 |
-| Commit | 0b237f6 on plan/C4b |
+| Run at (UTC) | 2026-11-19 16:53:57 |
+| Commit | 92c31e5 on plan/C4b |
 | sqlite3 | 3.54.0 |
 | Overall | every mutation killed or a known survivor |
 
@@ -24,7 +24,7 @@ labels, prefixed with the MODEL section they print under.
 | --- | --- | --- | --- | --- | --- | --- |
 | `v3_activity-schema` | 25 | 18 | 7 | 24 | 1 | 0 |
 | `v3_anchor` | 23 | 18 | 5 | 23 | 0 | 0 |
-| `v3_data-marts` | 24 | 18 | 6 | 24 | 0 | 0 |
+| `v3_data-marts` | 26 | 18 | 8 | 26 | 0 | 0 |
 | `v3_datavault` | 25 | 18 | 7 | 24 | 1 | 0 |
 | `v3_focal-point` | 24 | 17 | 7 | 23 | 1 | 0 |
 | `v3_hook` | 26 | 18 | 8 | 25 | 1 | 0 |
@@ -105,12 +105,14 @@ Survivors:
 | `restatement-guard-dropped` | model | every re-sent order is restated, changed or not (its key re-frozen to the current version) | KILLED | M08 frozen key: O-100 re-sent unchanged after C001's rename keeps its key; M08 frozen key: still at purchase after rebuild |
 | `frozen-key-thawed` | model | placed_by_at_purchase follows the customer's current version, not the frozen key | KILLED | M08 frozen key: O-100 re-sent unchanged after C001's rename keeps its key; M08 frozen key: still at purchase after rebuild |
 | `status-decode-lost` | model | facts never find their status in the decode dimension and get the -1 unknown member | KILLED | C02.2; C12.1; M03 decode dim: raw 'P' lives in archive, mart shows PENDING; M03   ...and rebuild resets it: schema seed is the source of truth; M08 frozen key: O-100 re-sent unchanged after C001's rename keeps its key; M08 frozen key: still at purchase after rebuild |
+| `owner-close-skipped` | model | load_facts.sh never closes the current dim_order_owner row, so a re-point keeps the first owner current and inserts no new version | KILLED | M09 repoint: O-101 has two ownership versions, C002 closed at the re-point, C001 current; M09 repoint: the closed version kept its key, owner and row_eff_ts (only the close was written) |
+| `owner-updated-in-place` | model | a re-point overwrites the owner on the current dim_order_owner row instead of closing it and inserting a new one, so the earlier owner is lost | KILLED | M09 repoint: O-101 has two ownership versions, C002 closed at the re-point, C001 current; M09 repoint: the closed version kept its key, owner and row_eff_ts (only the close was written); M09 repoint: Q7 still answers the owner as at purchase from the star |
 | `full-guard-dropped` | shared | absence deletes in every delivery, not only a FULL one | KILLED | C03.2; C03.3; C08.4; M04 reconcile: C001 unchanged content -> NO new version (still 2); M08 tiebreak: still the last row after rebuild (seq_nbr order restored); M08 restore: still live after rebuild |
 | `full-absence-ignored` | shared | a FULL delivery never deletes the keys it leaves out | KILLED | C04.2; C08.1; C08.2; C08.3; C14.1; M04 FULL: SKU-3 expired + deleted-marker version (2 rows); M04 FULL: SKU-3 current version flagged deleted |
 | `tombstone-ignored` | shared | an op='DELETE' row closes nothing | KILLED | C05.1; C05.2; C05.3; M08 restore: live, deleted marker, live again (3 versions, 1 current) |
 | `restore-ignored` | shared | a deleted key upserted again stays deleted | KILLED | M08 restore: C002 re-sent with its pre-delete values is live again; M08 restore: live, deleted marker, live again (3 versions, 1 current); M08 restore: still live after rebuild |
-| `archive-update-allowed` | shared | the archive accepts UPDATE (hist_customer trigger dropped) | KILLED | C10.2; C11.1; C13.1; M06 repoint: O-101 now keyed to C001's current version |
-| `archive-delete-allowed` | shared | the archive accepts DELETE (hist_order trigger dropped) | KILLED | C10.3; C11.1; C12.1; C13.2; M03   ...and rebuild resets it: schema seed is the source of truth; M06 repoint: fact row count unchanged (an UPDATE, not an insert); M06 repoint: prior pairing survives ONLY in the archive |
+| `archive-update-allowed` | shared | the archive accepts UPDATE (hist_customer trigger dropped) | KILLED | C10.2; C11.1; C13.1; M06 repoint: O-101 now keyed to C001's current version; M09 repoint: Q7 still answers the owner as at purchase from the star |
+| `archive-delete-allowed` | shared | the archive accepts DELETE (hist_order trigger dropped) | KILLED | C10.3; C11.1; C12.1; C13.2; M03   ...and rebuild resets it: schema seed is the source of truth; M06 repoint: fact row count unchanged (an UPDATE, not an insert); M06 repoint: the fact keeps no prior pairing;  the archive still has it; M09 repoint: O-101 has two ownership versions, C002 closed at the re-point, C001 current; M09 repoint: Q7 still answers the owner as at purchase from the star; M09 repoint: O-100 untouched (one current version) |
 | `archive-deduped` | shared | the archive keeps only the last row per customer, not the delivery verbatim | KILLED | ABORT load_feed.sh exited 1 at delivery D4 (d4_cust_recency.sql) |
 | `complete-never-skips` | shared | a COMPLETE delivery re-sent is applied again instead of skipped | KILLED | C07.1; M07 reuse: COMPLETE X1 re-sent with its original content is skipped |
 | `started-skips` | shared | a crashed (STARTED) delivery re-sent is skipped instead of retried | KILLED | M07 reuse: STARTED X1 re-sent with its original content retries to COMPLETE; M07 reuse: STARTED X2 re-sent with its original content retries to COMPLETE |
@@ -121,7 +123,7 @@ Survivors:
 | `dedup-recency-reversed` | shared | stage dedup keeps the OLDEST extract per key | KILLED | C06.2 |
 | `dedup-tiebreak-reversed` | shared | on equal extract_dt, the FIRST row in the file wins | KILLED | M08 tiebreak: equal extract_dt -> the last row in the file wins; M08 tiebreak: still the last row after rebuild (seq_nbr order restored) |
 | `dedup-dropped` | shared | stage L2 passes every row through, duplicates included | KILLED | C06.1; C06.2; C08.1; C08.3; M04 recency: one delivery -> one version; M08 tiebreak: equal extract_dt -> the last row in the file wins; M08 tiebreak: still the last row after rebuild (seq_nbr order restored) |
-| `replay-delivery-order-reversed` | shared | rebuild replays deliveries newest first | KILLED | C11.1; C14.1; M08 tiebreak: still the last row after rebuild (seq_nbr order restored); M08 frozen key: still at purchase after rebuild |
+| `replay-delivery-order-reversed` | shared | rebuild replays deliveries newest first | KILLED | C11.1; C14.1; M08 tiebreak: still the last row after rebuild (seq_nbr order restored); M08 frozen key: still at purchase after rebuild; M09 rebuild reproduces dim_order_owner row for row, owner_key included |
 | `replay-row-order-reversed` | shared | rebuild restores each delivery's rows in reverse file order | KILLED | M08 tiebreak: still the last row after rebuild (seq_nbr order restored) |
 
 ## `v3_datavault`

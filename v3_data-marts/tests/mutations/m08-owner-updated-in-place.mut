@@ -1,0 +1,5 @@
+name: owner-updated-in-place
+tag: model
+what: a re-point overwrites the owner on the current dim_order_owner row instead of closing it and inserting a new one, so the earlier owner is lost
+file: scripts/load_facts.sh
+sed: s/^    UPDATE dim_order_owner SET row_exp_ts='\$q_bts', is_current=0$/    UPDATE dim_order_owner SET customer_ref=(SELECT s.customer_bk FROM v_stg_order_l2 s WHERE s.order_bk=dim_order_owner.order_ref)/

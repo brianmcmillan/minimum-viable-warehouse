@@ -243,7 +243,7 @@ model doesn't force a difference.
 - **`make clean` never touches the durable layer.** Destroying raw
   history takes the explicit `clean-archive` target.
 - **Mutation-tested suites** (Metrics mart 261, Activity 153, Focal 218,
-  DV 324, USS 145, HOOK 134, Kimball 108, Anchor 136, Inmon 99, OBT 91
+  DV 324, USS 145, HOOK 134, Kimball 115, Anchor 136, Inmon 99, OBT 91
   assertions). I broke the FULL-absence guard, the replay ordering, the
   dedup tiebreaks, the restatement and idempotence guards, the tie guards,
   the OBT refresh, the activity loader's event-time and immutability

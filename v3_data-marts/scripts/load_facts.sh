@@ -12,6 +12,9 @@
 # the star does, and the archive is what keeps that honest (every prior
 # state is still in hist_order, and rebuild reapplies the history).
 #
+# The fact keeps no earlier owner; dim_order_owner (SCD2) does, written
+# here close-and-insert after the fact statements.
+#
 # Unknown-member seeds (-1) absorb codes and dates the dimensions have
 # never heard of instead of dropping or crashing the load.
 # Fact deletes are out of scope: no delivery tombstones an order, and a
@@ -73,6 +76,29 @@ if [ "$(feed_rows stg_order_l1)" -gt 0 ]; then
                         WHERE status_code=s.status),-1) <> f.status_key
            OR s.customer_bk <> (SELECT customer_ref FROM dim_customer
                                 WHERE customer_key = f.customer_key) ));"
+  # Ownership, SCD2 close-and-insert. Every staged order the fact now
+  # holds is an assertion of its owner. 1. CLOSE the current row of an
+  # order whose owner changed (the only UPDATE dim_order_owner takes).
+  sql_run "
+    UPDATE dim_order_owner SET row_exp_ts='$q_bts', is_current=0
+    WHERE is_current=1 AND order_ref IN (
+      SELECT s.order_bk FROM v_stg_order_l2 s
+      JOIN dim_order_owner o ON o.order_ref = s.order_bk AND o.is_current=1
+      WHERE s.op='UPSERT' AND s.customer_bk IS NOT NULL AND s.customer_bk <> ''
+        AND s.customer_bk <> o.customer_ref);"
+
+  # 2. INSERT a current row for every staged order in the fact that has
+  # none: a new order, or one whose owner was just closed.
+  sql_run "
+    INSERT INTO dim_order_owner(order_ref, customer_ref, row_eff_ts)
+    SELECT s.order_bk, s.customer_bk, s.ldts
+    FROM v_stg_order_l2 s
+    WHERE s.op='UPSERT' AND s.customer_bk IS NOT NULL AND s.customer_bk <> ''
+      AND EXISTS (SELECT 1 FROM fact_orders f WHERE f.order_ref = s.order_bk)
+      AND NOT EXISTS (SELECT 1 FROM dim_order_owner o
+                      WHERE o.order_ref = s.order_bk AND o.is_current=1)
+    ORDER BY s.order_bk;"
+
   n="$(sql_scalar "SELECT COUNT(*) FROM fact_orders;")"
   printf "    %-16s : %s row(s) total\n" "fact_orders" "$n"
 fi

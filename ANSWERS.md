@@ -51,7 +51,7 @@ because it is the result.
 | Q4 | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | RAW ¹ | NATIVE | NATIVE | RAW ¹ |
 | Q5 | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE |
 | Q6 | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE |
-| Q7 | NATIVE | RAW ¹ | NATIVE | NATIVE | NATIVE | NATIVE | RAW ¹ | NATIVE | NATIVE | RAW ¹ |
+| Q7 | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | RAW ¹ | NATIVE | NATIVE | RAW ¹ |
 | Q8 | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE |
 | Q9 | FINDING ¹ | NATIVE | NATIVE | FINDING ¹ | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE | NATIVE |
 
@@ -60,7 +60,6 @@ because it is the result.
 | Model | Question | Label | What answers | Why | Rebuild from the archive answers it |
 | --- | --- | --- | --- | --- | --- |
 | inmon | Q9 | FINDING | nothing without a reload | conformed at ingest: stored rows keep PENDING until a rebuild | yes |
-| kimball | Q7 | RAW | the raw archive | the re-point restates the fact in place and re-freezes its customer key; needs SCD2 history on the order-customer pairing | n/a |
 | focal | Q9 | FINDING | nothing without a reload | applied at ingest (meta_value_map): stored rows keep PENDING until a rebuild | yes |
 | uss | Q2 | RAW | the storage layer under the presentation model | presentation model: the star holds live customers only; deletes live in the insert-only core (v_latest__customer) | n/a |
 | uss | Q3 | RAW | the storage layer under the presentation model | presentation model: the star holds current values only; email history lives in the insert-only core (core_customer) | n/a |
@@ -78,7 +77,6 @@ end of C4b. A cell with no decision row should be NATIVE.
 
 | Model | Question | Now | Decided | Reason |
 | --- | --- | --- | --- | --- |
-| kimball | Q7 | RAW | NATIVE | SCD2 order ownership (run 4) |
 | obt | Q2 | RAW | NATIVE | views over the log (run 5) |
 | obt | Q3 | RAW | NATIVE | views over the log (run 5) |
 | obt | Q4 | RAW | NATIVE | views over the log (run 5) |

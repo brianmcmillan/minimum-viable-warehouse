@@ -71,6 +71,17 @@ SELECT customer_key, customer_ref, customer_name, email,
        row_eff_ts, row_exp_ts, is_current, is_deleted
 FROM dim_customer ORDER BY customer_ref, row_eff_ts;
 
+-- Ownership timeline: every owner of every order, with its validity
+-- window, named by the customer version current when the row was
+-- written (the same "as recorded" reading as placed_by_at_purchase).
+CREATE VIEW v_order_owner_history AS
+SELECT o.owner_key, o.order_ref, o.customer_ref,
+       (SELECT c.customer_name FROM dim_customer c
+         WHERE c.customer_ref = o.customer_ref
+           AND c.row_eff_ts <= o.row_eff_ts AND o.row_eff_ts < c.row_exp_ts) AS owner_name,
+       o.row_eff_ts, o.row_exp_ts, o.is_current
+FROM dim_order_owner o ORDER BY o.order_ref, o.row_eff_ts;
+
 -- The star, joined: one line per order line with all dimensions decoded.
 CREATE VIEW v_star_order_lines AS
 SELECT l.order_ref, d.full_date AS placed_date, p.product_name, p.price,
