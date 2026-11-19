@@ -1,0 +1,49 @@
+# make all on every push and pull request: verify, mutate and compare,
+# then fail if any result differs from the committed VERIFY.md,
+# MUTATIONS.md or ANSWERS.md. Runs on the runner's stock sqlite3 and
+# stock bash: on macOS that is /usr/bin/sqlite3 and /bin/bash (3.2), put
+# ahead of anything Homebrew installed.
+name: ci
+on:
+  push:
+  pull_request:
+
+jobs:
+  all:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use the stock sqlite3 and bash
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then
+            echo "/bin"     >> "$GITHUB_PATH"
+            echo "/usr/bin" >> "$GITHUB_PATH"
+          else
+            command -v sqlite3 >/dev/null || { sudo apt-get update -q && sudo apt-get install -y -q sqlite3; }
+          fi
+
+      - name: Tool versions
+        run: |
+          echo "bash:    $(command -v bash) $(bash -c 'echo $BASH_VERSION')"
+          echo "sqlite3: $(command -v sqlite3) $(sqlite3 --version)"
+          echo "make:    $(command -v make) $(make --version | head -1)"
+
+      - name: make all
+        run: JOBS=4 make all
+
+      - name: Upload the reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: results-${{ matrix.os }}
+          path: |
+            VERIFY.md
+            MUTATIONS.md
+            ANSWERS.md
+          if-no-files-found: warn
