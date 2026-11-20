@@ -26,7 +26,6 @@ because it is the result.
 
 | Item | Value |
 | --- | --- |
-| Commit | 9955735 on plan/C6 |
 | sqlite3 | 3.54.0 |
 | Tree changed by the run | no |
 
