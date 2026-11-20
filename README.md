@@ -375,13 +375,14 @@ model doesn't force a difference.
   breakage and writes [`MUTATIONS.md`](MUTATIONS.md). A green suite you
   haven't broken is a hypothesis.
 - **One command, checked on every push.** `make all` runs `make verify`,
-  `make mutate` and `make compare`, then fails if any result in
-  [`VERIFY.md`](VERIFY.md), [`MUTATIONS.md`](MUTATIONS.md) or
-  [`ANSWERS.md`](ANSWERS.md) differs from the committed copy
+  `make mutate`, `make compare` and `make manifest`, then fails if any
+  result in [`VERIFY.md`](VERIFY.md), [`MUTATIONS.md`](MUTATIONS.md),
+  [`ANSWERS.md`](ANSWERS.md) or [`MANIFEST.md`](MANIFEST.md) (every file
+  in the repo) differs from the committed copy
   (`tools/check_results.sh` compares results, never run times, commits or
   tool versions). CI runs it on Ubuntu and macOS with the stock `bash`;
   macOS uses its stock `sqlite3`, Ubuntu sqlite3 3.51.0 from sqlite.org
-  (its own is older than 3.47). The three reports are kept as build
+  (its own is older than 3.47). The four reports are kept as build
   artifacts.
 - **One shared core in every suite.** Each suite runs the same 36 core
   assertions first, in fourteen sections with identical labels

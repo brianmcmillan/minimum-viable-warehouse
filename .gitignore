@@ -6,5 +6,6 @@ v3_*/build/
 v3_*/archive/
 .claude/
 verify-logs/
+__pycache__/
 # private essays, copied from ../blog/drafts; kept locally, never committed
 /docs/
