@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # =====================================================================
-# Compare the RESULTS in VERIFY.md, MUTATIONS.md and ANSWERS.md with the
-# committed copies (git HEAD). Results only, never the environment.
+# Compare the RESULTS in VERIFY.md, MUTATIONS.md, ANSWERS.md and
+# MANIFEST.md with the committed copies (git HEAD). Results only, never
+# the environment.
 #
 #   VERIFY.md     the Results table, columns Directory, Suite, Passed,
 #                 Failed, Gaps, Demo exit, Test exit and Published. The
@@ -18,6 +19,9 @@
 #   ANSWERS.md    every table except the "Item | Value" header table
 #                 (commit, sqlite3 version, tree changed; before C6 a
 #                 one-row "sqlite3" table), and the End state block.
+#   MANIFEST.md   the file tree in its fenced block, whole: a file added,
+#                 removed or renamed without `make manifest` and a
+#                 commit shows up here.
 #
 # Each compared row is printed as "<file> | <section> | <row>". On a
 # mismatch the differing rows are printed, committed copy first, and the
@@ -84,12 +88,13 @@ extract_mutations(){ awk '
 extract(){ case "$1" in
   VERIFY.md)    extract_verify ;;
   MUTATIONS.md) extract_mutations ;;
+  MANIFEST.md)  awk '/^```/ { f = !f; next } f { print "MANIFEST.md | tree | " $0 }' ;;
   *)            extract_tables "$1" ;;
 esac; }
 
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
 rc=0
-for f in VERIFY.md MUTATIONS.md ANSWERS.md; do
+for f in VERIFY.md MUTATIONS.md ANSWERS.md MANIFEST.md; do
   [ -f "$f" ] || { echo "check_results: $f is missing (run make all)" >&2; rc=2; continue; }
   git show "HEAD:$f" > "$WORK/committed" 2>/dev/null \
     || { echo "check_results: $f is not committed" >&2; rc=2; continue; }

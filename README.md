@@ -31,7 +31,10 @@ server. The sqlite3 that ships with macOS is enough.
 
 The ER diagrams in [`er-diagrams/`](er-diagrams/) are an optional extra
 outside the ten warehouses. They are built with Python, the Mermaid CLI
-and pypdf; no warehouse, suite or `make` target needs them.
+and pypdf; no warehouse, suite or `make` target needs them. The flow
+diagrams in [`flow-diagrams/`](flow-diagrams/) show how a delivery
+becomes a warehouse and how the suites prove it; their PDFs need only
+the Mermaid CLI.
 
 ```bash
 cd v3_inmon-3nf           && make demo && make test   # Inmon 3NF (control group)
@@ -375,13 +378,14 @@ model doesn't force a difference.
   breakage and writes [`MUTATIONS.md`](MUTATIONS.md). A green suite you
   haven't broken is a hypothesis.
 - **One command, checked on every push.** `make all` runs `make verify`,
-  `make mutate` and `make compare`, then fails if any result in
-  [`VERIFY.md`](VERIFY.md), [`MUTATIONS.md`](MUTATIONS.md) or
-  [`ANSWERS.md`](ANSWERS.md) differs from the committed copy
+  `make mutate`, `make compare` and `make manifest`, then fails if any
+  result in [`VERIFY.md`](VERIFY.md), [`MUTATIONS.md`](MUTATIONS.md),
+  [`ANSWERS.md`](ANSWERS.md) or [`MANIFEST.md`](MANIFEST.md) (every file
+  in the repo) differs from the committed copy
   (`tools/check_results.sh` compares results, never run times, commits or
   tool versions). CI runs it on Ubuntu and macOS with the stock `bash`;
   macOS uses its stock `sqlite3`, Ubuntu sqlite3 3.51.0 from sqlite.org
-  (its own is older than 3.47). The three reports are kept as build
+  (its own is older than 3.47). The four reports are kept as build
   artifacts.
 - **One shared core in every suite.** Each suite runs the same 36 core
   assertions first, in fourteen sections with identical labels
@@ -504,20 +508,3 @@ standalone README: the design, the deviations, and a plain accounting of
 what that model gives up, plus a design-notes companion that draws the
 cross-model comparison in full. Start with the model you already believe
 in, run its suite, then run its rival's.
-
-Five companion essays take the comparison past load mechanics:
-
-- [02-OPERATING-MODELS.md](docs/02-OPERATING-MODELS.md) maps the models onto
-  Ross's operating models.
-- [03-STUPIDITY-PARADOX.md](docs/03-STUPIDITY-PARADOX.md) reads them through
-  Alvesson and Spicer's *The Stupidity Paradox*.
-- [04-MARKET-EXHAUSTION.md](docs/04-MARKET-EXHAUSTION.md) asks why ten
-  identical answers explain the market's fatigue with data.
-- [05-THE-AGENTIC-TURN.md](docs/05-THE-AGENTIC-TURN.md) looks at what agents
-  reprice, and what they don't.
-- [06-WHAT-WANTS-TO-EMERGE.md](docs/06-WHAT-WANTS-TO-EMERGE.md) goes looking
-  for a decision layer outside the data world.
-
-[07-FUTURE-FUNCTIONALITY.md](docs/07-FUTURE-FUNCTIONALITY.md) ranks the
-additions and tests I haven't built yet by how well they would separate
-the ten models.
