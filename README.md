@@ -378,8 +378,10 @@ model doesn't force a difference.
   breakage and writes [`MUTATIONS.md`](MUTATIONS.md). A green suite you
   haven't broken is a hypothesis.
 - **One command, checked on every push.** `make all` runs `make verify`,
-  `make mutate`, `make compare` and `make manifest`, then fails if any
-  result in [`VERIFY.md`](VERIFY.md), [`MUTATIONS.md`](MUTATIONS.md),
+  `make mutate`, `make compare` and `make manifest`, checks that the
+  level-2 [flow diagrams](flow-diagrams/) name every script a `make`
+  target runs (`make trace-check`), then fails if any result in
+  [`VERIFY.md`](VERIFY.md), [`MUTATIONS.md`](MUTATIONS.md),
   [`ANSWERS.md`](ANSWERS.md) or [`MANIFEST.md`](MANIFEST.md) (every file
   in the repo) differs from the committed copy
   (`tools/check_results.sh` compares results, never run times, commits or

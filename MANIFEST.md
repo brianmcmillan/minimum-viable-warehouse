@@ -53,10 +53,14 @@ as `.gitignore` leaves them out of git.
 ├── flow-diagrams
 │   ├── mermaid
 │   │   ├── build.md
-│   │   └── prove.md
+│   │   ├── model-pipeline.md
+│   │   ├── prove.md
+│   │   └── repo-targets.md
 │   ├── pdf
 │   │   ├── build.pdf
-│   │   └── prove.pdf
+│   │   ├── model-pipeline.pdf
+│   │   ├── prove.pdf
+│   │   └── repo-targets.pdf
 │   ├── README.md
 │   └── render.sh
 ├── tests
@@ -66,6 +70,7 @@ as `.gitignore` leaves them out of git.
 ├── tools
 │   ├── check_results.sh
 │   ├── manifest.sh
+│   ├── trace_flows.sh
 │   ├── tree_state.sh
 │   └── verify.sh
 ├── v3_activity-schema
@@ -799,5 +804,5 @@ as `.gitignore` leaves them out of git.
 ├── README.md
 └── VERIFY.md
 
-95 directories, 697 files
+95 directories, 702 files
 ```
