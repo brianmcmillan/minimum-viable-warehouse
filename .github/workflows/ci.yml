@@ -1,0 +1,62 @@
+# make all on every push and pull request: verify, mutate and compare,
+# then fail if any result differs from the committed VERIFY.md,
+# MUTATIONS.md or ANSWERS.md. Runs on stock bash, and on sqlite3 3.47 or
+# newer (Data Vault's triggers put an expression in RAISE, new in 3.47).
+# macOS: the stock /usr/bin/sqlite3 and /bin/bash (3.2), put ahead of
+# anything Homebrew installed. Ubuntu: the stock bash, and sqlite3 3.51.0
+# from sqlite.org (the distribution's is older than 3.47), the version
+# the stock macOS binary is.
+name: ci
+on:
+  push:
+  pull_request:
+
+jobs:
+  all:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use stock bash and sqlite3 3.47 or newer
+        env:
+          SQLITE_ZIP: https://www.sqlite.org/2025/sqlite-tools-linux-x64-3510000.zip
+          SQLITE_SHA256: be3f3d8b1b4832ea0d38943039e815585770cdc3ac1ff937647e3f22de1fa1a4
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then
+            echo "/bin"     >> "$GITHUB_PATH"
+            echo "/usr/bin" >> "$GITHUB_PATH"
+          else
+            mkdir -p "$RUNNER_TEMP/sqlite"
+            curl -fsSL -o "$RUNNER_TEMP/sqlite.zip" "$SQLITE_ZIP"
+            echo "$SQLITE_SHA256  $RUNNER_TEMP/sqlite.zip" | sha256sum -c -
+            unzip -q -o "$RUNNER_TEMP/sqlite.zip" sqlite3 -d "$RUNNER_TEMP/sqlite"
+            echo "$RUNNER_TEMP/sqlite" >> "$GITHUB_PATH"
+          fi
+
+      - name: Tool versions
+        run: |
+          echo "bash:    $(command -v bash) $(bash -c 'echo $BASH_VERSION')"
+          echo "sqlite3: $(command -v sqlite3) $(sqlite3 --version)"
+          echo "make:    $(command -v make) $(make --version | head -1)"
+          v="$(sqlite3 --version | awk '{print $1}')"
+          printf '%s\n' "3.47.0" "$v" | sort -t. -k1,1n -k2,2n -k3,3n -C \
+            || { echo "sqlite3 $v is older than 3.47.0, the minimum"; exit 1; }
+
+      - name: make all
+        run: JOBS=4 make all
+
+      - name: Upload the reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: results-${{ matrix.os }}
+          path: |
+            VERIFY.md
+            MUTATIONS.md
+            ANSWERS.md
+          if-no-files-found: warn

@@ -13,10 +13,11 @@ labels, prefixed with the MODEL section they print under.
 
 | Item | Value |
 | --- | --- |
-| Run at (UTC) | 2026-11-19 17:37:42 |
-| Commit | 0523125 on plan/C4b |
+| Run at (UTC) | 2026-11-19 23:12:17 |
+| Commit | 9955735 on plan/C6 |
 | sqlite3 | 3.54.0 |
 | Overall | every mutation killed or a known survivor |
+| Tree changed by the run | no |
 
 ## Summary
 

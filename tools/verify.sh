@@ -64,6 +64,12 @@ CORE_TOTALS="$LOGDIR/core_totals"
 : > "$ROWS"; : > "$FAILS"; : > "$NOTES"; : > "$CORE_TOTALS"
 overall=0
 
+# Paths the run changes: the tree is listed before the first model runs
+# and again after the last (tools/tree_state.sh). VERIFY.md and
+# verify-logs/ are left out: the run always writes them.
+. "$ROOT/tools/tree_state.sh"
+tree_state "$ROOT" VERIFY.md verify-logs/ > "$LOGDIR/tree.before"
+
 for dir in v3_*/; do
   d="${dir%/}"
   printf '%-24s' "$d"
@@ -146,7 +152,14 @@ case "$core_total" in
           echo "- core totals differ between suites (or none was printed): ${core_total:-none}" >> "$NOTES" ;;
 esac
 
-dirty="$(git status --porcelain 2>/dev/null | grep -vE '^\?\? (VERIFY\.md|verify-logs/)' | wc -l | tr -d ' ')"
+# Paths the run itself changed, listed under Notes.
+tree_state "$ROOT" VERIFY.md verify-logs/ > "$LOGDIR/tree.after"
+tree_changed "$LOGDIR/tree.before" "$LOGDIR/tree.after" > "$LOGDIR/tree.changed"
+dirty="$(wc -l < "$LOGDIR/tree.changed" | tr -d ' ')"
+if [ "$dirty" != 0 ]; then
+  echo "- the run changed $dirty path(s) in the work tree:" >> "$NOTES"
+  sed 's/^/      /' "$LOGDIR/tree.changed" >> "$NOTES"
+fi
 
 {
   echo "# Verification run"
@@ -162,7 +175,7 @@ dirty="$(git status --porcelain 2>/dev/null | grep -vE '^\?\? (VERIFY\.md|verify
   echo "| bash | ${BASH_VERSION} |"
   echo "| Overall | $([ "$overall" = 0 ] && echo 'all demos and suites passed' || echo '**failures, see below**') |"
   echo "| Core assertions per suite | ${core_total:-none} (tests/core_spec.tsv) |"
-  echo "| Tree changed by the run | $([ "$dirty" = 0 ] && echo no || echo "**yes, $dirty path(s)**") |"
+  echo "| Tree changed by the run | $(tree_cell "$dirty") |"
   echo
   echo "## Results"
   echo

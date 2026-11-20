@@ -1,5 +1,7 @@
 # One dataset, ten warehouses
 
+[![ci](https://github.com/brianmcmillan/minimum-viable-warehouse/actions/workflows/ci.yml/badge.svg)](https://github.com/brianmcmillan/minimum-viable-warehouse/actions/workflows/ci.yml)
+
 Data-modeling debates never end because nobody runs the experiment. So I
 ran it. This repo holds ten complete, working warehouses — an Inmon-style
 3NF EDW, a Kimball star, Data Vault 2.0, Focal Point, an Anchor Modeling
@@ -264,6 +266,12 @@ model doesn't force a difference.
   assertion; `make verify` reports core, model and gap counts per suite;
   [`ALIGNMENT.md`](ALIGNMENT.md) maps every earlier assertion to its new
   place.
+- **One command, checked on every push.** `make all` runs `make verify`,
+  `make mutate` and `make compare`, then fails if any result in VERIFY.md,
+  MUTATIONS.md or ANSWERS.md differs from the committed copy
+  (`tools/check_results.sh` compares results, never run times, commits or
+  tool versions). CI runs it on Ubuntu and macOS with the stock `sqlite3`
+  and `bash`, and keeps the three reports as build artifacts.
 - **Known gaps are executable, not just documented.** A core assertion a
   model cannot pass today runs as an amber GAP line with the reason, and
   flips the suite red the moment it passes. The last two are closed:
@@ -284,7 +292,8 @@ model doesn't force a difference.
 
 ## Requirements
 
-bash, make, sqlite3. Any recent version; the stock macOS binary works.
+bash, make, and sqlite3 3.47 or newer (Data Vault's triggers put an
+expression in RAISE, which 3.47 added); the stock macOS binary works.
 Each directory's `make help` lists its targets, and each has its own
 standalone README — the design, the deviations, and a plain accounting
 of what that model gives up — plus a design-notes companion that draws

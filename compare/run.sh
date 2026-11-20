@@ -52,6 +52,13 @@ WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
 
 "$SQLITE" --version >/dev/null 2>&1 || { echo "compare: sqlite3 is not on PATH" >&2; exit 2; }
 
+# Paths the run changes: the tree is listed now and again after the
+# README block is written (tools/tree_state.sh), leaving out ANSWERS.md,
+# which the run always writes. README.md counts only when its end-state
+# block comes out different.
+. "$ROOT/tools/tree_state.sh"
+tree_state "$ROOT" ANSWERS.md > "$WORK/tree.before"
+
 # models.tsv: dir, label, customer_view   questions.tsv: id, question, expected
 # decisions.tsv: model (label), question, baseline, decision, reason
 models(){ awk -F'\t' 'NR>1 && $1!="" {print $1}' "$HERE/models.tsv"; }
@@ -120,6 +127,25 @@ for d in $(models); do
 done > "$WORK/fixtures.tsv"
 n_sql="$(cut -f4 "$WORK/fixtures.tsv" | sort -u | grep -c .)"
 
+# ---- the README block -------------------------------------------------------
+overall=0
+if grep -qF "$BEGIN_MARK" "$README" && grep -qF "$END_MARK" "$README"; then
+  { echo '```'
+    for d in $(models); do printf '%-8s: %s\n' "$(mcol "$d" 2)" "$(cat "$WORK/$d.end")"; done
+    echo '```'; } > "$WORK/block"
+  awk -v b="$BEGIN_MARK" -v e="$END_MARK" -v f="$WORK/block" '
+    $0==b { print; while ((getline l < f) > 0) print l; skip=1; next }
+    $0==e { skip=0 }
+    !skip { print }' "$README" > "$WORK/readme" && cat "$WORK/readme" > "$README"
+  echo "Updated the end-state block in README.md."
+else
+  echo "compare: README.md has no compare:end-state markers; block not written" >&2; overall=1
+fi
+
+tree_state "$ROOT" ANSWERS.md > "$WORK/tree.after"
+tree_changed "$WORK/tree.before" "$WORK/tree.after" > "$WORK/tree.changed"
+tree_n="$(wc -l < "$WORK/tree.changed" | tr -d ' ')"
+
 # ---- the report -------------------------------------------------------------
 esc(){ printf '%s' "$1" | sed 's/|/\\|/g'; }
 row(){ local l; l="$(awk -F'\t' -v q="$2" '$1==q' "$WORK/$1.res")"
@@ -161,9 +187,18 @@ cell(){ local l label val reason
   echo "- **ERROR**: an archive read without a \`-- RAW:\` header, a CANNOT with no"
   echo "  finding decision in \`compare/decisions.tsv\`, or a failed query."
   echo
-  echo "| sqlite3 | $("$SQLITE" --version | awk '{print $1}') |"
+  echo "| Item | Value |"
   echo "| --- | --- |"
+  echo "| Commit | $(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown) on $(git -C "$ROOT" branch --show-current 2>/dev/null || echo unknown) |"
+  echo "| sqlite3 | $("$SQLITE" --version | awk '{print $1}') |"
+  echo "| Tree changed by the run | $(tree_cell "$tree_n") |"
   echo
+  if [ "$tree_n" != 0 ]; then
+    echo "Paths the run changed:"
+    echo
+    sed 's/^/- /' "$WORK/tree.changed"
+    echo
+  fi
   echo "## Questions"
   echo
   echo "| Id | Question | Expected |"
@@ -242,21 +277,6 @@ cell(){ local l label val reason
   echo "| --- | --- | --- | --- |"
   while IFS="$TAB" read -r d f b c; do echo "| $(mcol "$d" 2) | \`$f\` | $b | $c |"; done < "$WORK/fixtures.tsv"
 } > "$OUT"
-
-# ---- the README block -------------------------------------------------------
-overall=0
-if grep -qF "$BEGIN_MARK" "$README" && grep -qF "$END_MARK" "$README"; then
-  { echo '```'
-    for d in $(models); do printf '%-8s: %s\n' "$(mcol "$d" 2)" "$(cat "$WORK/$d.end")"; done
-    echo '```'; } > "$WORK/block"
-  awk -v b="$BEGIN_MARK" -v e="$END_MARK" -v f="$WORK/block" '
-    $0==b { print; while ((getline l < f) > 0) print l; skip=1; next }
-    $0==e { skip=0 }
-    !skip { print }' "$README" > "$WORK/readme" && cat "$WORK/readme" > "$README"
-  echo "Updated the end-state block in README.md."
-else
-  echo "compare: README.md has no compare:end-state markers; block not written" >&2; overall=1
-fi
 
 for d in $(models); do
   if awk -F'\t' '$2=="ERROR"' "$WORK/$d.res" | grep -q .; then
