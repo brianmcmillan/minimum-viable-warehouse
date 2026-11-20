@@ -1,9 +1,9 @@
 # Prove: how the repo checks its own claims
 
 Level 1, conceptual. What each suite asserts, the three repo-wide runs
-built on the suites, the manifest of every file, the reports they write, and how `make all` and CI
-turn those reports into a pass or a fail. See the
-[README](../README.md) for how to read it.
+built on the suites, the manifest of every file, the reports they
+write, and how `make all` and CI turn those reports into a pass or a
+fail. See the [README](../README.md) for how to read it.
 
 ```mermaid
 flowchart TD
@@ -21,7 +21,7 @@ flowchart TD
   AR[/"ANSWERS.md<br/>and the README end-state block"/]
   MA["make manifest<br/>list every file in the repo"]
   MN[/"MANIFEST.md<br/>the file tree"/]
-  AL{"make all<br/>runs all four, then compares their results<br/>with the committed copies"}
+  AL{"make all<br/>runs all four and checks the level-2 flow diagrams,<br/>then compares the results with the committed copies"}
   CI["CI on every push and pull request<br/>make all on macOS and on Ubuntu;<br/>the four reports kept as artifacts"]
 
   CO --> MO --> RS
