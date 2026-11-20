@@ -55,10 +55,10 @@ their groups). The other says **what was measured on them, and when**.
 
 ## Requirements
 
-| Tool      | Developed against       | Notes                                                    |
+| Tool      | Minimum                 | Notes                                                    |
 |-----------|-------------------------|----------------------------------------------------------|
-| `bash`    | 5.x (also runs on 3.2)  | the built-in macOS bash works                            |
-| `sqlite3` | 3.35+                   | window functions, `UPDATE ... FROM`, upsert              |
+| `bash`    | 3.2+                    | the built-in macOS bash works                            |
+| `sqlite3` | 3.47+                   | window functions, `UPDATE ... FROM`, upsert              |
 | `make`    | 3.81+ (GNU Make)        | the stock macOS binary works                             |
 
 Everything runs against local files in this directory; nothing reaches the

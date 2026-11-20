@@ -45,10 +45,10 @@ grains and sums?*
 
 ## Requirements
 
-| Tool      | Developed against       | Notes                                   |
+| Tool      | Minimum                 | Notes                                   |
 |-----------|-------------------------|-----------------------------------------|
-| `bash`    | 5.x (also runs on 3.2)  | the built-in macOS bash works           |
-| `sqlite3` | 3.54                    | any modern SQLite with window functions |
+| `bash`    | 3.2+                    | the built-in macOS bash works           |
+| `sqlite3` | 3.47+                   | any modern SQLite with window functions |
 | `make`    | 3.81+ (GNU Make)        | the stock macOS binary works            |
 
 Everything runs against local files in this directory; nothing reaches the

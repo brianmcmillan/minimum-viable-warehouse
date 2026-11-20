@@ -37,10 +37,10 @@ under 1,000 lines of shell and SQL:
 
 ## Requirements
 
-| Tool      | Version used in development | Notes                                    |
+| Tool      | Minimum                     | Notes                                    |
 |-----------|-----------------------------|------------------------------------------|
-| `bash`    | 5.x (also runs on 3.2)      | macOS's built-in bash works              |
-| `sqlite3` | 3.51                        | Any modern SQLite with window functions  |
+| `bash`    | 3.2+                        | macOS's built-in bash works              |
+| `sqlite3` | 3.47+                       | Any modern SQLite with window functions  |
 | `make`    | 3.81+                       | GNU Make                                 |
 
 That's the whole list. Everything runs against local files in the project directory.

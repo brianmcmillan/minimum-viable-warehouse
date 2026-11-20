@@ -42,10 +42,10 @@ of shell and SQL, following the DV101 Baseline conventions (source → stage L1 
 
 ## Requirements
 
-| Tool      | Version used in development | Notes                                    |
+| Tool      | Minimum                     | Notes                                    |
 |-----------|-----------------------------|------------------------------------------|
-| `bash`    | 5.x (also runs on 3.2)      | macOS's built-in bash works              |
-| `sqlite3` | 3.51                        | 3.47 or newer: triggers use RAISE with an expression |
+| `bash`    | 3.2+                        | macOS's built-in bash works              |
+| `sqlite3` | 3.47+                       | triggers use RAISE with an expression (new in 3.47) |
 | `make`    | 3.81+                       | GNU Make                                 |
 
 That's the whole list. Everything runs against local files in the project directory.
