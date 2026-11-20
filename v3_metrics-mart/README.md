@@ -422,8 +422,6 @@ up").
 .
 ├── Makefile
 ├── METRICSMART.md            # design notes: review of the ER diagrams, and the mart vs the sibling models
-├── docs/
-│   └── er-diagrams.md        # Mermaid ER diagrams, one per layer
 ├── schema/
 │   ├── 01_landing.sql        # wide stage, narrow landing (shared shape) + routing metadata + load guard
 │   ├── 02_archive.sql        # raw layer: append-only wide history (hist_*) + manifest + triggers
@@ -565,9 +563,10 @@ requires the suite to go red; results for every model are in `../MUTATIONS.md`, 
 - **[METRICSMART.md](METRICSMART.md)** — a review of the ER diagrams, where
   this implementation follows them and where the shared discipline fills
   gaps, and how the mart compares with the sibling models.
-- **[docs/er-diagrams.md](docs/er-diagrams.md)** — ER diagrams of every
-  table, generated from the live schema: a keys-only overview and one
-  full-column diagram per layer.
+- **[../er-diagrams/mermaid/metrics-mart.md](../er-diagrams/mermaid/metrics-mart.md)** — ER
+  diagrams of every table, generated from the live schema: a keys-only
+  overview and one full-column diagram per layer
+  ([PDF](../er-diagrams/pdf/metrics-mart.pdf)).
 - **Sibling demos** — [`../v3_inmon-3nf`](../v3_inmon-3nf) is the other 3NF
   answer (time-variant entities, wide files);
   [`../v3_focal-point`](../v3_focal-point) and [`../v3_anchor`](../v3_anchor)

@@ -181,7 +181,7 @@ metadata edit, with no DDL and no data migration.
 
 The metadata catalog (`meta_entity`, `meta_atomic_context`, `meta_attribute`, `meta_relationship`,
 `meta_source_map`, `meta_value_map`, `meta_source_feed`, …) both *defines* the model and *drives* the
-loader. Full entity-relationship diagrams for every layer are in [docs/er-diagrams.md](docs/er-diagrams.md).
+loader. Full entity-relationship diagrams for every layer are in [../er-diagrams/mermaid/focal-point.md](../er-diagrams/mermaid/focal-point.md).
 
 ---
 
@@ -350,7 +350,6 @@ OMS.ORDER_LINE  INCREMENTAL  1           6         6
 │   ├── answers/          # Q1..Q9.sql: this model's SQL for the nine shared questions
 │   ├── mutations/        # 22 deliberate breakages `make mutate` runs against the suite
 │   └── fixtures/         # extra deliveries for tests; fixtures/narrow/ holds the old narrow D0–D5
-├── docs/er-diagrams.md   # ER diagrams for every layer (Mermaid)
 ├── build/                # generated: the derived warehouse (safe to delete)
 └── archive/              # generated: the durable raw layer (do NOT delete lightly)
 ```
@@ -406,5 +405,5 @@ do not change. `tests/fixtures/d7_repoint.sql` exercises it (core C13, model M06
 - **[FOCALPOINT.md](FOCALPOINT.md)** — the incremental-aware ingestion model explained in full: the
   core rule, how deletes happen in an incremental world, why surrogate keys survive a rebuild, and why
   there is no retention policy.
-- **[docs/er-diagrams.md](docs/er-diagrams.md)** — entity-relationship diagrams for the conceptual
-  model, the core focal-point triad, the metadata catalog, and the source-ingestion layer.
+- **[../er-diagrams/mermaid/focal-point.md](../er-diagrams/mermaid/focal-point.md)** — entity-relationship diagrams for the core
+  model, the metadata catalog, staging and the raw layer, generated from the live schema ([PDF](../er-diagrams/pdf/focal-point.pdf)).
