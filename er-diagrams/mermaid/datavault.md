@@ -6,9 +6,11 @@ Generated from [`v3_datavault/build/datavault.db`](../../v3_datavault/build/data
 > line is a declared foreign key; a dashed line is a join the model
 > intends but does not declare. The crow's foot is the "many" side.
 
+This model declares only some of its relationships as foreign keys, so 3 dashed lines were added by hand in the generator.
+
 ## 1 · Core model
 
-Hubs (`_h`), links (`_l`), satellites (`_hsat`), status satellites (`_sts`), a reference table, one effectivity satellite, and the generated point-in-time (`_cpit`) and bridge tables.
+Hubs (`_h`), links (`_l`), satellites (`_hsat`), status satellites (`_sts`), a reference table, one effectivity satellite, the generated point-in-time (`_cpit`) and bridge tables, and the computed satellite `bv_order_status_bsat`, a view that decodes each order status with the newest reference label.
 
 ```mermaid
 erDiagram
@@ -127,6 +129,13 @@ erDiagram
         TEXT rsrc
         TEXT sts
     }
+    bv_order_status_bsat {
+        TEXT order_bk
+        TEXT ldts
+        TEXT rsrc
+        TEXT status
+        untyped status_label
+    }
     rv_customer_sts ||--o{ bv_customer_cpit : "sts_bk, sts_ldts"
     rv_customer_hsat ||--o{ bv_customer_cpit : "hsat_bk, hsat_ldts"
     rv_customer_h ||--o| bv_customer_cpit : "customer_bk"
@@ -149,6 +158,9 @@ erDiagram
     rv_order_h ||--o{ rv_order_sts : "order_bk"
     rv_product_h ||--o{ rv_product_hsat : "product_bk"
     rv_product_h ||--o{ rv_product_sts : "product_bk"
+    ref_order_status ||..o{ rv_order_hsat : "status = code"
+    ref_order_status ||..o{ bv_order_status_bsat : "status = code"
+    rv_order_hsat ||..o{ bv_order_status_bsat : "order_bk, ldts"
 ```
 
 ## 2 · Metadata and load control

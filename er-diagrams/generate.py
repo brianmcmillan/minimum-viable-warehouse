@@ -27,6 +27,10 @@ class Db:
         return [r[0] for r in self.con.execute(
             "SELECT name FROM sqlite_master WHERE type='table' "
             "AND name NOT LIKE 'sqlite_%' ORDER BY name")]
+    def objects(self):      # tables and views: a layer may name a view
+        return [r[0] for r in self.con.execute(
+            "SELECT name FROM sqlite_master WHERE type IN ('table', 'view') "
+            "AND name NOT LIKE 'sqlite_%' ORDER BY name")]
     def cols(self, t):      # cid, name, type, notnull, default, pk
         return self.con.execute('PRAGMA table_info("%s")' % t).fetchall()
     def fks(self, t):       # one entry per declared FK: (parent, [child cols])
@@ -84,7 +88,8 @@ def relations(db, tables, context, labels, logical, upper):
     return "\n".join(out)
 
 def diagram(db, layer, sol):
-    tables = [t for t in layer["tables"] if t in db.tables()]
+    have = db.objects()
+    tables = [t for t in layer["tables"] if t in have]
     context = layer.get("context", [])
     upper = sol.get("upper", False)
     ents = [entity(db, t, layer.get("keys_only", False) or t in context, upper)
@@ -98,13 +103,18 @@ ARCHIVE_TEXT = ("The durable raw layer, in its own database file. Every delivery
                 "is captured here verbatim before it is applied, and the tables "
                 "are append-only.")
 
-def default_layers(build, archive, core_title="Core model", core_text=""):
-    """Core, then metadata, staging and the archive, each if non-empty."""
+def default_layers(build, archive, core_title="Core model", core_text="",
+                   core_extra=(), core_context=()):
+    """Core, then metadata, staging and the archive, each if non-empty.
+    core_extra adds objects (a view, say) to the core diagram; core_context
+    adds tables from another layer, drawn with their keys only."""
     tabs = build.tables()
     core = [t for t in tabs if not is_stage(t) and not is_meta(t)]
     meta = [t for t in tabs if is_meta(t)]
     stage = [t for t in tabs if is_stage(t)]
-    layers = [dict(title=core_title, text=core_text, tables=core)]
+    layers = [dict(title=core_title, text=core_text,
+                   tables=core + list(core_extra) + list(core_context),
+                   context=list(core_context))]
     if meta:
         layers.append(dict(title="Metadata and load control", tables=meta,
             text="Registries, routing maps and the parameters the loaders read."))
@@ -157,14 +167,16 @@ def metrics_layers(build, archive):
     rest = default_layers(build, archive)[1:]
     return [
         dict(title="Overview — keys only", keys_only=True,
-             tables=["res_type", "res_type_rel", "res", "res_alias", "res_grp",
-                     "res_resgrp", "value_type", "metric", "provider",
+             tables=["res_type", "res_type_rel", "res", "res_hist", "res_alias",
+                     "res_grp", "res_resgrp", "value_type", "metric", "provider",
                      "metric_sample", "metric_summary", "metric_weekly",
-                     "grp_metric_weekly", "cal_evt_type", "cal_evt_grp", "calndr_event"],
+                     "grp_metric_weekly"],
              text="Every table that has a relationship, with its key columns."),
         dict(title="Resources and groups",
-             tables=["res_type", "res_type_rel", "res", "res_alias", "res_grp", "res_resgrp"],
+             tables=["res_type", "res_type_rel", "res", "res_hist", "res_alias",
+                     "res_grp", "res_resgrp"],
              text="What exists. `RES` holds every resource of every type, "
+                  "`RES_HIST` every earlier version of one, "
                   "`RES_ALIAS` maps each provider's name for one to a `res_id`, "
                   "and `RES_RESGRP` puts resources in groups."),
         dict(title="Metrics and aggregations",
@@ -174,16 +186,16 @@ def metrics_layers(build, archive):
              text="What was measured. A metric is a row in `METRIC`, and "
                   "`METRIC_SAMPLE` holds one observation per resource, metric, "
                   "provider and moment. The other three are derived from it."),
-        dict(title="Calendar",
-             tables=["res_grp", "cal_evt_type", "cal_evt_grp", "calndr_event", "calndr"],
-             context=["res_grp"],
-             text="What was planned. Every event targets a `RES_GRP`. `CALNDR` "
-                  "has no foreign keys: events are matched to it by date."),
+        dict(title="Calendar", tables=["calndr"],
+             text="The dates the weekly aggregates are built on. `CALNDR` has "
+                  "no foreign keys: samples are matched to it by date."),
         dict(title="Extensions for the shared corpus",
              tables=["res", "res_customer", "res_product", "res_order",
-                     "order_status", "currency"], context=["res"],
+                     "order_status", "currency", "res_hist"],
+             context=["res", "res_hist"],
              text="Subtype and code tables added for attributes `RES` has no "
-                  "column for."),
+                  "column for. `RES_HIST` keeps their earlier values too, "
+                  "with the codes undeclared."),
     ] + rest
 
 METRIC_LABELS = {
@@ -207,9 +219,7 @@ METRIC_LABELS = {
     ("grp_metric_weekly", "res_grp_id"): "rolls up",
     ("grp_metric_weekly", "metric_id"): "rolls up as",
     ("grp_metric_weekly", "provider_id"): "reports",
-    ("calndr_event", "res_grp_id"): "is the target of",
-    ("calndr_event", "cal_evt_type"): "types",
-    ("calndr_event", "event_grp_id"): "collects",
+    ("res_hist", "res_id"): "was", ("res_hist", "parent_res"): "parent of",
     ("res_customer", "res_id"): "is a", ("res_product", "res_id"): "is a",
     ("res_order", "res_id"): "is a", ("res_order", "status_code"): "decodes",
     ("res_order", "currency_code"): "prices", ("res_product", "currency_code"): "prices",
@@ -229,24 +239,39 @@ SOLUTIONS = [
     dict(dir="v3_data-marts", name="Kimball star", notes="DATAMART.md",
          build="build/datamart.db", archive="archive/datamart_archive.db",
          core_text="Two facts over conformed dimensions. A fact row holds the "
-                   "surrogate key of the dimension version current at load."),
+                   "surrogate key of the dimension version current at load. "
+                   "`dim_order_owner` keeps each order's ownership as Type 2 "
+                   "versions, joined by business key.",
+         logical=[("fact_orders", "dim_order_owner", "order_ref"),
+                  ("dim_customer", "dim_order_owner", "customer_ref")]),
     dict(dir="v3_datavault", name="Data Vault 2.0", notes="DATAVAULT.md",
          build="build/datavault.db", archive="archive/datavault_archive.db",
          core_text="Hubs (`_h`), links (`_l`), satellites (`_hsat`), status "
                    "satellites (`_sts`), a reference table, one effectivity "
-                   "satellite, and the generated point-in-time (`_cpit`) and "
-                   "bridge tables."),
+                   "satellite, the generated point-in-time (`_cpit`) and "
+                   "bridge tables, and the computed satellite "
+                   "`bv_order_status_bsat`, a view that decodes each order "
+                   "status with the newest reference label.",
+         core_extra=["bv_order_status_bsat"],
+         logical=[("ref_order_status", "rv_order_hsat", "status = code"),
+                  ("ref_order_status", "bv_order_status_bsat", "status = code"),
+                  ("rv_order_hsat", "bv_order_status_bsat", "order_bk, ldts")]),
     dict(dir="v3_focal-point", name="Focal Point", notes="FOCALPOINT.md",
          build="build/focal.db", archive="archive/focal_archive.db",
          core_text="Three generic tables per entity (`_idfr`, `_focal`, `_desc`) "
                    "and one `_x` table per relationship. The core declares no "
-                   "foreign keys; `type_key` values are defined in the metadata.",
+                   "foreign keys. Every `type_key`, the existence contexts "
+                   "(19, 29, 39) among them, is defined in `meta_atomic_context` "
+                   "or `meta_relationship`, shown here with their keys only.",
+         core_context=["meta_atomic_context", "meta_relationship"],
          logical=[(e + "_focal", e + "_idfr", e + "_key") for e in ("customer", "order", "product")]
                + [(e + "_focal", e + "_desc", e + "_key") for e in ("customer", "order", "product")]
                + [("order_focal", "order_customer_x", "order_key"),
                   ("customer_focal", "order_customer_x", "customer_key"),
                   ("order_focal", "order_product_x", "order_key"),
-                  ("product_focal", "order_product_x", "product_key")]),
+                  ("product_focal", "order_product_x", "product_key")]
+               + [("meta_atomic_context", e + "_desc", "type_key") for e in ("customer", "order", "product")]
+               + [("meta_relationship", x, "type_key") for x in ("order_customer_x", "order_product_x")]),
     dict(dir="v3_anchor", name="Anchor Modeling", notes="ANCHOR.md",
          build="build/anchor.db", archive="archive/anchor_archive.db",
          layers=anchor_layers),
@@ -277,7 +302,9 @@ SOLUTIONS = [
                    "inside `feature_json` and is decoded on read."),
     dict(dir="v3_metrics-mart", name="Metrics mart", notes="METRICSMART.md",
          build="build/metrics.db", archive="archive/metrics_archive.db",
-         layers=metrics_layers, labels=METRIC_LABELS, upper=True),
+         layers=metrics_layers, labels=METRIC_LABELS, upper=True,
+         logical=[("order_status", "res_hist", "status_code"),
+                  ("currency", "res_hist", "currency_code")]),
     dict(dir="v3_one-big-table", name="One Big Table", notes="OBT.md",
          build="build/obt.db", archive="archive/obt_archive.db",
          core_text="Full-refresh tables recomputed from the log. `obt_order_wide` "
@@ -300,7 +327,9 @@ def build(sol):
     dbs["archive"] = Db(apath) if apath and os.path.exists(apath) else None
     make = sol.get("layers")
     layers = (make(dbs["build"], dbs["archive"]) if make else
-              default_layers(dbs["build"], dbs["archive"], core_text=sol.get("core_text", "")))
+              default_layers(dbs["build"], dbs["archive"], core_text=sol.get("core_text", ""),
+                             core_extra=sol.get("core_extra", ()),
+                             core_context=sol.get("core_context", ())))
     n_logical = len(sol.get("logical", []))
     md = ["# %s — ER diagrams" % sol["name"], "",
           "Generated from [`%s/%s`](../../%s/%s)%s by `er-diagrams/generate.py`. "
@@ -331,14 +360,28 @@ def build(sol):
 def render_pdf(pages, out):
     from pypdf import PdfWriter
     cfg = os.path.join(HERE, "puppeteer.json")
+    opts = subprocess.run(["mmdc", "--help"], capture_output=True, text=True).stdout
     writer = PdfWriter()
     with tempfile.TemporaryDirectory() as tmp:
+        if "--pdfFit" in opts:
+            # Mermaid CLI 11: fit the page to the diagram, on a 4000px-wide page.
+            size = ["--pdfFit", "-w", "4000"]
+        else:
+            # Mermaid CLI 12 fits by default. Widen the browser viewport the
+            # same way, and use the classic look: the default draws each
+            # entity's shadow as a bitmap, which bloats the PDF.
+            mcfg, vcfg = os.path.join(tmp, "mermaid.json"), os.path.join(tmp, "viewport.json")
+            with open(mcfg, "w") as f:
+                f.write('{"look": "classic"}')
+            with open(vcfg, "w") as f:
+                f.write('{"defaultViewport": {"width": 4000, "height": 1000}}')
+            size = ["-c", mcfg] + ([] if os.path.exists(cfg) else ["-p", vcfg])
         for n, (title, src) in enumerate(pages):
             mmd = os.path.join(tmp, "p%02d.mmd" % n)
             pdf = os.path.join(tmp, "p%02d.pdf" % n)
             with open(mmd, "w") as f:
                 f.write('---\ntitle: "%s"\n---\n%s\n' % (title, src))
-            cmd = ["mmdc", "-i", mmd, "-o", pdf, "--pdfFit", "-b", "white", "-w", "4000"]
+            cmd = ["mmdc", "-i", mmd, "-o", pdf, "-b", "white"] + size
             if os.path.exists(cfg):
                 cmd += ["-p", cfg]
             subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)

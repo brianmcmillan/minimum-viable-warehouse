@@ -6,9 +6,11 @@ Generated from [`v3_data-marts/build/datamart.db`](../../v3_data-marts/build/dat
 > line is a declared foreign key; a dashed line is a join the model
 > intends but does not declare. The crow's foot is the "many" side.
 
+This model declares only some of its relationships as foreign keys, so 2 dashed lines were added by hand in the generator.
+
 ## 1 · Core model
 
-Two facts over conformed dimensions. A fact row holds the surrogate key of the dimension version current at load.
+Two facts over conformed dimensions. A fact row holds the surrogate key of the dimension version current at load. `dim_order_owner` keeps each order's ownership as Type 2 versions, joined by business key.
 
 ```mermaid
 erDiagram
@@ -32,6 +34,14 @@ erDiagram
         TEXT month_name
         INTEGER day
         TEXT weekday
+    }
+    dim_order_owner {
+        INTEGER owner_key PK
+        TEXT order_ref
+        TEXT customer_ref
+        TEXT row_eff_ts
+        TEXT row_exp_ts
+        INTEGER is_current
     }
     dim_order_status {
         INTEGER status_key PK
@@ -69,6 +79,8 @@ erDiagram
     dim_order_status ||--o{ fact_orders : "status_key"
     dim_customer ||--o{ fact_orders : "customer_key"
     dim_date ||--o{ fact_orders : "placed_date_key"
+    fact_orders ||..o{ dim_order_owner : "order_ref"
+    dim_customer ||..o{ dim_order_owner : "customer_ref"
 ```
 
 ## 2 · Metadata and load control
