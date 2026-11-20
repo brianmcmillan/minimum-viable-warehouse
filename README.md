@@ -31,7 +31,10 @@ server. The sqlite3 that ships with macOS is enough.
 
 The ER diagrams in [`er-diagrams/`](er-diagrams/) are an optional extra
 outside the ten warehouses. They are built with Python, the Mermaid CLI
-and pypdf; no warehouse, suite or `make` target needs them.
+and pypdf; no warehouse, suite or `make` target needs them. The flow
+diagrams in [`flow-diagrams/`](flow-diagrams/) show how a delivery
+becomes a warehouse and how the suites prove it; their PDFs need only
+the Mermaid CLI.
 
 ```bash
 cd v3_inmon-3nf           && make demo && make test   # Inmon 3NF (control group)

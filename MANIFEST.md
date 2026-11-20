@@ -50,6 +50,15 @@ as `.gitignore` leaves them out of git.
 │   │   └── unified-star-schema.pdf
 │   ├── generate.py
 │   └── README.md
+├── flow-diagrams
+│   ├── mermaid
+│   │   ├── build.md
+│   │   └── prove.md
+│   ├── pdf
+│   │   ├── build.pdf
+│   │   └── prove.pdf
+│   ├── README.md
+│   └── render.sh
 ├── tests
 │   ├── check_core.sh
 │   ├── core_spec.tsv
@@ -790,5 +799,5 @@ as `.gitignore` leaves them out of git.
 ├── README.md
 └── VERIFY.md
 
-92 directories, 691 files
+95 directories, 697 files
 ```
