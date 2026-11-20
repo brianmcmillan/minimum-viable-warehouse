@@ -59,7 +59,7 @@ cd v3_one-big-table       && make demo && make test   # One Big Table (null hypo
 | [`v3_hook/`](v3_hook/README.md) | [HOOK](v3_hook/HOOK.md) (source frames + key-set-qualified hooks) | `build/hook.db` | `archive/hook_archive.db` |
 | [`v3_unified-star-schema/`](v3_unified-star-schema/README.md) | [Unified Star Schema](v3_unified-star-schema/USS.md) (Puppini bridge over an insert-only core) | `build/uss.db` | `archive/uss_archive.db` |
 | [`v3_activity-schema/`](v3_activity-schema/README.md) | [Activity Schema](v3_activity-schema/ACTIVITY.md) (2.0: activity streams + temporal joins) | `build/activity.db` | `archive/activity_archive.db` |
-| [`v3_metrics-mart/`](v3_metrics-mart/README.md) | [Metrics mart](v3_metrics-mart/METRICSMART.md) (3NF snowflake: resources, metric samples, calendar) | `build/metrics.db` | `archive/metrics_archive.db` |
+| [`v3_metrics-mart/`](v3_metrics-mart/README.md) | [Metrics mart](v3_metrics-mart/METRICSMART.md) (3NF snowflake: resources, metric samples) | `build/metrics.db` | `archive/metrics_archive.db` |
 | [`v3_one-big-table/`](v3_one-big-table/README.md) | [One Big Table](v3_one-big-table/OBT.md) (full-refresh over the log) | `build/obt.db` | `archive/obt_archive.db`; **is** the warehouse |
 
 ## The shared scenario
@@ -154,15 +154,15 @@ long as someone downstream is ready to do the semantic work they skip.
 | model | built for this problem | agreed before loading | who carries the cost | evidence |
 |---|---|---|---|---|
 | Inmon 3NF | Every department has its own version of the business | The whole entity model and its cleansing rules | The central EDW team, through change control and `ALTER TABLE` on populated history | Tested: conformed at ingest, and a rule change can't touch stored rows (Inmon M03). Argued: who carries the cost |
-| Kimball | Users can't get answers and warehouse projects never finish | Conformed dimensions across business processes | Dimension governance. Audit moves to the archive, because facts update in place | Tested: the re-point restates the fact in place (Kimball M06). Argued: the rest |
+| Kimball | Users can't get answers and warehouse projects never finish | Conformed dimensions across business processes | Dimension governance. Facts update in place, so their earlier values live in the archive; order ownership keeps SCD2 history in `dim_order_owner` | Tested: the re-point restates the fact in place (Kimball M06), and the earlier owner stays in `dim_order_owner` (Kimball M09). Argued: the rest |
 | Data Vault 2.0 | Many sources, contested definitions, auditors | Business keys only | The business vault and mart builders, plus whoever writes the code generator | Shown: hubs hold business keys and nothing else. Argued: who carries the cost |
 | Focal Point | Every new attribute waits on a DDL and ETL release | The concept model and value mappings | Metadata stewards. Every read pivots, and a rule change needs a rebuild | Tested: a rule change needs a rebuild (C12.1; Q9 in ANSWERS.md). Shown: every read pivots. Argued: the rest |
 | Anchor | The model keeps changing and history can't break | Every attribute, with closed domains for codes | The generator team: 24 tables for what Focal holds in 4 | Tested: a code outside the knot fails the load (Anchor M08). Shown: 24 core tables. Argued: the rest |
 | HOOK | Upfront modeling is too slow | A concept glossary and key sets | View authors. Key mapping is deferred, and frames follow source shapes | Tested: a hook from the wrong key set is flagged (HOOK M09). Shown: frames keep the source shape. Argued: the rest |
 | Unified Star Schema | Self-service users get wrong totals | The bridge: stages, directions, loops | The bridge designers. History belongs to some other layer | Tested: the bridge stops the fan trap (USS M04). Shown: history comes from the core underneath (Q2, Q3, Q4 and Q7 in ANSWERS.md). Argued: the rest |
 | Activity Schema | Every new question about behaviour waits on a new model | The activity catalog: which verbs exist and whose stream they belong to | Loader authors, who turn snapshots into events, and query authors, because current state is a LAST EVER query every time | Tested: every activity must be in the catalog (Activity M01). Shown: the loader diffs snapshots into events. Argued: the rest |
-| Metrics mart | Many providers measure the same resources and nobody can put the numbers side by side | Resource types, the metric list and the code tables | The schema owners: every non-numeric attribute is a schema change. Descriptive attributes keep no history; the mart overwrites them | Tested: an unknown code fails the load (Metrics M11), and a new metric is a row with no DDL (Metrics M20). Shown: a new descriptive attribute needs an `ALTER`. Argued: the rest |
-| One Big Table | Modeling costs more than it returns | Nothing | Every consumer, who rewrites the history query each time | Tested: unchanged snapshots are stored again (OBT M04). Argued: the rest |
+| Metrics mart | Many providers measure the same resources and nobody can put the numbers side by side | Resource types, the metric list and the code tables | The schema owners: every non-numeric attribute is a schema change. `RES` overwrites descriptions in place and `RES_HIST` keeps their versions; group membership keeps no history | Tested: an unknown code fails the load (Metrics M11), a new metric is a row with no DDL (Metrics M20), and `RES_HIST` versions descriptors and the parent link (Metrics M27). Shown: a new descriptive attribute needs an `ALTER`, and group membership has no history table. Argued: the rest |
+| One Big Table | Modeling costs more than it returns | Nothing | Whoever writes the history views, and every connection, which loads them and recomputes history from the whole log | Tested: unchanged snapshots are stored again (OBT M04), and history is TEMP views over the log (OBT M08). Argued: the rest |
 
 Each row comes from that model's design notes, and the last column says
 how far to trust it. **Tested** means an assertion or a mutation in that
@@ -180,13 +180,13 @@ derive-everything-from-the-log, are covered in the next section.
 
 | event | Focal Point | Data Vault 2.0 | Kimball | Anchor | HOOK | Unified Star Schema | Activity Schema | Metrics mart |
 |---|---|---|---|---|---|---|---|---|
-| attribute change | new version row **per atomic context** (narrow) | new satellite row (whole-row grain) | expire current dim row (**UPDATE**) + new SCD2 version | new row in **that attribute's own typed table** | new frame row, source shape kept | new core row; bridge re-derived | one `updated_<attr>` activity carrying only that attribute | a description: `UPDATE` in place. A number: a new `METRIC_SAMPLE` row |
-| delete detected | closing row, `row_st='N'` | `'D'` row in a status-tracking satellite | deleted-marker version, `is_deleted=1`, last-known attrs carried | `DELETED` assertion in the **existence knot**; presence is data | `DELETE` frame row with a `delete_basis` | core `DELETE` row; member leaves its stage | a delete activity (`was_deleted`) with a `basis` | `res_status = 0`; the row and its samples stay |
-| unchanged re-delivery | `NOCHANGE`; writes nothing | diff-string match; writes nothing | diff-string match; writes nothing | **restatement control**; writes nothing | diff-string match; writes nothing | `NOCHANGE` in the core; writes nothing | no difference from LAST EVER state; writes nothing | descriptions write nothing; a number observed again is a new sample |
+| attribute change | new version row **per atomic context** (narrow) | new satellite row (whole-row grain) | expire current dim row (**UPDATE**) + new SCD2 version | new row in **that attribute's own typed table** | new frame row, source shape kept | new core row; bridge re-derived | one `updated_<attr>` activity carrying only that attribute | a description: `UPDATE` in place on `RES` and a new `RES_HIST` version. A number: a new `METRIC_SAMPLE` row |
+| delete detected | `DELETED` fact in the **existence context**; history stays queryable | `'D'` row in a status-tracking satellite | deleted-marker version, `is_deleted=1`, last-known attrs carried | `DELETED` assertion in the **existence knot**; presence is data | `DELETE` frame row with a `delete_basis` | core `DELETE` row; member leaves its stage | a delete activity (`was_deleted`) with a `basis` | `res_status = 0` and the open `RES_HIST` version closes; the row and its samples stay |
+| unchanged re-delivery | `NOCHANGE`; writes nothing | diff-string match; writes nothing | diff-string match; writes nothing | **restatement control**; writes nothing | diff-string match; writes nothing | `NOCHANGE` in the core; writes nothing | no difference from LAST EVER state; writes nothing | descriptions write nothing; a number seen again writes no sample, only moves its last-seen date |
 | keys | sequence surrogates, reproduced by ordered replay | natural business keys | rowid surrogates, reproduced by ordered replay | per-anchor sequences, reproduced by ordered replay | key-set-qualified business keys (`CRM.CUST\|C001`) | `_key_<table>` from natural keys | source ids in `customer`; `activity_id` in load order, reproduced by ordered replay | integer surrogates in business-key order; `RES_ALIAS` resolves each provider's name |
-| relationship | relationship loader (no re-point yet) | link + effectivity satellite | FK in the fact | historized tie | a second hook on the row | key on the bridge, propagated transitively | `link` plus who and when; no foreign keys | `parent_res`, or a group membership |
+| relationship | insert-only pairing rows; a driving-key re-point closes the old pairing | link + effectivity satellite | FK in the fact, plus SCD2 ownership in `dim_order_owner` | historized tie | a second hook on the row | key on the bridge, propagated transitively | `link` plus who and when; no foreign keys | `parent_res`, or a group membership |
 | business rule (P→PENDING) | applied **at ingest** (`meta_value_map`); archive + rebuild makes it retroactive | raw `'P'` stored; translated **on read** in the mart views | raw `'P'` in the archive; decode **dimension** (Type 1) | raw code resolved to a **knot**; label read at query | raw `'P'` in the frame; decoded **on read** in views | decoded **at refresh**; raw code kept on `orders.status_code` | raw `'P'` in `feature_json`; decoded **on read** | raw `'P'` behind a foreign key to a code table; decoded **on read** by a join |
-| row mutation | never | never | dims expire, facts restate; the archive keeps it honest | never | never | core never; the USS layer is re-derived after every delivery | never; triggers refuse `UPDATE` and `DELETE` | resources update in place; a sample is overwritten only by a correction |
+| row mutation | never | never | dims and `dim_order_owner` expire, facts restate; the archive keeps it honest | never | never | core never; the USS layer is re-derived after every delivery | never; triggers refuse `UPDATE` and `DELETE` | resources update in place; a sample changes only to move its last-seen date or take a correction |
 
 ## What each one is best at showing
 
@@ -215,12 +215,12 @@ live in the schema seed.
 
 ### Data Vault 2.0: presence and relationships as first-class facts
 
-Status satellites answer "is it deleted?" directly, which is the
-question Focal's ghost rows get wrong. The driving-key effectivity
-satellite handles an order re-pointed to a different customer, something
-Focal's relationship loader can't do yet. Hard rules in the vault, soft
-rules on read: change the status decode and history follows with no
-reload.
+Status satellites answer "is it deleted?" directly, the job Focal's
+existence contexts and Anchor's existence knot also do. The driving-key
+effectivity satellite handles an order re-pointed to a different
+customer; Focal's relationship loader now does the same from a driving
+role in its metadata. Hard rules in the vault, soft rules on read:
+change the status decode and history follows with no reload.
 
 ### Focal Point: schema evolution without DDL
 
@@ -236,8 +236,9 @@ surrogate key.
 
 Anchor uses 24 tables for what Focal holds in 4. Every attribute gets
 its own table with a real column type. Presence is an existence knot, so
-the ghost-row problem cannot happen here. The business key is itself an
-attribute, and the historized tie handles the re-pointed order natively.
+a delete is an assertion, not a missing row. The business key is itself
+an attribute, and the historized tie handles the re-pointed order
+natively.
 
 Anchor is Focal's philosophy at the opposite physical extreme. Its
 loader is Focal's metadata loop retargeted at typed tables, which is why
@@ -254,9 +255,9 @@ key-set-qualified business keys (`CRM.CUST|C001`). Rows that carry the
 same hook are about the same thing; that is the whole integration. The
 re-pointed order is just a new order row, and the hub is a `GROUP BY`
 view built only when someone asks. A delete is the latest frame row, so
-there are no ghost rows. Like Anchor, HOOK prescribes a shape rather
-than a loading discipline, so the shared rules fill the gap, and like
-Focal, one registry-driven loader covers every frame.
+"is it deleted?" reads that row. Like Anchor, HOOK prescribes a shape
+rather than a loading discipline, so the shared rules fill the gap, and
+like Focal, one registry-driven loader covers every frame.
 
 ### Unified Star Schema: no wrong totals
 
@@ -288,7 +289,7 @@ them. SKU-1's `was_ordered` lands four days before its `added`. The spec
 also says nothing about deletes, so the shared rule supplies them as
 activities with a `basis`.
 
-### Metrics mart: numbers get history, descriptions don't
+### Metrics mart: a number is a row, not a column
 
 The metrics mart is the one model here whose development and deployment
 I was part of. It ran as an Enterprise Data Warehouse, collecting server
@@ -300,16 +301,15 @@ provider and moment, so price and amount aren't columns anywhere, and
 SKU-1's price history is two samples. `RES_ALIAS` turns whatever a
 provider calls a resource into one `res_id`.
 
-The cost is on the descriptive side. `RES` is current state, so C001's
-new email overwrites the old one and the re-pointed order forgets its
-first owner. Only the archive remembers. A new metric is a row, and the
-suite adds one with no DDL. A new descriptive attribute is an `ALTER`.
-
-It is also the only demo with a calendar. Planned events attach to
-groups of resources, so a sample can be read next to what was planned
-that day: SKU-1's price drop on 2026-03-02 sits beside a SPRING-SALE
-promotion. The calendar arrives as a delivery of its own, after the
-shared six.
+`RES` stays current state, so C001's new email and the re-pointed
+order's new owner are updates in place. `RES_HIST` sits beside it and
+keeps every version of the descriptive columns and the parent link,
+written in the same transaction, so the mart answers who placed O-101 at
+purchase from its own tables. A sample is written only when a value is
+first seen or changes; when the same value comes back, only its
+last-seen date moves. Group membership still keeps no history. A new
+metric is a row, and the suite adds one with no DDL. A new descriptive
+attribute is an `ALTER`.
 
 ### One Big Table: the null hypothesis
 
@@ -319,10 +319,12 @@ every shared scenario by deriving the mode-aware delete rule from the
 log (a key is dead if its last mention is a tombstone or a later FULL
 snapshot omitted it). Rebuild is trivial because nothing is incremental.
 The suite asserts what that costs, too. There's no NOCHANGE suppression,
-so unchanged snapshots get stored again forever. History means rewriting
-the `LAG`-over-the-log query, and semantics live in views or nowhere. I
-keep it runnable next to the other nine because it's the cleanest answer
-I have to "what does modeling actually buy?"
+so unchanged snapshots get stored again forever. History is TEMP views
+over the log, with the `LAG` diff written once, but every connection
+that wants it has to load them, and every read recomputes it from the
+whole log. Semantics live in views or nowhere. I keep it runnable next
+to the other nine because it's the cleanest answer I have to "what does
+modeling actually buy?"
 
 ## Every model picks a bottleneck
 
@@ -338,8 +340,9 @@ the bridge. The Activity Schema puts it on the loader that turns
 snapshots into events, and on whoever keeps the activity catalog. The
 metrics mart puts it on whoever owns the schema, for everything that
 isn't a number. HOOK and One Big Table move it to the people writing
-views, and in OBT every consumer is supposed to rewrite the same history
-query correctly, every time. *(They won't.)*
+views. OBT writes its history query once, as TEMP views over the log,
+but every connection has to load them first. *(Anyone who skips them is
+back to writing the `LAG` query by hand.)*
 
 So the useful question isn't which model is best. It's which team in
 your organization has the authority and the skills to carry the
