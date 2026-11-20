@@ -33,11 +33,10 @@ of shell and SQL, following the DV101 Baseline conventions (source → stage L1 
 > [metrics mart](../v3_metrics-mart), and
 > [One Big Table](../v3_one-big-table)), so every difference between them is
 > the *model*, never the input. This model takes the wide,
-> one-row-per-record restatement shared byte-for-byte by Inmon, Kimball,
-> Data Vault, HOOK, USS, Activity Schema and OBT, and keeps the same durable
-> raw layer as those siblings: every delivery archived verbatim, replayable
-> with `make rebuild`. **This README stands on its own;**
-> [DATAVAULT.md](DATAVAULT.md) draws the cross-model comparison.
+> one-row-per-record deliveries all ten models share byte-for-byte, and
+> keeps the same durable raw layer as its siblings: every delivery archived
+> verbatim, replayable with `make rebuild`. **This README stands on its
+> own;** [DATAVAULT.md](DATAVAULT.md) draws the cross-model comparison.
 
 ---
 

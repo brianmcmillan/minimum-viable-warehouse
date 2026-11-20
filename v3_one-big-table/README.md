@@ -33,13 +33,12 @@ same answers — then read the bill.
 > [Activity Schema](../v3_activity-schema), the
 > [metrics mart](../v3_metrics-mart), and this One Big Table), so every
 > difference between them is the *model*, never the input. This model takes
-> the wide, one-row-per-record restatement shared byte-for-byte by Inmon,
-> Kimball, Data Vault, HOOK, USS, Activity Schema and OBT. Its archive uses
-> the same layout (`loaded_files` + per-feed `hist_*` tables, append-only
-> triggers) as the Inmon, Kimball, Data Vault, HOOK, USS and Activity Schema
-> archives. Keeping the no-model position runnable next to the other nine is
-> the cleanest way to price what they add. **This README stands on its
-> own;** [OBT.md](OBT.md) draws the cross-model comparison.
+> the wide, one-row-per-record deliveries all ten models share
+> byte-for-byte, and its archive uses the layout all ten share
+> (`loaded_files` + per-feed `hist_*` tables, append-only triggers). Keeping
+> the no-model position runnable next to the other nine is the cleanest way
+> to price what they add. **This README stands on its own;**
+> [OBT.md](OBT.md) draws the cross-model comparison.
 
 ---
 
