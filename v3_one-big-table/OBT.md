@@ -4,8 +4,7 @@ The no-model position, taken seriously: the append-only delivery log **is**
 the warehouse, and everything queryable is a full-refresh recomputation
 over it (the dbt-style full refresh / functional data engineering pattern —
 idempotent by construction, no incremental state anywhere). Same wide
-deliveries as DV, Kimball, Inmon, HOOK, USS and Activity Schema,
-byte-identical.
+deliveries as the other nine models, byte-identical.
 
 ```bash
 make demo     # fresh archive + the full delivery sequence + tables

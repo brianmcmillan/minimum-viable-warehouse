@@ -6,8 +6,7 @@ are where the data lives; what the business asks about is what those
 entities **did**, and in what order. So store activities, one stream per
 entity type, and answer questions by relating activities in time.
 
-Same wide deliveries as the DV, Kimball, Inmon, HOOK, USS and OBT demos,
-byte-identical.
+Same wide deliveries as the other nine models, byte-identical.
 
 ```bash
 make demo     # fresh archive + the full delivery sequence + views

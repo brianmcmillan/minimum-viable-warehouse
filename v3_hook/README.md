@@ -36,12 +36,10 @@ with the system that minted it.
 > [metrics mart](../v3_metrics-mart), and
 > [One Big Table](../v3_one-big-table)), so every difference between them is
 > the *model*, never the input. This model takes the wide,
-> one-row-per-record restatement shared byte-for-byte by Inmon, Kimball,
-> Data Vault, HOOK, USS, Activity Schema and OBT. Its archive uses the same
-> layout (`loaded_files` + per-feed `hist_*` tables, append-only triggers)
-> as the Inmon, Kimball, Data Vault, USS, Activity Schema and OBT archives.
-> **This README stands on its own;** [HOOK.md](HOOK.md) draws the
-> cross-model comparison.
+> one-row-per-record deliveries all ten models share byte-for-byte, and its
+> archive uses the layout all ten share (`loaded_files` + per-feed `hist_*`
+> tables, append-only triggers). **This README stands on its own;**
+> [HOOK.md](HOOK.md) draws the cross-model comparison.
 
 ---
 

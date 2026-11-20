@@ -6,6 +6,8 @@ Generated from [`v3_metrics-mart/build/metrics.db`](../../v3_metrics-mart/build/
 > line is a declared foreign key; a dashed line is a join the model
 > intends but does not declare. The crow's foot is the "many" side.
 
+This model declares only some of its relationships as foreign keys, so 2 dashed lines were added by hand in the generator.
+
 ## 1 · Overview — keys only
 
 Every table that has a relationship, with its key columns.
@@ -23,6 +25,11 @@ erDiagram
     RES {
         INTEGER res_id PK
         CHAR(12) res_type FK
+        INTEGER parent_res FK
+    }
+    RES_HIST {
+        INTEGER res_id PK, FK
+        TIMESTAMP valid_from PK
         INTEGER parent_res FK
     }
     RES_ALIAS {
@@ -78,6 +85,8 @@ erDiagram
     RES_TYPE ||--o{ RES_TYPE_REL : "may parent"
     RES |o--o{ RES : "parent of"
     RES_TYPE ||--o{ RES : "classifies"
+    RES |o--o{ RES_HIST : "parent of"
+    RES ||--o{ RES_HIST : "was"
     RES ||--o{ RES_ALIAS : "is known as"
     RES_TYPE ||--o{ RES_ALIAS : "scopes"
     RES_GRP |o--o{ RES_GRP : "parent of"
@@ -101,7 +110,7 @@ erDiagram
 
 ## 2 · Resources and groups
 
-What exists. `RES` holds every resource of every type, `RES_ALIAS` maps each provider's name for one to a `res_id`, and `RES_RESGRP` puts resources in groups.
+What exists. `RES` holds every resource of every type, `RES_HIST` every earlier version of one, `RES_ALIAS` maps each provider's name for one to a `res_id`, and `RES_RESGRP` puts resources in groups.
 
 ```mermaid
 erDiagram
@@ -131,6 +140,21 @@ erDiagram
         TIMESTAMP srcd_ts
         VARCHAR(255) res_desc
     }
+    RES_HIST {
+        INTEGER res_id PK, FK
+        TIMESTAMP valid_from PK
+        TIMESTAMP valid_to
+        INTEGER batch_no
+        VARCHAR(100) res_name
+        VARCHAR(20) res_short_name
+        VARCHAR(255) res_desc
+        INTEGER parent_res FK
+        VARCHAR(128) email_addr
+        DATE signup_date
+        CHAR(3) currency_code
+        CHAR(1) status_code
+        TIMESTAMP placed_at
+    }
     RES_ALIAS {
         CHAR(12) res_type PK, FK
         VARCHAR(128) res_alias PK
@@ -156,6 +180,8 @@ erDiagram
     RES_TYPE ||--o{ RES_TYPE_REL : "may parent"
     RES |o--o{ RES : "parent of"
     RES_TYPE ||--o{ RES : "classifies"
+    RES |o--o{ RES_HIST : "parent of"
+    RES ||--o{ RES_HIST : "was"
     RES ||--o{ RES_ALIAS : "is known as"
     RES_TYPE ||--o{ RES_ALIAS : "scopes"
     RES_GRP |o--o{ RES_GRP : "parent of"
@@ -205,6 +231,7 @@ erDiagram
         CHAR(6) res_tz_code
         TIMESTAMP sample_lcl_ts
         SMALLINT srcd_d2k
+        TIMESTAMP last_seen_utc_ts
     }
     METRIC_SUMMARY {
         INTEGER res_id PK, FK
@@ -268,14 +295,10 @@ erDiagram
 
 ## 4 · Calendar
 
-What was planned. Every event targets a `RES_GRP`. `CALNDR` has no foreign keys: events are matched to it by date.
+The dates the weekly aggregates are built on. `CALNDR` has no foreign keys: samples are matched to it by date.
 
 ```mermaid
 erDiagram
-    RES_GRP {
-        INTEGER res_grp_id PK
-        INTEGER parent_res_grp FK
-    }
     CALNDR {
         DATE calndr_date PK
         SMALLINT day_of_week
@@ -292,7 +315,7 @@ erDiagram
 
 ## 5 · Extensions for the shared corpus
 
-Subtype and code tables added for attributes `RES` has no column for.
+Subtype and code tables added for attributes `RES` has no column for. `RES_HIST` keeps their earlier values too, with the codes undeclared.
 
 ```mermaid
 erDiagram
@@ -328,12 +351,19 @@ erDiagram
         CHAR(3) currency_code PK
         TIMESTAMP srcd_ts
     }
+    RES_HIST {
+        INTEGER res_id PK, FK
+        TIMESTAMP valid_from PK
+        INTEGER parent_res FK
+    }
     RES ||--o| RES_CUSTOMER : "is a"
     CURRENCY |o--o{ RES_PRODUCT : "prices"
     RES ||--o| RES_PRODUCT : "is a"
     CURRENCY |o--o{ RES_ORDER : "prices"
     ORDER_STATUS |o--o{ RES_ORDER : "decodes"
     RES ||--o| RES_ORDER : "is a"
+    ORDER_STATUS ||..o{ RES_HIST : "status_code"
+    CURRENCY ||..o{ RES_HIST : "currency_code"
 ```
 
 ## 6 · Metadata and load control

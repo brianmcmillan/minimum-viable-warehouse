@@ -6,11 +6,11 @@ Generated from [`v3_focal-point/build/focal.db`](../../v3_focal-point/build/foca
 > line is a declared foreign key; a dashed line is a join the model
 > intends but does not declare. The crow's foot is the "many" side.
 
-This model declares none of its relationships as foreign keys, so 10 dashed lines were added by hand in the generator.
+This model declares none of its relationships as foreign keys, so 15 dashed lines were added by hand in the generator.
 
 ## 1 · Core model
 
-Three generic tables per entity (`_idfr`, `_focal`, `_desc`) and one `_x` table per relationship. The core declares no foreign keys; `type_key` values are defined in the metadata.
+Three generic tables per entity (`_idfr`, `_focal`, `_desc`) and one `_x` table per relationship. The core declares no foreign keys. Every `type_key`, the existence contexts (19, 29, 39) among them, is defined in `meta_atomic_context` or `meta_relationship`, shown here with their keys only.
 
 ```mermaid
 erDiagram
@@ -152,6 +152,15 @@ erDiagram
         INTEGER inst_row_key
         TEXT popln_tmstp
     }
+    meta_atomic_context {
+        INTEGER type_key PK
+        TEXT entity_id FK
+    }
+    meta_relationship {
+        INTEGER type_key PK
+        TEXT source_entity FK
+        TEXT target_entity FK
+    }
     customer_focal ||..o{ customer_idfr : "customer_key"
     order_focal ||..o{ order_idfr : "order_key"
     product_focal ||..o{ product_idfr : "product_key"
@@ -162,6 +171,11 @@ erDiagram
     customer_focal ||..o{ order_customer_x : "customer_key"
     order_focal ||..o{ order_product_x : "order_key"
     product_focal ||..o{ order_product_x : "product_key"
+    meta_atomic_context ||..o{ customer_desc : "type_key"
+    meta_atomic_context ||..o{ order_desc : "type_key"
+    meta_atomic_context ||..o{ product_desc : "type_key"
+    meta_relationship ||..o{ order_customer_x : "type_key"
+    meta_relationship ||..o{ order_product_x : "type_key"
 ```
 
 ## 2 · Metadata and load control
@@ -207,6 +221,7 @@ erDiagram
         TEXT source_entity FK
         TEXT target_entity FK
         TEXT x_table
+        TEXT driving_role
     }
     meta_source_feed {
         TEXT source_system PK

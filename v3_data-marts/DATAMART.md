@@ -1,8 +1,8 @@
 # Kimball star schema — same deliveries, the dimensional model
 
 The dimensional leg of the model-comparison set. The **same six logical
-deliveries** (byte-identical wide files shared with DV, Inmon, HOOK, USS,
-Activity Schema and OBT) flow into a
+deliveries** (byte-identical wide files shared with the other
+nine models) flow into a
 Kimball star: SCD Type 2 dimensions, a generated `dim_date`, a decode
 dimension, transaction-grain facts — and an **archive** (Kimball's persistent
 staging area) built from the Focal demo's archive pattern, which is what
