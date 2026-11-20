@@ -6,3 +6,5 @@ v3_*/build/
 v3_*/archive/
 .claude/
 verify-logs/
+# private essays, copied from ../blog/drafts; kept locally, never committed
+/docs/

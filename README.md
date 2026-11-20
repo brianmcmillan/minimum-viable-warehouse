@@ -504,20 +504,3 @@ standalone README: the design, the deviations, and a plain accounting of
 what that model gives up, plus a design-notes companion that draws the
 cross-model comparison in full. Start with the model you already believe
 in, run its suite, then run its rival's.
-
-Five companion essays take the comparison past load mechanics:
-
-- [02-OPERATING-MODELS.md](docs/02-OPERATING-MODELS.md) maps the models onto
-  Ross's operating models.
-- [03-STUPIDITY-PARADOX.md](docs/03-STUPIDITY-PARADOX.md) reads them through
-  Alvesson and Spicer's *The Stupidity Paradox*.
-- [04-MARKET-EXHAUSTION.md](docs/04-MARKET-EXHAUSTION.md) asks why ten
-  identical answers explain the market's fatigue with data.
-- [05-THE-AGENTIC-TURN.md](docs/05-THE-AGENTIC-TURN.md) looks at what agents
-  reprice, and what they don't.
-- [06-WHAT-WANTS-TO-EMERGE.md](docs/06-WHAT-WANTS-TO-EMERGE.md) goes looking
-  for a decision layer outside the data world.
-
-[07-FUTURE-FUNCTIONALITY.md](docs/07-FUTURE-FUNCTIONALITY.md) ranks the
-additions and tests I haven't built yet by how well they would separate
-the ten models.
