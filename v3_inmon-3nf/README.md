@@ -3,8 +3,9 @@
 Inmon's enterprise data warehouse, rendered the classic way and made to
 run — a **subject-oriented, integrated, time-variant, non-volatile**
 normalized core, built from nothing but **`sqlite3`, `bash`, and `make`**.
-No Python, no dbt, no server, no packages to install. The `sqlite3` that
-ships with macOS is enough. Clone it, run `make demo`, and you have a 3NF
+No Python, no dbt, no server, no packages to install; the minimum versions
+are under [Requirements](../README.md#requirements) in the root README.
+Clone it, run `make demo`, and you have a 3NF
 warehouse that ingests multi-source feeds, versions every entity in place
 with `valid_from`/`valid_to`, handles deletes safely under realistic feed
 cadences — and can delete its whole EDW and rebuild it from a durable,
@@ -46,10 +47,10 @@ reputation, and unsparing about the two costs its successors exist to fix.
 
 ## Requirements
 
-| Tool      | Developed against       | Notes                                   |
+| Tool      | Minimum                 | Notes                                   |
 |-----------|-------------------------|-----------------------------------------|
-| `bash`    | 5.x (also runs on 3.2)  | the built-in macOS bash works           |
-| `sqlite3` | 3.51                    | any modern SQLite with window functions |
+| `bash`    | 3.2+                    | the built-in macOS bash works           |
+| `sqlite3` | 3.47+                   | any modern SQLite with window functions |
 | `make`    | 3.81+ (GNU Make)        | the stock macOS binary works            |
 
 That is the whole list. Everything runs against local files in this

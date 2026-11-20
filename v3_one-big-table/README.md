@@ -5,8 +5,9 @@ delivery log itself is the warehouse**, and everything you query is a
 **full-refresh recomputation over that log** — the dbt-style full-refresh /
 functional-data-engineering pattern, idempotent by construction, with no
 incremental state anywhere. Built from nothing but **`sqlite3`, `bash`, and
-`make`**. No Python, no dbt, no server, no packages to install. The
-`sqlite3` that ships with macOS is enough.
+`make`**. No Python, no dbt, no server, no packages to install; the
+minimum versions are under [Requirements](../README.md#requirements) in the root
+README.
 
 It exists to answer the question the other nine warehouses in the set raise:
 **what does modeling actually buy?** Feed it the same deliveries, get the
@@ -44,10 +45,10 @@ same answers — then read the bill.
 
 ## Requirements
 
-| Tool      | Developed against       | Notes                                   |
+| Tool      | Minimum                 | Notes                                   |
 |-----------|-------------------------|-----------------------------------------|
-| `bash`    | 5.x (also runs on 3.2)  | the built-in macOS bash works           |
-| `sqlite3` | 3.51                    | any modern SQLite with window functions |
+| `bash`    | 3.2+                    | the built-in macOS bash works           |
+| `sqlite3` | 3.47+                   | any modern SQLite with window functions |
 | `make`    | 3.81+ (GNU Make)        | the stock macOS binary works            |
 
 That is the whole list. Everything runs against local files in this

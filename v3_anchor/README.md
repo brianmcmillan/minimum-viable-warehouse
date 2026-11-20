@@ -45,10 +45,10 @@ construct. The design notes in **[ANCHOR.md](ANCHOR.md)** walk through every one
 
 ## Requirements
 
-| Tool      | Version used in development | Notes                                    |
+| Tool      | Minimum                     | Notes                                    |
 |-----------|-----------------------------|------------------------------------------|
-| `bash`    | 5.x (also runs on 3.2)      | macOS's built-in bash works              |
-| `sqlite3` | 3.51                        | Any modern SQLite with window functions  |
+| `bash`    | 3.2+                        | macOS's built-in bash works              |
+| `sqlite3` | 3.47+                       | Any modern SQLite with window functions  |
 | `make`    | 3.81+                       | GNU Make                                 |
 
 That's the whole list. Everything runs against local files in the project directory.

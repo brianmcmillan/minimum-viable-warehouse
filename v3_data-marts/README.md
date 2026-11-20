@@ -3,8 +3,9 @@
 A complete, working **Kimball star schema** — SCD Type 2 dimensions,
 conformed facts, a generated date dimension — built from nothing but
 **`sqlite3`, `bash`, and `make`**. No Python, no dbt, no server, no
-packages to install. The `sqlite3` that ships with macOS is enough. Clone
-it, run `make demo`, and you have a dimensional warehouse that ingests
+packages to install; the minimum versions are under
+[Requirements](../README.md#requirements) in the root README. Clone it,
+run `make demo`, and you have a dimensional warehouse that ingests
 multi-source feeds, versions dimensions safely under realistic feed
 cadences, answers point-in-time questions from a *plain equi-join* — and
 can delete its entire star and rebuild it, surrogate keys and all, from a
@@ -46,10 +47,10 @@ It exists to make a handful of normally-abstract dimensional ideas
 
 ## Requirements
 
-| Tool      | Developed against       | Notes                                   |
+| Tool      | Minimum                 | Notes                                   |
 |-----------|-------------------------|-----------------------------------------|
-| `bash`    | 5.x (also runs on 3.2)  | the built-in macOS bash works           |
-| `sqlite3` | 3.51                    | any modern SQLite with window functions |
+| `bash`    | 3.2+                    | the built-in macOS bash works           |
+| `sqlite3` | 3.47+                   | any modern SQLite with window functions |
 | `make`    | 3.81+ (GNU Make)        | the stock macOS binary works            |
 
 That is the whole list. Everything runs against local files in this

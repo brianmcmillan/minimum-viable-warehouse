@@ -423,13 +423,87 @@ survived it and which team ended up holding the bag.
 
 ## Requirements
 
-bash, make, and sqlite3 3.47 or newer (Data Vault's triggers put an
-expression in RAISE, which 3.47 added); the stock macOS binary works.
-Each directory's `make help` lists its targets. Each has a standalone
-README covering the design, the deviations and what that model gives up,
-and a design-notes file that draws the cross-model comparison. Start
-with the model you already believe in, run its suite, then run its
-rival's.
+bash, make and sqlite3. Nothing else is installed and nothing reaches the
+network.
+
+| Tool | Minimum | Why |
+| --- | --- | --- |
+| `sqlite3` | 3.47 | an expression in `RAISE` in the Data Vault triggers (new in 3.47); also window functions, `UPDATE ... FROM` and the JSON functions |
+| `bash` | 3.2 | the stock macOS bash; no bash 4 syntax is used |
+| `make` | GNU Make 3.81 | the stock macOS make |
+
+macOS 27.2.1 ships sqlite3 3.54.0, bash 3.2.57 and GNU Make 3.81, all
+above the minimums, so a stock Mac needs nothing installed. All ten suites
+pass with exactly those stock tools (local run, 19 November 2026).
+CI repeats the run on every push: on macOS with the stock sqlite3
+and bash 3.2, and on Ubuntu with its stock bash and sqlite3 3.51.0
+from sqlite.org, because the distribution's 3.46.1 is too old. Both
+passed on 19 November 2026.
+
+### Check your machine
+
+```bash
+sw_vers -productVersion          # macOS only: 27.2 is the expected release
+command -v sqlite3 bash make     # which binaries will actually run
+sqlite3 --version                # 3.47 or later
+bash --version | head -1         # 3.2 or later
+make --version | head -1         # GNU Make 3.81 or later
+```
+
+The scripts start with `#!/usr/bin/env bash`, so they run whichever
+`bash` comes first on your `PATH`, not necessarily `/bin/bash`.
+
+### macOS with Homebrew
+
+If the stock tools are too old, install newer ones with
+[Homebrew](https://brew.sh):
+
+```bash
+brew install sqlite bash
+```
+
+Homebrew does not put its sqlite3 on your `PATH`, because macOS already
+has one. Put both ahead of the system versions:
+
+```bash
+export PATH="$(brew --prefix sqlite)/bin:$(brew --prefix)/bin:$PATH"
+```
+
+To keep that for new Terminal windows, add the same line to
+`~/.zshrc` (the default shell) or `~/.bash_profile` (if you use bash),
+then open a new window and run the checks above again.
+
+To use a different sqlite3 for one run without changing `PATH`, set
+`SQLITE`, which every script reads:
+
+```bash
+SQLITE="$(brew --prefix sqlite)/bin/sqlite3" make test
+```
+
+### Linux
+
+```bash
+# Debian and Ubuntu
+sudo apt-get install -y sqlite3 make
+# Fedora and RHEL
+sudo dnf install -y sqlite make
+```
+
+bash is already installed. Run the checks above: sqlite3 must be 3.47
+or later, and many distributions ship an older one (Ubuntu 22.04 has
+3.37.2; the CI runner's Ubuntu had 3.46.1). If yours is older,
+download the precompiled sqlite-tools for Linux from
+https://sqlite.org/download.html and put its directory first on your
+`PATH`, as CI does, or point `SQLITE` at it for one run. Linux has the GNU versions of `sed`, `date` and `mktemp`, not
+the BSD versions macOS has.
+
+### Then
+
+Each directory's `make help` lists its targets, and each has its own
+standalone README: the design, the deviations, and a plain accounting of
+what that model gives up, plus a design-notes companion that draws the
+cross-model comparison in full. Start with the model you already believe
+in, run its suite, then run its rival's.
 
 Five companion essays take the comparison past load mechanics:
 
